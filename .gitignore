@@ -1,0 +1,25 @@
+# Python
+__pycache__/
+*.py[cod]
+.venv/
+venv/
+
+# Unity
+Library/
+Temp/
+Obj/
+Build/
+Builds/
+Logs/
+UserSettings/
+
+# Environment and local secrets
+.env
+.env.*
+
+# OS/editor
+.DS_Store
+Thumbs.db
+.vscode/
+.idea/
+
