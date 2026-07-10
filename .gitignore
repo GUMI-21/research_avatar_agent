@@ -13,6 +13,13 @@ Builds/
 Logs/
 UserSettings/
 
+# Keep server logging utility code even on case-insensitive filesystems where
+# the Unity Logs/ rule can match server/logs/.
+!server/logs/
+!server/logs/**
+server/logs/**/*.log
+server/logs/*.log
+
 # Environment and local secrets
 .env
 .env.*
@@ -22,4 +29,3 @@ UserSettings/
 Thumbs.db
 .vscode/
 .idea/
-
