@@ -55,3 +55,7 @@ same filename under `docs/en/` and `docs/zh/` when adding or updating docs.
 - 中文：
   - [研究计划](docs/zh/research_plan.md)
   - [7 月 21 日开发启动计划](docs/zh/july21_demo_plan.md)
+
+## License
+
+This project is licensed under the [MIT License](LICENSE).

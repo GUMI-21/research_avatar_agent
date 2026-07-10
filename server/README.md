@@ -14,7 +14,9 @@ generation.
 
 ```text
 server/
+  requirements.txt    Python runtime dependencies for local development
   app/
+    main.py           FastAPI application entrypoint
     api/              FastAPI route layer
     core/             settings, dependency wiring, shared runtime config
     graph/            LangGraph state, graph builder, nodes, and edges
@@ -42,6 +44,24 @@ log directory is:
 The `server/logs/` directory is reserved for logging utility code such as logger
 configuration helpers, formatters, file handler setup, request ID helpers, and
 future LangGraph run logging integration.
+
+## Local Startup
+
+Install dependencies in a virtual environment, then start the API server from
+the `server/` directory:
+
+```bash
+python3 -m venv .venv
+source .venv/bin/activate
+python -m pip install -r requirements.txt
+uvicorn app.main:app --reload --host 127.0.0.1 --port 8000
+```
+
+Health check:
+
+```bash
+curl http://127.0.0.1:8000/ping
+```
 
 ## First Backend Slice
 
