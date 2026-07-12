@@ -1,6 +1,7 @@
-"""Logging utility package.
+"""Application logging interface."""
 
-Runtime log files should be written outside the repository, under
-``/var/logs/avatar_agent`` by default.
-"""
+from loguru import logger as log
 
+from logs.config import configure_logging
+
+__all__ = ["configure_logging", "log"]

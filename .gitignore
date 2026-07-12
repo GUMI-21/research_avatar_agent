@@ -23,6 +23,8 @@ server/logs/*.log
 # Environment and local secrets
 .env
 .env.*
+server/config/debug.yaml
+server/config/prod.yaml
 
 # OS/editor
 .DS_Store

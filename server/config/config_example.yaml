@@ -1,0 +1,18 @@
+app:
+  name: Avatar Agent Server
+  description: Backend service for the personal AI workspace and avatar assistant.
+  version: 0.1.0
+
+server:
+  host: 127.0.0.1
+  port: 8000
+  reload: true
+
+logging:
+  level: DEBUG
+  directory: /tmp/avatar_agent_log
+  file_name: server.log
+  rotation: 10 MB
+  retention: 30 days
+  compression: gz
+  console: true

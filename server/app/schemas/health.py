@@ -8,4 +8,3 @@ class PingResponse(BaseModel):
 
     status: str
     service: str
-
