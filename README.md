@@ -48,6 +48,8 @@ shared/        Future shared API contracts and generated types
 
 All project documents should be maintained in both English and Chinese. Use the
 same filename under `docs/en/` and `docs/zh/` when adding or updating docs.
+Concise backend implementation documents are maintained in English under
+`server/docs/`.
 
 - English:
   - [Research plan](docs/en/research_plan.md)

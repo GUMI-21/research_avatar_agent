@@ -18,6 +18,7 @@ server/
   requirements.txt    Python runtime dependencies for local development
   config/
     config_example.yaml  tracked template for local environment configs
+  docs/               concise English backend documentation
   app/
     main.py           FastAPI application entrypoint
     api/              FastAPI route layer
@@ -49,8 +50,9 @@ configuration helpers, formatters, file handler setup, request ID helpers, and
 future LangGraph run logging integration.
 
 Logs rotate at 10 MB, are compressed with gzip, and are retained for 30 days by
-default. See the [English](../docs/en/logging.md) and
-[Chinese](../docs/zh/logging.md) logging documents for configuration and usage.
+default. See the [logging document](docs/logging.md) for configuration and usage.
+
+The public JSON protocol is documented in the [API design](docs/api.md).
 
 ## Configuration
 
@@ -90,6 +92,14 @@ Health check:
 curl http://127.0.0.1:8000/ping
 ```
 
+Chat placeholder:
+
+```bash
+curl -X POST http://127.0.0.1:8000/api/v1/unity/chat \
+  -H "Content-Type: application/json" \
+  -d '{"session_id":"unity-demo","message":"Hello"}'
+```
+
 Run the logging tests from the `server/` directory:
 
 ```bash
@@ -113,5 +123,6 @@ user_input
 
 ## Documentation Policy
 
-Project documents should be maintained in both English and Chinese under
-`docs/en/` and `docs/zh/`.
+Research and project-level documents are maintained in both English and Chinese
+under `docs/en/` and `docs/zh/`. Backend technical documents are concise English
+documents under `server/docs/`.
