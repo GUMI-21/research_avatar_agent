@@ -17,8 +17,10 @@ UserSettings/
 # the Unity Logs/ rule can match server/logs/.
 !server/logs/
 !server/logs/**
+server/logs/__pycache__/
 server/logs/**/*.log
 server/logs/*.log
+server/runtime/
 
 # Environment and local secrets
 .env

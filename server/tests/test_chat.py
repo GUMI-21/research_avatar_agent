@@ -2,8 +2,10 @@
 
 import unittest
 
+from fastapi import FastAPI
 from pydantic import ValidationError
 
+from app.adapters.llm import MockLLMAdapter
 from app.api.router import api_router
 from app.schemas.chat import ChatRequest, EmotionLabel
 from app.services.chat import ChatService
@@ -13,7 +15,7 @@ class ChatContractTest(unittest.IsolatedAsyncioTestCase):
     """Verify placeholder behavior and public route registration."""
 
     async def test_placeholder_response_matches_contract(self) -> None:
-        response = await ChatService().respond(
+        response = await ChatService(MockLLMAdapter()).respond(
             ChatRequest(session_id="unity-demo", message="Hello")
         )
 
@@ -27,5 +29,8 @@ class ChatContractTest(unittest.IsolatedAsyncioTestCase):
             ChatRequest(session_id="unity-demo", message="   ")
 
     def test_chat_route_is_registered(self) -> None:
-        paths = {route.path for route in api_router.routes}
+        app = FastAPI()
+        app.include_router(api_router)
+        paths = set(app.openapi()["paths"])
         self.assertIn("/api/v1/unity/chat", paths)
+        self.assertIn("/api/v1/llm/config", paths)

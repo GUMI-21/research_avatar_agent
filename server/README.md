@@ -68,6 +68,12 @@ cp config/config_example.yaml config/prod.yaml
 The current local files use `DEBUG` logging with reload enabled for `debug`, and
 `INFO` logging with reload disabled for `prod`.
 
+The tracked template also defines provider-independent LLM timeout and output
+limits plus default models and base URLs for OpenAI, Gemini, and DeepSeek. API
+keys are not stored in YAML. Set `OPENAI_API_KEY`, `GOOGLE_API_KEY` or
+`GEMINI_API_KEY`, and `DEEPSEEK_API_KEY` in the server environment, or send a
+key to a local runtime configuration endpoint.
+
 ## Local Startup
 
 Install dependencies in a virtual environment, then start the API server from
@@ -99,6 +105,18 @@ curl -X POST http://127.0.0.1:8000/api/v1/unity/chat \
   -H "Content-Type: application/json" \
   -d '{"session_id":"unity-demo","message":"Hello"}'
 ```
+
+Select the active provider with its configured defaults:
+
+```bash
+curl -X POST http://127.0.0.1:8000/api/v1/llm/config \
+  -H "Content-Type: application/json" \
+  -d '{"provider":"openai"}'
+```
+
+Unity and web clients use this shared endpoint to update the same in-memory
+runtime configuration. See the [API design](docs/api.md) for explicit-key
+examples and security constraints.
 
 Run the logging tests from the `server/` directory:
 

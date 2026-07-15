@@ -16,3 +16,17 @@ logging:
   retention: 30 days
   compression: gz
   console: true
+
+llm:
+  default_provider: mock
+  timeout_seconds: 30
+  max_output_tokens: 1024
+  openai:
+    model: gpt-5.6-luna
+    base_url: https://api.openai.com/v1
+  gemini:
+    model: gemini-3.5-flash
+    base_url: https://generativelanguage.googleapis.com/v1beta
+  deepseek:
+    model: deepseek-v4-flash
+    base_url: https://api.deepseek.com

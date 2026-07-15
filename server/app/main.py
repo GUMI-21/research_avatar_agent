@@ -7,6 +7,7 @@ from fastapi import FastAPI
 
 from app.api.router import api_router
 from app.core.settings import Settings, get_settings
+from app.services.llm_runtime import LLMRuntime
 from logs import configure_logging, log
 
 
@@ -34,6 +35,7 @@ def create_app(settings: Settings) -> FastAPI:
         lifespan=lifespan,
     )
     app.state.settings = settings
+    app.state.llm_runtime = LLMRuntime(settings.llm)
     app.include_router(api_router)
     return app
 

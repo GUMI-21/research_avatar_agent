@@ -6,7 +6,9 @@ from pathlib import Path
 from typing import Literal, Tuple
 
 import yaml
-from pydantic import BaseModel, ConfigDict, Field
+from pydantic import AnyHttpUrl, BaseModel, ConfigDict, Field
+
+from app.schemas.llm import LLMProvider
 
 EnvironmentName = Literal["debug", "prod"]
 SUPPORTED_ENVIRONMENTS: Tuple[str, ...] = ("debug", "prod")
@@ -48,6 +50,24 @@ class LoggingSettings(StrictSettingsModel):
     console: bool
 
 
+class LLMProviderSettings(StrictSettingsModel):
+    """Default model and endpoint for one cloud provider."""
+
+    model: str = Field(min_length=1, max_length=256)
+    base_url: AnyHttpUrl
+
+
+class LLMSettings(StrictSettingsModel):
+    """Provider-independent defaults for runtime LLM selection."""
+
+    default_provider: LLMProvider
+    timeout_seconds: float = Field(gt=0.0, le=300.0)
+    max_output_tokens: int = Field(ge=1, le=131_072)
+    openai: LLMProviderSettings
+    gemini: LLMProviderSettings
+    deepseek: LLMProviderSettings
+
+
 class Settings(StrictSettingsModel):
     """Complete server configuration for one runtime environment."""
 
@@ -55,6 +75,7 @@ class Settings(StrictSettingsModel):
     app: AppSettings
     server: ServerSettings
     logging: LoggingSettings
+    llm: LLMSettings
 
 
 def load_settings(environment: str) -> Settings:

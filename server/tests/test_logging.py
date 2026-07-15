@@ -26,29 +26,32 @@ class LoggingConfigurationTest(unittest.TestCase):
                 console=False,
             )
 
-            log_path = configure_logging(config)
-            log.debug("debug-marker")
-            logging.getLogger("test.standard").info("standard-marker")
-            for index in range(30):
-                log.info("rotation-marker-{} {}", index, "x" * 100)
-            log.complete()
+            try:
+                log_path = configure_logging(config)
+                log.debug("debug-marker")
+                logging.getLogger("test.standard").info("standard-marker")
+                for index in range(30):
+                    log.info("rotation-marker-{} {}", index, "x" * 100)
+                log.complete()
 
-            self.assertEqual(log_path, log_dir / "server.log")
-            self.assertTrue(log_path.exists())
+                self.assertEqual(log_path, log_dir / "server.log")
+                self.assertTrue(log_path.exists())
 
-            compressed_logs = list(log_dir.glob("*.gz"))
-            self.assertTrue(compressed_logs)
+                compressed_logs = list(log_dir.glob("*.gz"))
+                self.assertTrue(compressed_logs)
 
-            content = log_path.read_text(encoding="utf-8")
-            for compressed_log in compressed_logs:
-                with gzip.open(
-                    compressed_log, mode="rt", encoding="utf-8"
-                ) as stream:
-                    content += stream.read()
+                content = log_path.read_text(encoding="utf-8")
+                for compressed_log in compressed_logs:
+                    with gzip.open(
+                        compressed_log, mode="rt", encoding="utf-8"
+                    ) as stream:
+                        content += stream.read()
 
-            self.assertIn("debug-marker", content)
-            self.assertIn("standard-marker", content)
-            self.assertIn("rotation-marker", content)
+                self.assertIn("debug-marker", content)
+                self.assertIn("standard-marker", content)
+                self.assertIn("rotation-marker", content)
+            finally:
+                log.remove()
 
 
 if __name__ == "__main__":

@@ -1,7 +1,8 @@
-"""Application service for the current chat contract placeholder."""
+"""Application service for the public chat contract."""
 
 from uuid import uuid4
 
+from app.adapters.llm import LLMClient, LLMRequest
 from app.schemas.chat import (
     AvatarAction,
     AvatarCommand,
@@ -13,13 +14,24 @@ from app.schemas.chat import (
 
 
 class ChatService:
-    """Build chat responses until the LLM adapter is connected."""
+    """Build stable chat responses from a provider-independent LLM client."""
+
+    def __init__(self, llm_client: LLMClient) -> None:
+        self._llm_client = llm_client
 
     async def respond(self, request: ChatRequest) -> ChatResponse:
-        """Echo the user message with neutral avatar state."""
+        """Generate a reply while the emotion module remains neutral."""
+        request_id = f"req_{uuid4().hex}"
+        llm_result = await self._llm_client.generate(
+            LLMRequest(
+                request_id=request_id,
+                session_id=request.session_id,
+                message=request.message,
+            )
+        )
         return ChatResponse(
-            request_id=f"req_{uuid4().hex}",
-            reply=f"Echo: {request.message}",
+            request_id=request_id,
+            reply=llm_result.text,
             emotion=EmotionState(
                 label=EmotionLabel.NEUTRAL,
                 valence=0.0,
