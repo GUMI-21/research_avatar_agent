@@ -13,6 +13,14 @@ Builds/
 Logs/
 UserSettings/
 
+# Local VRM models and their imported assets may have redistribution restrictions.
+avatar-unity/Assets/Models/
+avatar-unity/Assets/Models.meta
+
+# Local preview scene directly references an ignored VRM model.
+avatar-unity/Assets/Scenes/AvatarDemo.unity
+avatar-unity/Assets/Scenes/AvatarDemo.unity.meta
+
 # Keep server logging utility code even on case-insensitive filesystems where
 # the Unity Logs/ rule can match server/logs/.
 !server/logs/
