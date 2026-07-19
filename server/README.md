@@ -98,6 +98,26 @@ Health check:
 curl http://127.0.0.1:8000/ping
 ```
 
+## Docker Startup
+
+Docker is an optional alternative to the local virtual environment. Start the
+server from this directory:
+
+```bash
+docker compose up --build
+```
+
+The API is available at `http://127.0.0.1:8000`. Runtime logs are stored under
+`runtime/docker-logs/`, which is ignored by Git. Stop the service with:
+
+```bash
+docker compose down
+```
+
+Cloud provider keys remain optional because the default provider is `mock`.
+Set them in the shell before starting Compose when needed; they are passed as
+environment variables and are not copied into the image.
+
 Chat placeholder:
 
 ```bash

@@ -10,8 +10,8 @@ from pydantic import AnyHttpUrl, BaseModel, ConfigDict, Field
 
 from app.schemas.llm import LLMProvider
 
-EnvironmentName = Literal["debug", "prod"]
-SUPPORTED_ENVIRONMENTS: Tuple[str, ...] = ("debug", "prod")
+EnvironmentName = Literal["debug", "prod", "docker"]
+SUPPORTED_ENVIRONMENTS: Tuple[str, ...] = ("debug", "prod", "docker")
 SERVER_ROOT = Path(__file__).resolve().parents[2]
 CONFIG_DIR = SERVER_ROOT / "config"
 

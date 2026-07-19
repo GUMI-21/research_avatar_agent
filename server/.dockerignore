@@ -1,0 +1,9 @@
+.venv/
+__pycache__/
+*.py[cod]
+config/debug.yaml
+config/prod.yaml
+runtime/
+tests/
+.env
+.git/

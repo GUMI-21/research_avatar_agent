@@ -39,6 +39,7 @@ namespace ResearchAvatarAgent.Avatar
             {
                 Instance = await Vrm10.LoadPathAsync(
                     modelPath,
+                    controlRigGenerationOption: ControlRigGenerationOption.None,
                     ct: _destroyCancellation.Token
                 );
 

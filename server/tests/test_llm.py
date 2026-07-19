@@ -30,6 +30,7 @@ from app.core.settings import (
     LLMProviderSettings,
     LLMSettings,
     Settings,
+    load_settings,
 )
 from app.schemas.llm import LLMConfigRequest, LLMProvider
 from app.services.llm_runtime import LLMRuntime
@@ -129,6 +130,13 @@ class LLMRuntimeConfigurationTest(unittest.TestCase):
 
         settings = Settings.model_validate(raw_config)
 
+        self.assertEqual(settings.llm.default_provider, LLMProvider.MOCK)
+
+    def test_docker_config_uses_container_network_settings(self) -> None:
+        settings = load_settings("docker")
+
+        self.assertEqual(settings.server.host, "0.0.0.0")
+        self.assertFalse(settings.server.reload)
         self.assertEqual(settings.llm.default_provider, LLMProvider.MOCK)
 
 
