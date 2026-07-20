@@ -26,6 +26,7 @@ from app.adapters.llm.errors import (
 )
 from app.api.errors import llm_http_exception
 from app.api.router import api_router
+from app.core.llm_catalog import LLM_PROVIDER_CATALOG
 from app.core.settings import (
     LLMProviderSettings,
     LLMSettings,
@@ -131,6 +132,14 @@ class LLMRuntimeConfigurationTest(unittest.TestCase):
         settings = Settings.model_validate(raw_config)
 
         self.assertEqual(settings.llm.default_provider, LLMProvider.MOCK)
+        catalog = {item.provider: item for item in LLM_PROVIDER_CATALOG.providers}
+        for provider in (
+            LLMProvider.OPENAI,
+            LLMProvider.GEMINI,
+            LLMProvider.DEEPSEEK,
+        ):
+            defaults = getattr(settings.llm, provider.value)
+            self.assertEqual(catalog[provider].default_model, defaults.model)
 
     def test_docker_config_uses_container_network_settings(self) -> None:
         settings = load_settings("docker")
@@ -171,6 +180,32 @@ class RuntimeAPIIntegrationTest(unittest.IsolatedAsyncioTestCase):
         self.assertEqual(mock_response.json()["provider"], "mock")
         self.assertEqual(chat_response.status_code, status.HTTP_200_OK)
         self.assertEqual(chat_response.json()["reply"], "Echo: Hello")
+
+    async def test_provider_presets_are_valid_config_requests(self) -> None:
+        app = FastAPI()
+        app.state.llm_runtime = LLMRuntime(make_llm_settings())
+        app.include_router(api_router)
+
+        transport = httpx.ASGITransport(app=app)
+        async with httpx.AsyncClient(
+            transport=transport,
+            base_url="http://testserver",
+        ) as client:
+            response = await client.get("/api/v1/llm/providers")
+
+        self.assertEqual(response.status_code, status.HTTP_200_OK)
+        providers = response.json()["providers"]
+        self.assertEqual(
+            {item["provider"] for item in providers},
+            {"mock", "openai", "gemini", "deepseek"},
+        )
+        for provider in providers:
+            models = provider["models"]
+            self.assertIn(provider["default_model"], {m["model"] for m in models})
+            for model in models:
+                request = LLMConfigRequest.model_validate(model["config"])
+                self.assertEqual(request.provider.value, provider["provider"])
+                self.assertEqual(request.model, model["model"])
 
 
 class ProviderAdapterTest(unittest.IsolatedAsyncioTestCase):

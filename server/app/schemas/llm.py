@@ -40,3 +40,34 @@ class LLMConfigResponse(BaseModel):
     base_url: str
     api_key_configured: bool
     api_key_source: Literal["request", "environment", "not_required"]
+
+
+class LLMConfigPreset(BaseModel):
+    """Safe provider/model pair that can be posted to the config endpoint."""
+
+    provider: LLMProvider
+    model: str
+
+
+class LLMModelOption(BaseModel):
+    """One model shown in a client selection list."""
+
+    model: str
+    display_name: str
+    config: LLMConfigPreset
+
+
+class LLMProviderOption(BaseModel):
+    """One provider and its curated model choices."""
+
+    provider: LLMProvider
+    display_name: str
+    default_model: str
+    allow_custom_model: bool
+    models: list[LLMModelOption]
+
+
+class LLMProvidersResponse(BaseModel):
+    """Provider catalog shared by Unity and web clients."""
+
+    providers: list[LLMProviderOption]

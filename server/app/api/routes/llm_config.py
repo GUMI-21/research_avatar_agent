@@ -5,10 +5,21 @@ from fastapi import APIRouter, Depends, status
 from app.adapters.llm.errors import LLMConfigurationError
 from app.api.dependencies import get_llm_runtime
 from app.api.errors import llm_http_exception
-from app.schemas.llm import LLMConfigRequest, LLMConfigResponse
+from app.core.llm_catalog import LLM_PROVIDER_CATALOG
+from app.schemas.llm import (
+    LLMConfigRequest,
+    LLMConfigResponse,
+    LLMProvidersResponse,
+)
 from app.services.llm_runtime import LLMRuntime
 
 router = APIRouter()
+
+
+@router.get("/llm/providers", response_model=LLMProvidersResponse)
+async def list_llm_providers() -> LLMProvidersResponse:
+    """Return safe presets that clients can post to the config endpoint."""
+    return LLM_PROVIDER_CATALOG
 
 
 @router.post(

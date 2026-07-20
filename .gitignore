@@ -5,6 +5,8 @@ __pycache__/
 venv/
 
 # Unity
+/Packages/
+/ProjectSettings/
 Library/
 Temp/
 Obj/
