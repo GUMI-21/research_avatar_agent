@@ -67,6 +67,39 @@ namespace ResearchAvatarAgent.Api
             return response;
         }
 
+        [ContextMenu("Test LLM Provider Catalog")]
+        private async void TestProviderCatalog()
+        {
+            try
+            {
+                var response = await GetProvidersAsync();
+                Debug.Log($"Received {response.providers.Length} LLM providers.", this);
+            }
+            catch (Exception error)
+            {
+                Debug.LogException(error, this);
+            }
+        }
+
+        [ContextMenu("Test Mock LLM Configuration")]
+        private async void TestMockConfiguration()
+        {
+            try
+            {
+                var response = await ConfigureAsync(
+                    new LlmConfigRequest(LlmProviderIds.Mock)
+                );
+                Debug.Log(
+                    $"Configured LLM provider={response.provider} model={response.model}.",
+                    this
+                );
+            }
+            catch (Exception error)
+            {
+                Debug.LogException(error, this);
+            }
+        }
+
         private async Task<T> SendAsync<T>(string path, string method, object body = null)
         {
             var url = $"{serverBaseUrl.TrimEnd('/')}{path}";
