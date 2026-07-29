@@ -41,13 +41,18 @@ similar to Go's `go.mod` and `go.sum`: another computer uses them to restore
 UniVRM. Downloaded package contents live in `Library/PackageCache` and are not
 committed.
 
-## Current Development Order
+## Current Baseline
 
-1. Load a local VRM model without a scene-level model reference.
-2. Add a model-independent avatar controller.
+- Runtime loading supports local VRM 1.0 models.
+- The Chat client connects to `POST /api/v1/unity/chat`.
+- The LLM configuration client loads provider presets and applies a selection.
+
+## Next Development Order
+
+1. Add the provider/model settings panel.
+2. Add the chat input and conversation history panel.
 3. Map server emotion values to VRM expression weights.
-4. Connect Unity to `POST /api/v1/unity/chat`.
-5. Add script-driven teaching actions and lip sync.
+4. Add script-driven teaching actions and lip sync.
 
 The local `AvatarDemo` scene currently references `male1` directly and is
 ignored. A shared scene will replace it after runtime loading is verified.
