@@ -2,6 +2,7 @@ using System;
 using System.Collections.Generic;
 using TMPro;
 using UnityEngine;
+using UnityEngine.UI;
 
 namespace ResearchAvatarAgent.UI
 {
@@ -17,16 +18,26 @@ namespace ResearchAvatarAgent.UI
         [SerializeField]
         private TMP_Text statusText;
 
+        [SerializeField]
+        private TMP_InputField apiKeyInput;
+
+        [SerializeField]
+        private Button applyButton;
+
         private LlmSelectionController selection;
 
         public void Bind(
             TMP_Dropdown providers,
             TMP_Dropdown models,
+            TMP_InputField apiKey,
+            Button apply,
             TMP_Text status
         )
         {
             providerDropdown = providers;
             modelDropdown = models;
+            apiKeyInput = apiKey;
+            applyButton = apply;
             statusText = status;
         }
 
@@ -35,6 +46,8 @@ namespace ResearchAvatarAgent.UI
             selection = GetComponent<LlmSelectionController>();
             if (providerDropdown == null ||
                 modelDropdown == null ||
+                apiKeyInput == null ||
+                applyButton == null ||
                 statusText == null)
             {
                 Debug.LogError("LLM config panel UI references are incomplete.", this);
@@ -53,6 +66,7 @@ namespace ResearchAvatarAgent.UI
                 PopulateProviders();
                 providerDropdown.onValueChanged.AddListener(SelectProvider);
                 modelDropdown.onValueChanged.AddListener(SelectModel);
+                applyButton.onClick.AddListener(ApplyConfiguration);
                 SetInteractive(true);
                 statusText.SetText("Select a provider and model.");
             }
@@ -65,8 +79,9 @@ namespace ResearchAvatarAgent.UI
 
         private void OnDestroy()
         {
-            providerDropdown.onValueChanged.RemoveListener(SelectProvider);
-            modelDropdown.onValueChanged.RemoveListener(SelectModel);
+            providerDropdown?.onValueChanged.RemoveListener(SelectProvider);
+            modelDropdown?.onValueChanged.RemoveListener(SelectModel);
+            applyButton?.onClick.RemoveListener(ApplyConfiguration);
         }
 
         private void PopulateProviders()
@@ -119,10 +134,34 @@ namespace ResearchAvatarAgent.UI
             }
         }
 
+        private async void ApplyConfiguration()
+        {
+            SetInteractive(false);
+            statusText.SetText("Applying configuration...");
+
+            try
+            {
+                var response = await selection.ApplyAsync(apiKeyInput.text);
+                apiKeyInput.text = string.Empty;
+                statusText.SetText($"Active: {response.provider} / {response.model}");
+            }
+            catch (Exception error)
+            {
+                statusText.SetText($"Configuration failed: {error.Message}");
+                Debug.LogException(error, this);
+            }
+            finally
+            {
+                SetInteractive(true);
+            }
+        }
+
         private void SetInteractive(bool value)
         {
             providerDropdown.interactable = value;
             modelDropdown.interactable = value;
+            apiKeyInput.interactable = value;
+            applyButton.interactable = value;
         }
     }
 }
