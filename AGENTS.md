@@ -6,6 +6,7 @@
 - Before editing, explain the goal and affected files. After editing, report test results and pause for user review before starting the next batch.
 - At the end of every batch, explicitly state whether any planned code changes still remain.
 - Communicate concisely in Chinese. Explain unfamiliar Python or FastAPI behavior with common server-side or Go comparisons when useful.
+- Add concise comments for Unity lifecycle, coordinate assumptions, and non-obvious logic; avoid comments that only repeat the code.
 
 # Research Direction
 

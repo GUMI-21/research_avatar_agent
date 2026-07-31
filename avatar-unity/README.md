@@ -29,10 +29,12 @@ tracked scripts and scenes. Model `.meta` files remain ignored with the models.
 3. Copy a permitted VRM model to `Assets/Models/`.
 4. Use VRM 1.0 when possible.
 5. Do not commit local models unless their license explicitly permits it.
+6. Create an empty `ClassroomRoot`, add `ClassroomEnvironment`, and assign the
+   Avatar root object.
 
 The current loader expects `Assets/Models/male1.vrm` by default. The file name
 will be configurable from the Unity Inspector after the loader is added to a
-shared scene.
+shared scene. The classroom component uses the scene's Main Camera by default.
 
 ## Git Dependency Rules
 
@@ -44,6 +46,7 @@ committed.
 ## Current Baseline
 
 - Runtime loading supports local VRM 1.0 models.
+- A reusable component builds the initial classroom environment.
 - The Chat client connects to `POST /api/v1/unity/chat`.
 - The LLM configuration client loads provider presets and applies a selection.
 
