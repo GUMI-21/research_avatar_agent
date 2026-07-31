@@ -31,7 +31,8 @@ tracked scripts and scenes. Model `.meta` files remain ignored with the models.
 5. Do not commit local models unless their license explicitly permits it.
 6. Create an empty `ClassroomRoot`, add `ClassroomEnvironment`, and assign the
    Avatar root object.
-7. Create an empty `DemoUIRoot` and add `ChatPanelViewBuilder`.
+7. Create an empty `DemoUIRoot` and add `LlmConfigPanelViewBuilder`; required
+   chat and API components are added automatically.
 
 The current loader expects `Assets/Models/male1.vrm` by default. The file name
 will be configurable from the Unity Inspector after the loader is added to a
