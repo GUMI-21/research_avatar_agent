@@ -26,6 +26,19 @@ namespace ResearchAvatarAgent.UI
         private UnityChatClient chatClient;
         private bool isSending;
 
+        public void Bind(
+            TMP_InputField input,
+            TMP_Text chatHistory,
+            Button button,
+            ScrollRect scroll
+        )
+        {
+            messageInput = input;
+            historyText = chatHistory;
+            sendButton = button;
+            historyScroll = scroll;
+        }
+
         private void Awake()
         {
             chatClient = GetComponent<UnityChatClient>();
