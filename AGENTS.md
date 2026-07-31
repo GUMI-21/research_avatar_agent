@@ -8,6 +8,13 @@
 - Communicate concisely in Chinese. Explain unfamiliar Python or FastAPI behavior with common server-side or Go comparisons when useful.
 - Add concise comments for Unity lifecycle, coordinate assumptions, and non-obvious logic; avoid comments that only repeat the code.
 
+# Git Workflow
+
+- Keep `main` synchronized with `origin/main` and do milestone work on a dedicated feature branch.
+- Use small local commits for each reviewed implementation batch.
+- After milestone testing, push the feature branch and use a pull request with squash merge so `main` receives one stage-level commit.
+- Do not push or merge unless the user requests it.
+
 # Research Direction
 
 - Working topic: an LLM- and emotion-model-based 3D avatar educational support system.
