@@ -4,7 +4,7 @@ using UnityEngine.UI;
 
 namespace ResearchAvatarAgent.UI
 {
-    internal static class DemoUiFactory
+    internal static partial class DemoUiFactory
     {
         public static RectTransform CreateRect(string name, Transform parent)
         {
