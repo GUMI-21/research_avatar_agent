@@ -1,3 +1,4 @@
+using System;
 using TMPro;
 using UnityEngine;
 using UnityEngine.UI;
@@ -49,10 +50,20 @@ namespace ResearchAvatarAgent.UI
             TextAlignmentOptions alignment = TextAlignmentOptions.Left
         )
         {
+            var fontAsset = TMP_Settings.instance == null
+                ? null
+                : TMP_Settings.defaultFontAsset;
+            if (fontAsset == null)
+            {
+                throw new InvalidOperationException(
+                    "Import TextMeshPro Essential Resources before building the demo UI."
+                );
+            }
+
             var text = CreateRect(name, parent)
                 .gameObject.AddComponent<TextMeshProUGUI>();
             text.text = value;
-            text.font = TMP_Settings.defaultFontAsset;
+            text.font = fontAsset;
             text.fontSize = fontSize;
             text.color = color;
             text.alignment = alignment;

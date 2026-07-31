@@ -14,6 +14,9 @@ namespace ResearchAvatarAgent.Scene
 
         private void Start()
         {
+            // Runtime geometry uses local coordinates, so its root must be the world origin.
+            transform.SetPositionAndRotation(Vector3.zero, Quaternion.identity);
+            transform.localScale = Vector3.one;
             BuildEnvironment();
             PositionPresentation();
         }
@@ -79,7 +82,15 @@ namespace ResearchAvatarAgent.Scene
                 Debug.LogWarning("Classroom requires an Avatar Root assignment.", this);
             }
 
-            sceneCamera ??= Camera.main;
+            // Unity objects use an overloaded null check, which is not respected by ??=.
+            if (sceneCamera == null)
+            {
+                sceneCamera = Camera.main;
+            }
+            if (sceneCamera == null)
+            {
+                sceneCamera = FindFirstObjectByType<Camera>();
+            }
             if (sceneCamera == null)
             {
                 Debug.LogWarning("Classroom requires a scene camera.", this);

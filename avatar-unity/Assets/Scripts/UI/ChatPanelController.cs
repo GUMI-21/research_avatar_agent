@@ -54,14 +54,19 @@ namespace ResearchAvatarAgent.UI
 
         private void OnEnable()
         {
+            if (sendButton == null || messageInput == null)
+            {
+                return;
+            }
+
             sendButton.onClick.AddListener(SendCurrentMessage);
             messageInput.onSubmit.AddListener(SubmitFromKeyboard);
         }
 
         private void OnDisable()
         {
-            sendButton.onClick.RemoveListener(SendCurrentMessage);
-            messageInput.onSubmit.RemoveListener(SubmitFromKeyboard);
+            sendButton?.onClick.RemoveListener(SendCurrentMessage);
+            messageInput?.onSubmit.RemoveListener(SubmitFromKeyboard);
         }
 
         private void SubmitFromKeyboard(string _)

@@ -26,12 +26,13 @@ tracked scripts and scenes. Model `.meta` files remain ignored with the models.
 
 1. Open this directory as a project from Unity Hub.
 2. Confirm that a valid Unity Personal license is active.
-3. Copy a permitted VRM model to `Assets/Models/`.
-4. Use VRM 1.0 when possible.
-5. Do not commit local models unless their license explicitly permits it.
-6. Create an empty `ClassroomRoot`, add `ClassroomEnvironment`, and assign the
+3. Use `Window > TextMeshPro > Import TMP Essential Resources` once.
+4. Copy a permitted VRM model to `Assets/Models/`.
+5. Use VRM 1.0 when possible.
+6. Do not commit local models unless their license explicitly permits it.
+7. Create an empty `ClassroomRoot`, add `ClassroomEnvironment`, and assign the
    Avatar root object.
-7. Create an empty `DemoUIRoot` and add `LlmConfigPanelViewBuilder`; required
+8. Create an empty `DemoUIRoot` and add `LlmConfigPanelViewBuilder`; required
    chat and API components are added automatically.
 
 The current loader expects `Assets/Models/male1.vrm` by default. The file name
