@@ -50,7 +50,11 @@ namespace ResearchAvatarAgent.Avatar
                 }
 
                 Instance.transform.SetParent(transform, false);
-                Debug.Log($"Loaded avatar model: {fileName}", this);
+                var rendererCount = Instance.GetComponentsInChildren<Renderer>().Length;
+                Debug.Log(
+                    $"Loaded avatar model: {fileName}, renderers={rendererCount}",
+                    this
+                );
             }
             catch (OperationCanceledException)
             {
