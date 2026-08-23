@@ -131,6 +131,10 @@ class LLMRuntimeConfigurationTest(unittest.TestCase):
 
         settings = Settings.model_validate(raw_config)
 
+        self.assertEqual(
+            settings.database.url,
+            "sqlite+aiosqlite:///data/personal_agent.db",
+        )
         self.assertEqual(settings.llm.default_provider, LLMProvider.MOCK)
         catalog = {item.provider: item for item in LLM_PROVIDER_CATALOG.providers}
         for provider in (
@@ -146,6 +150,10 @@ class LLMRuntimeConfigurationTest(unittest.TestCase):
 
         self.assertEqual(settings.server.host, "0.0.0.0")
         self.assertFalse(settings.server.reload)
+        self.assertEqual(
+            settings.database.url,
+            "sqlite+aiosqlite:////app/runtime/data/personal_agent.db",
+        )
         self.assertEqual(settings.llm.default_provider, LLMProvider.MOCK)
 
 

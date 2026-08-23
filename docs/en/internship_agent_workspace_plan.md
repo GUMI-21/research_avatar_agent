@@ -88,7 +88,7 @@ Retrieval combines keyword and vector results, applies client/source filters, de
 6. ACP compatibility spike, Codex/Claude adapters, direct CLI fallbacks where needed, cancellation, timeouts, and normalized events.
 7. Usage Dashboard, restricted demo mode, documentation, tests, and interview packaging.
 
-Each batch contains about 300 lines of core implementation, is tested independently, and pauses for review.
+Each batch contains about 100 lines of core implementation, is tested independently, and pauses for review.
 
 ## Completion Criteria
 

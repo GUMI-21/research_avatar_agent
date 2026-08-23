@@ -50,6 +50,12 @@ class LoggingSettings(StrictSettingsModel):
     console: bool
 
 
+class DatabaseSettings(StrictSettingsModel):
+    """Persistence connection used by workspace repositories."""
+
+    url: str = Field(min_length=1)
+
+
 class LLMProviderSettings(StrictSettingsModel):
     """Default model and endpoint for one cloud provider."""
 
@@ -75,6 +81,7 @@ class Settings(StrictSettingsModel):
     app: AppSettings
     server: ServerSettings
     logging: LoggingSettings
+    database: DatabaseSettings
     llm: LLMSettings
 
 

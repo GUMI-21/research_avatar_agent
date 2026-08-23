@@ -17,6 +17,9 @@ logging:
   compression: gz
   console: true
 
+database:
+  url: sqlite+aiosqlite:///data/personal_agent.db
+
 llm:
   default_provider: mock
   timeout_seconds: 30
