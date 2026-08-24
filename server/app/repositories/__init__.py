@@ -1,2 +1,5 @@
-"""Persistence boundaries for memory, project context, and run history."""
+"""Persistence boundaries for workspace resources and run history."""
 
+from app.repositories.agent import AgentRepository
+
+__all__ = ["AgentRepository"]

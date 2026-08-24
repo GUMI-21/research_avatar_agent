@@ -20,7 +20,7 @@ class Database:
 
     def __init__(self, url: str) -> None:
         self.engine = create_async_engine(url)
-        # session创建工厂
+        # session创建工厂，session：数据库每次工作的单元对象。
         self.session_factory = async_sessionmaker(
             self.engine,
             class_=AsyncSession,
@@ -32,6 +32,7 @@ class Database:
         async with self.session_factory() as session:
             # yield 暂停
             yield session
+            # 离开async with自动关闭session
 
     async def dispose(self) -> None:
         await self.engine.dispose()
