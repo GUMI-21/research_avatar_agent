@@ -45,11 +45,23 @@ class AgentRoutesTest(unittest.IsolatedAsyncioTestCase):
             "/api/v1/agents",
             headers={"X-Client-ID": "client-b"},
         )
+        agent_id = created.json()["id"]
+        detail = await self.client.get(
+            f"/api/v1/agents/{agent_id}",
+            headers={"X-Client-ID": "client-a"},
+        )
+        concealed = await self.client.get(
+            f"/api/v1/agents/{agent_id}",
+            headers={"X-Client-ID": "client-b"},
+        )
 
         self.assertEqual(created.status_code, 201)
         self.assertEqual(created.json()["client_id"], "client-a")
         self.assertEqual(len(visible.json()["agents"]), 1)
         self.assertEqual(hidden.json(), {"agents": []})
+        self.assertEqual(detail.json()["id"], agent_id)
+        self.assertEqual(concealed.status_code, 404)
+        self.assertEqual(concealed.json(), {"detail": "Agent not found"})
 
     async def test_client_header_is_required(self) -> None:
         response = await self.client.get("/api/v1/agents")

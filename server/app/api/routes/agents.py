@@ -1,6 +1,6 @@
 """Client-scoped Agent resource routes."""
 
-from fastapi import APIRouter, status
+from fastapi import APIRouter, HTTPException, status
 
 from app.api.dependencies import ClientID, DBSession
 from app.repositories import AgentRepository
@@ -38,3 +38,18 @@ async def list_agents(
             for agent in agents
         ]
     )
+
+# 限定agent_id查询
+@router.get("/{agent_id}", response_model=AgentRead)
+async def get_agent(
+    agent_id: str,
+    client_id: ClientID,
+    session: DBSession,
+) -> AgentRead:
+    agent = await AgentRepository(session).get(client_id, agent_id)
+    if agent is None:
+        raise HTTPException(
+            status_code=status.HTTP_404_NOT_FOUND,
+            detail="Agent not found",
+        )
+    return AgentRead.model_validate(agent)
