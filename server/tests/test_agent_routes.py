@@ -68,6 +68,35 @@ class AgentRoutesTest(unittest.IsolatedAsyncioTestCase):
 
         self.assertEqual(response.status_code, 422)
 
+    async def test_duplicate_name_conflicts_only_within_client(self) -> None:
+        payload = {
+            "name": "Personal",
+            "system_prompt": "Help with my work.",
+        }
+        first = await self.client.post(
+            "/api/v1/agents",
+            headers={"X-Client-ID": "client-a"},
+            json=payload,
+        )
+        duplicate = await self.client.post(
+            "/api/v1/agents",
+            headers={"X-Client-ID": "client-a"},
+            json=payload,
+        )
+        other_client = await self.client.post(
+            "/api/v1/agents",
+            headers={"X-Client-ID": "client-b"},
+            json=payload,
+        )
+
+        self.assertEqual(first.status_code, 201)
+        self.assertEqual(duplicate.status_code, 409)
+        self.assertEqual(
+            duplicate.json(),
+            {"detail": "Agent name already exists"},
+        )
+        self.assertEqual(other_client.status_code, 201)
+
 
 if __name__ == "__main__":
     unittest.main()

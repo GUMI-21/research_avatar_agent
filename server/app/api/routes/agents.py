@@ -1,6 +1,7 @@
 """Client-scoped Agent resource routes."""
 
 from fastapi import APIRouter, HTTPException, status
+from sqlalchemy.exc import IntegrityError
 
 from app.api.dependencies import ClientID, DBSession
 from app.repositories import AgentRepository
@@ -17,12 +18,19 @@ async def create_agent(
     session: DBSession,
 ) -> AgentRead:
     repository = AgentRepository(session)
-    agent = await repository.create(
-        client_id,
-        # 展开字典
-        **request.model_dump(),
-    )
-    await session.commit()
+    try:
+        agent = await repository.create(
+            client_id,
+            # 展开字典
+            **request.model_dump(),
+        )
+        await session.commit()
+    except IntegrityError as error:
+        await session.rollback()
+        raise HTTPException(
+            status_code=status.HTTP_409_CONFLICT,
+            detail="Agent name already exists",
+        ) from error
     return AgentRead.model_validate(agent)
 
 # 获取当前agent_list
