@@ -20,7 +20,7 @@ async def get_db_session(request: Request) -> AsyncIterator[AsyncSession]:
     async with database.session() as session:
         yield session
 
-
+# 根据请求头获取client_id
 def get_client_id(
     x_client_id: Annotated[
         str,
@@ -36,6 +36,6 @@ def get_client_id(
         )
     return client_id
 
-
+# Annotated[参数类型, Depends(获取参数方法)]
 DBSession = Annotated[AsyncSession, Depends(get_db_session)]
 ClientID = Annotated[str, Depends(get_client_id)]
