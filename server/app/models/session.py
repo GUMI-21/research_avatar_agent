@@ -16,15 +16,15 @@ class SessionRecord(Base):
     )
 
     id: Mapped[str] = mapped_column(String(36), primary_key=True, default=new_id)
-    client_id: Mapped[str] = mapped_column(String(64))
+    client_id: Mapped[str] = mapped_column(String(64))  # 数据隔离作用域
     agent_id: Mapped[str] = mapped_column(
         ForeignKey("agents.id", ondelete="CASCADE"),
         index=True,
-    )
+    )  # 对话入口和默认 Agent
     title: Mapped[str] = mapped_column(
         String(160),
         default="New conversation",
         server_default="New conversation",
-    )
+    )  # Web 对话框展示标题
     created_at: Mapped[datetime] = mapped_column(default=utc_now)
     updated_at: Mapped[datetime] = mapped_column(default=utc_now, onupdate=utc_now)
