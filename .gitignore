@@ -43,3 +43,6 @@ server/config/prod.yaml
 Thumbs.db
 .vscode/
 .idea/
+
+# Local interview review notes
+/docs/zh/interview/

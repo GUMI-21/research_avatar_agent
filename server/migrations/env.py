@@ -10,7 +10,7 @@ from sqlalchemy.ext.asyncio import async_engine_from_config
 
 from app.core.database import Base
 from app.core.settings import load_settings
-from app.models import AgentRecord, SessionRecord  # noqa: F401
+from app.models import AgentRecord, MessageRecord, SessionRecord  # noqa: F401
 
 config = context.config
 if not config.get_main_option("sqlalchemy.url"):
