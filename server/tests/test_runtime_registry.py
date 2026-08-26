@@ -3,7 +3,7 @@
 import unittest
 from collections.abc import AsyncIterator
 
-from app.adapters.agent import RuntimeEvent, RuntimeRequest
+from app.adapters.agent import RuntimeEvent, RuntimeEventType, RuntimeRequest
 from app.services.runtime_registry import (
     RuntimeAlreadyRegisteredError,
     RuntimeNotFoundError,
@@ -16,7 +16,10 @@ class FakeRuntime:
         self,
         request: RuntimeRequest,
     ) -> AsyncIterator[RuntimeEvent]:
-        yield RuntimeEvent(type="assistant_delta", payload={"text": request.message})
+        yield RuntimeEvent(
+            type=RuntimeEventType.ASSISTANT_DELTA,
+            payload={"text": request.message},
+        )
 
 
 class RuntimeRegistryTest(unittest.IsolatedAsyncioTestCase):

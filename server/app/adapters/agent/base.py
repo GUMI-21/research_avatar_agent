@@ -2,6 +2,7 @@
 
 from collections.abc import AsyncIterator, Mapping
 from dataclasses import dataclass, field
+from enum import StrEnum
 from typing import Protocol
 
 '''
@@ -18,11 +19,33 @@ class RuntimeRequest:
     session_id: str
     message: str
 
-
+# playload：事件执行的具体数据，根据type内容不同；dataclass：自动创建构造函数
 @dataclass(frozen=True)
 class RuntimeEvent:
-    type: str
+    # 前向引用”类型标注
+    type: "RuntimeEventType"
     payload: Mapping[str, object] = field(default_factory=dict)
+
+
+# Agent执行状态类型
+class RuntimeEventType(StrEnum):
+    """Provider-neutral events exposed to orchestration and WebSocket layers."""
+
+    RUN_STARTED = "run_started"
+    RUN_FINISHED = "run_finished"
+    RUN_FAILED = "run_failed"
+    RUN_CANCELLED = "run_cancelled"
+    AGENT_STARTED = "agent_started"
+    AGENT_STATUS = "agent_status"
+    RETRIEVAL_STARTED = "retrieval_started"
+    RETRIEVAL_RESULT = "retrieval_result"
+    TOOL_STARTED = "tool_started"
+    TOOL_FINISHED = "tool_finished"
+    HANDOFF_STARTED = "handoff_started"
+    HANDOFF_FINISHED = "handoff_finished"
+    USAGE_UPDATED = "usage_updated"
+    ASSISTANT_DELTA = "assistant_delta"
+    APPROVAL_REQUIRED = "approval_required"
 
 
 # 接收RuntimeRequest，产生多个异步RuntimeEvent； ...只声明，不实现
