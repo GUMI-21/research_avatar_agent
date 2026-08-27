@@ -19,7 +19,7 @@ from app.adapters.llm.errors import (
 )
 from app.schemas.llm import LLMProvider
 
-
+# 继承LLMclient抽象基
 class MockLLMAdapter(LLMClient):
     """Deterministic local adapter used before configuration and in tests."""
 
@@ -31,6 +31,7 @@ class MockLLMAdapter(LLMClient):
         )
 
 
+# 中间类
 class _HTTPAdapter(LLMClient):
     """Shared HTTP error handling for provider-specific request formats."""
 

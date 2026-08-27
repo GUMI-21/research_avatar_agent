@@ -37,7 +37,7 @@ class LLMClientConfig:
     timeout_seconds: float
     max_output_tokens: int
 
-
+# LLMClient 只定义统一接口，不负责真正调用模型。
 class LLMClient(ABC):
     """Abstract provider boundary used by ChatService."""
 

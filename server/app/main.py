@@ -5,10 +5,12 @@ from contextlib import asynccontextmanager
 
 from fastapi import FastAPI
 
+from app.adapters.agent import NativeAgentRuntime
 from app.api.router import api_router
 from app.core.database import Database
 from app.core.settings import Settings, get_settings
 from app.services.llm_runtime import LLMRuntime
+from app.services.runtime_registry import RuntimeRegistry
 from logs import configure_logging, log
 
 
@@ -38,7 +40,11 @@ def create_app(settings: Settings) -> FastAPI:
     )
     app.state.settings = settings
     app.state.database = Database(settings.database.url)
-    app.state.llm_runtime = LLMRuntime(settings.llm)
+    llm_runtime = LLMRuntime(settings.llm)
+    runtime_registry = RuntimeRegistry()
+    runtime_registry.register("native", lambda: NativeAgentRuntime(llm_runtime))
+    app.state.llm_runtime = llm_runtime
+    app.state.runtime_registry = runtime_registry
     app.include_router(api_router)
     return app
 
