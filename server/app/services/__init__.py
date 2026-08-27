@@ -5,5 +5,17 @@ from app.services.run import (
     RunNotFoundError,
     RunService,
 )
+from app.services.run_event import (
+    EventPolicy,
+    RunEventService,
+    UnsupportedRuntimeEventError,
+)
 
-__all__ = ["InvalidRunTransitionError", "RunNotFoundError", "RunService"]
+__all__ = [
+    "EventPolicy",
+    "InvalidRunTransitionError",
+    "RunEventService",
+    "RunNotFoundError",
+    "RunService",
+    "UnsupportedRuntimeEventError",
+]

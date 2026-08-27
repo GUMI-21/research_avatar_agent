@@ -41,11 +41,13 @@ class RuntimeEventType(StrEnum):
     RETRIEVAL_RESULT = "retrieval_result"
     TOOL_STARTED = "tool_started"
     TOOL_FINISHED = "tool_finished"
+    # 转交任务
     HANDOFF_STARTED = "handoff_started"
     HANDOFF_FINISHED = "handoff_finished"
     USAGE_UPDATED = "usage_updated"
     ASSISTANT_DELTA = "assistant_delta"
     APPROVAL_REQUIRED = "approval_required"
+    PROVIDER_RETRY = "provider_retry"
 
 
 # 接收RuntimeRequest，产生多个异步RuntimeEvent； ...只声明，不实现
