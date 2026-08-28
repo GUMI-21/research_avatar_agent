@@ -54,7 +54,7 @@ class RuntimeEventType(StrEnum):
 class AgentRuntimeAdapter(Protocol):
     """Stream normalized events without exposing provider-specific output."""
 
-    async def stream(
+    def stream(
         self,
         request: RuntimeRequest,
     ) -> AsyncIterator[RuntimeEvent]: ...

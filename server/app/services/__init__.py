@@ -10,12 +10,22 @@ from app.services.run_event import (
     RunEventService,
     UnsupportedRuntimeEventError,
 )
+from app.services.run_execution import (
+    RunExecutionParentNotFoundError,
+    RunExecutionService,
+    RuntimeEndedWithoutTerminalEventError,
+    StreamedRunEvent,
+)
 
 __all__ = [
     "EventPolicy",
     "InvalidRunTransitionError",
+    "RunExecutionParentNotFoundError",
+    "RunExecutionService",
     "RunEventService",
     "RunNotFoundError",
     "RunService",
+    "RuntimeEndedWithoutTerminalEventError",
+    "StreamedRunEvent",
     "UnsupportedRuntimeEventError",
 ]
