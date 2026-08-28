@@ -1,8 +1,8 @@
 """WebSocket commands and public Agent Run event frames."""
 
-from typing import Literal
+from typing import Annotated, Literal
 
-from pydantic import BaseModel, Field, field_validator
+from pydantic import BaseModel, Field, TypeAdapter, field_validator
 
 from app.adapters.agent import RuntimeEventType
 
@@ -20,6 +20,20 @@ class SendMessageCommand(BaseModel):
             raise ValueError("must not be blank")
         return value
 
+
+class ResumeRunCommand(BaseModel):
+    type: Literal["resume_run"]
+    run_id: str = Field(min_length=1, max_length=36)
+    after_sequence: int = Field(default=0, ge=0)
+    limit: int = Field(default=100, ge=1, le=100)
+
+
+WorkspaceCommand = Annotated[
+    SendMessageCommand | ResumeRunCommand,
+    Field(discriminator="type"),
+]
+WORKSPACE_COMMAND_ADAPTER = TypeAdapter(WorkspaceCommand)
+
 # 服务端发送给 WebSocket 客户端的统一消息外壳
 class RunEventFrame(BaseModel):
     type: RuntimeEventType
@@ -32,3 +46,11 @@ class WebSocketErrorFrame(BaseModel):
     type: Literal["error"] = "error"
     code: str
     message: str
+
+
+class ReplayCompleteFrame(BaseModel):
+    type: Literal["replay_complete"] = "replay_complete"
+    run_id: str
+    last_sequence: int
+    count: int
+    has_more: bool

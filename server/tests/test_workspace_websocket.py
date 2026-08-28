@@ -66,7 +66,7 @@ class WorkspaceWebSocketTest(unittest.TestCase):
     @patch("app.services.message.log")
     @patch("app.services.run.log")
     @patch("app.services.run_event.log")
-    def test_send_message_streams_normalized_events(self, *_mocks) -> None:
+    def test_send_message_streams_and_replays_durable_events(self, *_mocks) -> None:
         with self.client.websocket_connect(
             "/api/v1/ws?client_id=client-a"
         ) as websocket:
@@ -79,12 +79,41 @@ class WorkspaceWebSocketTest(unittest.TestCase):
             )
             frames = [websocket.receive_json() for _ in range(3)]
 
+        run_id = frames[0]["run_id"]
+        with self.client.websocket_connect(
+            "/api/v1/ws?client_id=client-a"
+        ) as websocket:
+            websocket.send_json(
+                {
+                    "type": "resume_run",
+                    "run_id": run_id,
+                    "after_sequence": 1,
+                }
+            )
+            replayed = [websocket.receive_json() for _ in range(2)]
+        with self.client.websocket_connect(
+            "/api/v1/ws?client_id=client-b"
+        ) as websocket:
+            websocket.send_json(
+                {"type": "resume_run", "run_id": run_id, "after_sequence": 0}
+            )
+            hidden = websocket.receive_json()
+
         self.assertEqual(
             [frame["type"] for frame in frames],
             ["run_started", "assistant_delta", "run_finished"],
         )
         self.assertEqual([frame["sequence"] for frame in frames], [1, None, 2])
         self.assertEqual(len({frame["run_id"] for frame in frames}), 1)
+        self.assertEqual(
+            [frame["type"] for frame in replayed],
+            ["run_finished", "replay_complete"],
+        )
+        self.assertEqual(replayed[-1]["last_sequence"], 2)
+        self.assertEqual(replayed[-1]["count"], 1)
+        self.assertFalse(replayed[-1]["has_more"])
+        self.assertEqual(hidden["type"], "replay_complete")
+        self.assertEqual(hidden["count"], 0)
 
     @patch("app.api.routes.workspace_ws.log")
     def test_invalid_command_returns_safe_error(self, _mocked_log) -> None:

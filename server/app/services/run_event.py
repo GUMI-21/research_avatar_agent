@@ -1,5 +1,6 @@
 """Visibility and persistence policy for normalized Runtime events."""
 
+from collections.abc import Sequence
 from dataclasses import dataclass
 
 from sqlalchemy.ext.asyncio import AsyncSession
@@ -62,6 +63,21 @@ class RunEventService:
             return EVENT_POLICIES[event.type]
         except (KeyError, TypeError) as error:
             raise UnsupportedRuntimeEventError(str(event.type)) from error
+
+    async def replay(
+        self,
+        client_id: str,
+        run_id: str,
+        *,
+        after_sequence: int = 0,
+        limit: int = 100,
+    ) -> Sequence[RunEventRecord]:
+        return await self._repository.list_events(
+            client_id,
+            run_id,
+            after_sequence=after_sequence,
+            limit=limit,
+        )
 
     async def process(
         self,
