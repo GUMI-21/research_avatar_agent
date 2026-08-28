@@ -27,15 +27,27 @@ class NativeAgentRuntime:
             type=RuntimeEventType.AGENT_STARTED,
             payload={"agent_id": request.agent_id, "runtime": "native"},
         )
+        provider: str | None = None
+        model: str | None = None
+        emitted_text = False
         try:
-            # 获取llm msg
-            result = await self._llm_client.generate(
+            async for chunk in self._llm_client.stream(
                 LLMRequest(
                     request_id=request.run_id,
                     session_id=request.session_id,
                     message=request.message,
                 )
-            )
+            ):
+                provider = chunk.provider.value
+                model = chunk.model
+                if chunk.text:
+                    emitted_text = True
+                    yield RuntimeEvent(
+                        type=RuntimeEventType.ASSISTANT_DELTA,
+                        payload={"text": chunk.text},
+                    )
+            if not emitted_text:
+                raise RuntimeError("LLM stream ended without text")
         except Exception as error:
             yield RuntimeEvent(
                 type=RuntimeEventType.RUN_FAILED,
@@ -44,14 +56,10 @@ class NativeAgentRuntime:
             raise
 
         yield RuntimeEvent(
-            type=RuntimeEventType.ASSISTANT_DELTA,
-            payload={"text": result.text},
-        )
-        yield RuntimeEvent(
             type=RuntimeEventType.USAGE_UPDATED,
             payload={
-                "provider": result.provider.value,
-                "model": result.model,
+                "provider": provider,
+                "model": model,
                 "cost_status": "unavailable",
             },
         )

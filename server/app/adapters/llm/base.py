@@ -1,6 +1,7 @@
 """Provider-independent LLM client contracts."""
 
 from abc import ABC, abstractmethod
+from collections.abc import AsyncIterator
 from dataclasses import dataclass
 
 from pydantic import SecretStr
@@ -27,6 +28,15 @@ class LLMResult:
 
 
 @dataclass(frozen=True)
+class LLMStreamChunk:
+    """One normalized text chunk returned by a streaming provider."""
+
+    text: str
+    provider: LLMProvider
+    model: str
+
+
+@dataclass(frozen=True)
 class LLMClientConfig:
     """Resolved runtime values required by one provider adapter."""
 
@@ -44,3 +54,13 @@ class LLMClient(ABC):
     @abstractmethod
     async def generate(self, request: LLMRequest) -> LLMResult:
         """Generate one normalized text result."""
+
+    # LLM流式输出，不支持流式走下面的默认方法包装为chunk; 子类没有定义stream的话走默认方法
+    async def stream(self, request: LLMRequest) -> AsyncIterator[LLMStreamChunk]:
+        """Wrap non-streaming providers as a single compatible chunk."""
+        result = await self.generate(request)
+        yield LLMStreamChunk(
+            text=result.text,
+            provider=result.provider,
+            model=result.model,
+        )

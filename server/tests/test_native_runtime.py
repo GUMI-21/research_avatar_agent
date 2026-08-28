@@ -1,9 +1,15 @@
 """Tests for the API-backed native Personal Agent runtime."""
 
 import unittest
+from collections.abc import AsyncIterator
 
 from app.adapters.agent import NativeAgentRuntime, RuntimeEventType, RuntimeRequest
-from app.adapters.llm import LLMClient, LLMRequest, LLMResult
+from app.adapters.llm import (
+    LLMClient,
+    LLMRequest,
+    LLMResult,
+    LLMStreamChunk,
+)
 from app.schemas.llm import LLMProvider
 
 
@@ -19,6 +25,18 @@ class FakeLLMClient(LLMClient):
             provider=LLMProvider.MOCK,
             model="mock-echo",
         )
+
+
+class ChunkedLLMClient(FakeLLMClient):
+    async def stream(
+        self, request: LLMRequest
+    ) -> AsyncIterator[LLMStreamChunk]:
+        for text in ("Reply: ", request.message):
+            yield LLMStreamChunk(
+                text=text,
+                provider=LLMProvider.MOCK,
+                model="mock-stream",
+            )
 
 
 def make_request() -> RuntimeRequest:
@@ -49,6 +67,19 @@ class NativeAgentRuntimeTest(unittest.IsolatedAsyncioTestCase):
         )
         self.assertEqual(events[2].payload["text"], "Reply: Hello")
         self.assertEqual(events[3].payload["cost_status"], "unavailable")
+
+    async def test_stream_chunks_become_separate_assistant_deltas(self) -> None:
+        runtime = NativeAgentRuntime(ChunkedLLMClient())
+
+        events = [event async for event in runtime.stream(make_request())]
+        deltas = [
+            event.payload["text"]
+            for event in events
+            if event.type is RuntimeEventType.ASSISTANT_DELTA
+        ]
+
+        self.assertEqual(deltas, ["Reply: ", "Hello"])
+        self.assertEqual(events[-2].payload["model"], "mock-stream")
 
     async def test_failure_event_is_emitted_before_error_propagates(self) -> None:
         runtime = NativeAgentRuntime(FakeLLMClient(RuntimeError("unavailable")))
