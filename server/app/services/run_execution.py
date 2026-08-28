@@ -30,7 +30,7 @@ TERMINAL_EVENTS = {
 class StreamedRunEvent:
     run_id: str
     event: RuntimeEvent
-    sequence: int | None
+    sequence: int | None  # Run 内持久化事件序号，用于重连补发
 
 
 class RunExecutionParentNotFoundError(LookupError):
@@ -41,7 +41,7 @@ class RuntimeEndedWithoutTerminalEventError(RuntimeError):
     pass
 
 
-# agent执行快照生成器
+# Agent Run 执行与事件编排服务
 class RunExecutionService:
     def __init__(self, session: AsyncSession, registry: RuntimeRegistry) -> None:
         self._session = session
