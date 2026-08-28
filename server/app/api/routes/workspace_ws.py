@@ -1,14 +1,18 @@
 """WebSocket entrypoint for streamed Personal Agent Runs."""
 
+import asyncio
+from contextlib import suppress
 from typing import Annotated
 
 from fastapi import APIRouter, Query, WebSocket, WebSocketDisconnect
-from pydantic import ValidationError
+from pydantic import BaseModel, ValidationError
 
 from app.adapters.agent import RuntimeEventType
 from app.core.database import Database
 from app.schemas.run_stream import (
     WORKSPACE_COMMAND_ADAPTER,
+    PingCommand,
+    PongFrame,
     ReplayCompleteFrame,
     ResumeRunCommand,
     RunEventFrame,
@@ -35,6 +39,9 @@ async def workspace_socket(
     database: Database = websocket.app.state.database
     registry: RuntimeRegistry = websocket.app.state.runtime_registry
     log.info("websocket_connected business=agent_workspace client_id={}", client_id)
+    # 异步协程锁，保证发送消息不冲突
+    send_lock = asyncio.Lock()
+    active_task: asyncio.Task[None] | None = None
     try:
         while True:
             try:
@@ -45,14 +52,29 @@ async def workspace_socket(
             except (ValidationError, ValueError):
                 await _send_error(
                     websocket,
+                    send_lock,
                     "invalid_command",
-                    "Expected a valid send_message command",
+                    "Expected a valid workspace command",
                 )
                 continue
-
+            # 客户端应用层心跳；isinstance 检查命令的实际类型
+            if isinstance(command, PingCommand):
+                await _send_frame(
+                    websocket,
+                    send_lock,
+                    PongFrame(request_id=command.request_id),
+                )
+                continue
+            # 客户端重连后，通过 ResumeRunCommand 请求补发事件
             if isinstance(command, ResumeRunCommand):
                 try:
-                    await _replay_run(websocket, database, client_id, command)
+                    await _replay_run(
+                        websocket,
+                        send_lock,
+                        database,
+                        client_id,
+                        command,
+                    )
                 except WebSocketDisconnect:
                     raise
                 except Exception as error:
@@ -65,67 +87,117 @@ async def workspace_socket(
                     )
                     await _send_error(
                         websocket,
+                        send_lock,
                         "replay_failed",
                         "Run event replay failed",
                     )
                 continue
-
-            try:
-                async with database.session() as session:
-                    # 消费 Agent Run 事件流，并将允许公开的事件发送给客户端
-                    service = RunExecutionService(session, registry)
-                    async for item in service.stream(
-                        client_id,
-                        command.session_id,
-                        command.content,
-                    ):
-                        frame = RunEventFrame(
-                            type=item.event.type,
-                            run_id=item.run_id,
-                            sequence=item.sequence,
-                            payload=dict(item.event.payload),
-                        )
-                        # 转换为只包含 JSON 兼容值的字典
-                        await websocket.send_json(frame.model_dump(mode="json"))
-            except WebSocketDisconnect:
-                # 继续抛给外层统一记录断开日志
-                raise
-            except RunExecutionParentNotFoundError:
-                await _send_error(websocket, "not_found", "Session not found")
-            except RuntimeNotFoundError:
+            # 当前连接已有活跃 Run 时，拒绝启动第二个 Run
+            if active_task is not None and not active_task.done():
                 await _send_error(
                     websocket,
-                    "runtime_not_found",
-                    "Agent runtime is unavailable",
+                    send_lock,
+                    "run_in_progress",
+                    "This connection already has an active Run",
                 )
-            except Exception as error:
-                log.warning(
-                    "websocket_run_failed business=agent_workspace client_id={} "
-                    "session_id={} error_type={}",
+                continue
+            active_task = asyncio.create_task(
+                _stream_run(
+                    websocket,
+                    send_lock,
+                    database,
+                    registry,
                     client_id,
                     command.session_id,
-                    type(error).__name__,
+                    command.content,
                 )
-                await _send_error(websocket, "run_failed", "Agent run failed")
+            )
+    # WebSocket 接收消息时检测到断连
     except WebSocketDisconnect:
         log.info(
             "websocket_disconnected business=agent_workspace client_id={}",
             client_id,
         )
+    finally:
+        if active_task is not None and not active_task.done():
+            active_task.cancel()
+            # 调用cancel，CancelledError是预期结果，等待任务资源关闭
+            with suppress(asyncio.CancelledError):
+                await active_task
 
 
 async def _send_error(
     websocket: WebSocket,
+    send_lock: asyncio.Lock,
     code: str,
     message: str,
 ) -> None:
     frame = WebSocketErrorFrame(code=code, message=message)
-    await websocket.send_json(frame.model_dump(mode="json"))
+    await _send_frame(websocket, send_lock, frame)
+
+
+async def _send_frame(
+    websocket: WebSocket,
+    send_lock: asyncio.Lock,
+    frame: BaseModel,
+) -> None:
+    async with send_lock:
+        await websocket.send_json(frame.model_dump(mode="json"))
+
+
+async def _stream_run(
+    websocket: WebSocket,
+    send_lock: asyncio.Lock,
+    database: Database,
+    registry: RuntimeRegistry,
+    client_id: str,
+    session_id: str,
+    content: str,
+) -> None:
+    try:
+        async with database.session() as session:
+            service = RunExecutionService(session, registry)
+            # 异步消费已经拆分好的 Agent 执行事件
+            async for item in service.stream(client_id, session_id, content):
+                await _send_frame(
+                    websocket,
+                    send_lock,
+                    RunEventFrame(
+                        type=item.event.type,
+                        run_id=item.run_id,
+                        sequence=item.sequence,
+                        payload=dict(item.event.payload),
+                    ),
+                )
+    # 发送消息时检测到断连
+    except WebSocketDisconnect:
+        return
+    except asyncio.CancelledError:
+        raise
+    except RunExecutionParentNotFoundError:
+        await _send_error(websocket, send_lock, "not_found", "Session not found")
+    except RuntimeNotFoundError:
+        await _send_error(
+            websocket,
+            send_lock,
+            "runtime_not_found",
+            "Agent runtime is unavailable",
+        )
+    except Exception as error:
+        log.warning(
+            "websocket_run_failed business=agent_workspace client_id={} "
+            "session_id={} error_type={}",
+            client_id,
+            session_id,
+            type(error).__name__,
+        )
+        await _send_error(websocket, send_lock, "run_failed", "Agent run failed")
 
 
 # webSocket断线补发
 async def _replay_run(
     websocket: WebSocket,
+    send_lock: asyncio.Lock,
     database: Database,
     client_id: str,
     command: ResumeRunCommand,
@@ -148,11 +220,11 @@ async def _replay_run(
             sequence=record.sequence,
             payload=record.payload,
         )
-        await websocket.send_json(frame.model_dump(mode="json"))
+        await _send_frame(websocket, send_lock, frame)
     complete = ReplayCompleteFrame(
         run_id=command.run_id,
         last_sequence=(records[-1].sequence if records else command.after_sequence),
         count=len(records),
         has_more=has_more,
     )
-    await websocket.send_json(complete.model_dump(mode="json"))
+    await _send_frame(websocket, send_lock, complete)

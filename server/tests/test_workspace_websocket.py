@@ -20,6 +20,7 @@ class WebSocketRuntime:
         self, request: RuntimeRequest
     ) -> AsyncIterator[RuntimeEvent]:
         yield RuntimeEvent(type=RuntimeEventType.RUN_STARTED)
+        await asyncio.sleep(0.05)
         yield RuntimeEvent(
             type=RuntimeEventType.ASSISTANT_DELTA,
             payload={"text": f"Reply: {request.message}"},
@@ -125,6 +126,38 @@ class WorkspaceWebSocketTest(unittest.TestCase):
 
         self.assertEqual(frame["type"], "error")
         self.assertEqual(frame["code"], "invalid_command")
+
+    @patch("app.api.routes.workspace_ws.log")
+    @patch("app.repositories.message.log")
+    @patch("app.repositories.run.log")
+    @patch("app.repositories.run_event.log")
+    @patch("app.services.message.log")
+    @patch("app.services.run.log")
+    @patch("app.services.run_event.log")
+    def test_ping_is_handled_while_run_is_active(self, *_mocks) -> None:
+        with self.client.websocket_connect(
+            "/api/v1/ws?client_id=client-a"
+        ) as websocket:
+            command = {
+                "type": "send_message",
+                "session_id": self.session_id,
+                "content": "Hello",
+            }
+            websocket.send_json(command)
+            started = websocket.receive_json()
+            websocket.send_json({"type": "ping", "request_id": "ping-1"})
+            pong = websocket.receive_json()
+            websocket.send_json(command)
+            rejected = websocket.receive_json()
+            remaining = [websocket.receive_json() for _ in range(2)]
+
+        self.assertEqual(started["type"], "run_started")
+        self.assertEqual(pong, {"type": "pong", "request_id": "ping-1"})
+        self.assertEqual(rejected["code"], "run_in_progress")
+        self.assertEqual(
+            [frame["type"] for frame in remaining],
+            ["assistant_delta", "run_finished"],
+        )
 
     @patch("app.api.routes.workspace_ws.log")
     def test_session_is_hidden_from_other_client(self, _mocked_log) -> None:

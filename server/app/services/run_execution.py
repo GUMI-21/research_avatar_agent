@@ -1,5 +1,6 @@
 """Coordinate one Agent Run from runtime selection to streamed events."""
 
+import asyncio
 from collections.abc import AsyncIterator
 from dataclasses import dataclass
 
@@ -103,6 +104,11 @@ class RunExecutionService:
                 event = await anext(iterator)
             except StopAsyncIteration:
                 break
+            except asyncio.CancelledError:
+                if not terminal_received:
+                    cancelled = RuntimeEvent(type=RuntimeEventType.RUN_CANCELLED)
+                    _ = await self._process(client_id, run.id, cancelled)
+                raise
             except Exception as error:
                 if not terminal_received:
                     failure = RuntimeEvent(

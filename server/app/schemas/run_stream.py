@@ -28,8 +28,14 @@ class ResumeRunCommand(BaseModel):
     limit: int = Field(default=100, ge=1, le=100)
 
 
+class PingCommand(BaseModel):
+    # Literal 字段只能是固定值
+    type: Literal["ping"]
+    request_id: str = Field(min_length=1, max_length=64)
+
+
 WorkspaceCommand = Annotated[
-    SendMessageCommand | ResumeRunCommand,
+    SendMessageCommand | ResumeRunCommand | PingCommand,
     Field(discriminator="type"),
 ]
 WORKSPACE_COMMAND_ADAPTER = TypeAdapter(WorkspaceCommand)
@@ -54,3 +60,8 @@ class ReplayCompleteFrame(BaseModel):
     last_sequence: int
     count: int
     has_more: bool
+
+
+class PongFrame(BaseModel):
+    type: Literal["pong"] = "pong"
+    request_id: str

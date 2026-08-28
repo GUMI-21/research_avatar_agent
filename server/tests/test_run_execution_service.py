@@ -1,5 +1,6 @@
 """Tests for coordinating Runtime events with durable Run state."""
 
+import asyncio
 import unittest
 from collections.abc import AsyncIterator
 from unittest.mock import patch
@@ -35,6 +36,14 @@ class FailingRuntime:
     ) -> AsyncIterator[RuntimeEvent]:
         yield RuntimeEvent(type=RuntimeEventType.RUN_STARTED)
         raise RuntimeError("provider unavailable")
+
+
+class BlockingRuntime:
+    async def stream(
+        self, request: RuntimeRequest
+    ) -> AsyncIterator[RuntimeEvent]:
+        yield RuntimeEvent(type=RuntimeEventType.RUN_STARTED)
+        await asyncio.Event().wait()
 
 
 class RunExecutionServiceTest(unittest.IsolatedAsyncioTestCase):
@@ -128,6 +137,39 @@ class RunExecutionServiceTest(unittest.IsolatedAsyncioTestCase):
         self.assertEqual(run.status, "failed")
         self.assertEqual(streamed[-1].event.type, RuntimeEventType.RUN_FAILED)
         self.assertEqual([item.role for item in messages], ["user"])
+
+    async def test_task_cancellation_marks_run_cancelled(self) -> None:
+        async with self.database.session() as database_session:
+            session_id = await self._create_session(database_session, "blocking")
+            registry = RuntimeRegistry()
+            registry.register("blocking", BlockingRuntime)
+            stream = RunExecutionService(database_session, registry).stream(
+                "client-a", session_id, "Hello"
+            )
+            with (
+                patch("app.repositories.run.log"),
+                patch("app.repositories.message.log"),
+                patch("app.repositories.run_event.log"),
+                patch("app.services.message.log"),
+                patch("app.services.run.log"),
+                patch("app.services.run_event.log"),
+            ):
+                started = await anext(stream)
+                waiting = asyncio.create_task(anext(stream))
+                await asyncio.sleep(0)
+                waiting.cancel()
+                with self.assertRaises(asyncio.CancelledError):
+                    await waiting
+
+            run = await RunRepository(database_session).get(
+                "client-a", started.run_id
+            )
+            events = await RunEventRepository(database_session).list_events(
+                "client-a", started.run_id
+            )
+
+        self.assertEqual(run.status, "cancelled")
+        self.assertEqual(events[-1].event_type, "run_cancelled")
 
 
 if __name__ == "__main__":
