@@ -8,6 +8,7 @@ from app.adapters.agent import RuntimeEvent, RuntimeEventType, RuntimeRequest
 from app.core.database import Base, Database
 from app.repositories import (
     AgentRepository,
+    MessageRepository,
     RunEventRepository,
     RunRepository,
     SessionRepository,
@@ -64,7 +65,9 @@ class RunExecutionServiceTest(unittest.IsolatedAsyncioTestCase):
 
             with (
                 patch("app.repositories.run.log"),
+                patch("app.repositories.message.log"),
                 patch("app.repositories.run_event.log"),
+                patch("app.services.message.log"),
                 patch("app.services.run.log"),
                 patch("app.services.run_event.log"),
             ):
@@ -81,6 +84,9 @@ class RunExecutionServiceTest(unittest.IsolatedAsyncioTestCase):
             records = await RunEventRepository(database_session).list_events(
                 "client-a", streamed[0].run_id
             )
+            messages = await MessageRepository(database_session).list_messages(
+                "client-a", session_id
+            )
 
         self.assertEqual(run.status, "completed")
         self.assertEqual([item.sequence for item in streamed], [1, None, 2])
@@ -88,6 +94,9 @@ class RunExecutionServiceTest(unittest.IsolatedAsyncioTestCase):
             [record.event_type for record in records],
             ["run_started", "run_finished"],
         )
+        self.assertEqual([item.role for item in messages], ["user", "assistant"])
+        self.assertEqual([item.content for item in messages], ["Hello", "Hello"])
+        self.assertTrue(all(item.run_id == run.id for item in messages))
 
     async def test_runtime_error_marks_run_failed(self) -> None:
         async with self.database.session() as database_session:
@@ -99,7 +108,9 @@ class RunExecutionServiceTest(unittest.IsolatedAsyncioTestCase):
 
             with (
                 patch("app.repositories.run.log"),
+                patch("app.repositories.message.log"),
                 patch("app.repositories.run_event.log"),
+                patch("app.services.message.log"),
                 patch("app.services.run.log"),
                 patch("app.services.run_event.log"),
                 self.assertRaises(RuntimeError),
@@ -110,9 +121,13 @@ class RunExecutionServiceTest(unittest.IsolatedAsyncioTestCase):
             run = await RunRepository(database_session).get(
                 "client-a", streamed[0].run_id
             )
+            messages = await MessageRepository(database_session).list_messages(
+                "client-a", session_id
+            )
 
         self.assertEqual(run.status, "failed")
         self.assertEqual(streamed[-1].event.type, RuntimeEventType.RUN_FAILED)
+        self.assertEqual([item.role for item in messages], ["user"])
 
 
 if __name__ == "__main__":

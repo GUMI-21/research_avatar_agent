@@ -1,5 +1,6 @@
 """Application services used by routes and graph nodes."""
 
+from app.services.message import MessageService
 from app.services.run import (
     InvalidRunTransitionError,
     RunNotFoundError,
@@ -20,6 +21,7 @@ from app.services.run_execution import (
 __all__ = [
     "EventPolicy",
     "InvalidRunTransitionError",
+    "MessageService",
     "RunExecutionParentNotFoundError",
     "RunExecutionService",
     "RunEventService",

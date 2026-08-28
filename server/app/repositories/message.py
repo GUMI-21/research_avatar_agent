@@ -6,6 +6,7 @@ from sqlalchemy import func, select
 from sqlalchemy.ext.asyncio import AsyncSession
 
 from app.models import AgentRecord, MessageRecord, SessionRecord
+from logs import log
 
 
 class MessageParentNotFoundError(LookupError):
@@ -61,6 +62,16 @@ class MessageRepository:
         )
         self._session.add(message)
         await self._session.flush()
+        log.info(
+            "db_mutation_staged table=messages business=conversation_message "
+            "action=create client_id={} session_id={} message_id={} "
+            "role={} sequence={}",
+            client_id,
+            session_id,
+            message.id,
+            role,
+            message.sequence,
+        )
         return message
 
     # 获取当前对话历史记录

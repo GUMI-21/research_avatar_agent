@@ -7,6 +7,7 @@ from sqlalchemy.ext.asyncio import AsyncSession
 
 from app.adapters.agent import RuntimeEvent, RuntimeEventType, RuntimeRequest
 from app.repositories import AgentRepository, SessionRepository
+from app.services.message import MessageService
 from app.services.run import RunService
 from app.services.run_event import RunEventService
 from app.services.runtime_registry import RuntimeRegistry
@@ -45,6 +46,7 @@ class RunExecutionService:
     def __init__(self, session: AsyncSession, registry: RuntimeRegistry) -> None:
         self._session = session
         self._registry = registry
+        self._messages = MessageService(session)
         self._runs = RunService(session)
         self._events = RunEventService(session)
 
@@ -66,6 +68,7 @@ class RunExecutionService:
         )
         if agent is None:
             raise RunExecutionParentNotFoundError("Agent not found")
+        runtime = self._registry.create(agent.runtime)
         # 创建agent执行快照
         run = await self._runs.create_run(
             client_id,
@@ -74,7 +77,14 @@ class RunExecutionService:
             runtime=agent.runtime,
             model=agent.model,
         )
-        runtime = self._registry.create(agent.runtime)
+        _ = await self._messages.append(
+            client_id,
+            session_id,
+            agent.id,
+            role="user",
+            content=message,
+            run_id=run.id,
+        )
         # 获取迭代器
         iterator = runtime.stream(
             RuntimeRequest(
@@ -86,6 +96,7 @@ class RunExecutionService:
             )
         )
         terminal_received = False
+        assistant_parts: list[str] = []
 
         while True:
             try:
@@ -104,7 +115,20 @@ class RunExecutionService:
                 raise
 
             terminal_received = event.type in TERMINAL_EVENTS or terminal_received
+            if event.type is RuntimeEventType.ASSISTANT_DELTA:
+                text = event.payload.get("text")
+                if isinstance(text, str):
+                    assistant_parts.append(text)
             streamed = await self._process(client_id, run.id, event)
+            if event.type is RuntimeEventType.RUN_FINISHED and assistant_parts:
+                _ = await self._messages.append(
+                    client_id,
+                    session_id,
+                    agent.id,
+                    role="assistant",
+                    content="".join(assistant_parts),
+                    run_id=run.id,
+                )
             if streamed is not None:
                 yield streamed
         # 没有正常结束
