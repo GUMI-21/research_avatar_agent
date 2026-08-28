@@ -158,8 +158,9 @@ class RunExecutionServiceTest(unittest.IsolatedAsyncioTestCase):
                 waiting = asyncio.create_task(anext(stream))
                 await asyncio.sleep(0)
                 waiting.cancel()
+                cancelled = await waiting
                 with self.assertRaises(asyncio.CancelledError):
-                    await waiting
+                    await anext(stream)
 
             run = await RunRepository(database_session).get(
                 "client-a", started.run_id
@@ -169,6 +170,7 @@ class RunExecutionServiceTest(unittest.IsolatedAsyncioTestCase):
             )
 
         self.assertEqual(run.status, "cancelled")
+        self.assertEqual(cancelled.event.type, RuntimeEventType.RUN_CANCELLED)
         self.assertEqual(events[-1].event_type, "run_cancelled")
 
 

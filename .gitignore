@@ -31,6 +31,7 @@ server/logs/__pycache__/
 server/logs/**/*.log
 server/logs/*.log
 server/runtime/
+server/data/*.db
 
 # Environment and local secrets
 .env

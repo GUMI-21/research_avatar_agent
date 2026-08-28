@@ -160,6 +160,35 @@ class WorkspaceWebSocketTest(unittest.TestCase):
         )
 
     @patch("app.api.routes.workspace_ws.log")
+    @patch("app.repositories.message.log")
+    @patch("app.repositories.run.log")
+    @patch("app.repositories.run_event.log")
+    @patch("app.services.message.log")
+    @patch("app.services.run.log")
+    @patch("app.services.run_event.log")
+    def test_active_run_can_be_cancelled(self, *_mocks) -> None:
+        with self.client.websocket_connect(
+            "/api/v1/ws?client_id=client-a"
+        ) as websocket:
+            websocket.send_json(
+                {
+                    "type": "send_message",
+                    "session_id": self.session_id,
+                    "content": "Hello",
+                }
+            )
+            started = websocket.receive_json()
+            command = {"type": "cancel_run", "run_id": started["run_id"]}
+            websocket.send_json(command)
+            cancelled = websocket.receive_json()
+            websocket.send_json(command)
+            rejected = websocket.receive_json()
+
+        self.assertEqual(cancelled["type"], "run_cancelled")
+        self.assertEqual(cancelled["sequence"], 2)
+        self.assertEqual(rejected["code"], "run_not_active")
+
+    @patch("app.api.routes.workspace_ws.log")
     def test_session_is_hidden_from_other_client(self, _mocked_log) -> None:
         with self.client.websocket_connect(
             "/api/v1/ws?client_id=client-b"

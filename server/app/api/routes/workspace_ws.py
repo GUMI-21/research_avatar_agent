@@ -2,6 +2,7 @@
 
 import asyncio
 from contextlib import suppress
+from dataclasses import dataclass
 from typing import Annotated
 
 from fastapi import APIRouter, Query, WebSocket, WebSocketDisconnect
@@ -11,6 +12,7 @@ from app.adapters.agent import RuntimeEventType
 from app.core.database import Database
 from app.schemas.run_stream import (
     WORKSPACE_COMMAND_ADAPTER,
+    CancelRunCommand,
     PingCommand,
     PongFrame,
     ReplayCompleteFrame,
@@ -29,6 +31,13 @@ from logs import log
 router = APIRouter()
 
 
+@dataclass
+class ActiveRun:
+    task: asyncio.Task[None] | None = None
+    # 当前 Agent 执行记录的 ID，由 RunExecutionService 创建
+    run_id: str | None = None
+
+
 # websocket接口
 @router.websocket("/ws")
 async def workspace_socket(
@@ -41,7 +50,7 @@ async def workspace_socket(
     log.info("websocket_connected business=agent_workspace client_id={}", client_id)
     # 异步协程锁，保证发送消息不冲突
     send_lock = asyncio.Lock()
-    active_task: asyncio.Task[None] | None = None
+    active_run = ActiveRun()
     try:
         while True:
             try:
@@ -64,6 +73,26 @@ async def workspace_socket(
                     send_lock,
                     PongFrame(request_id=command.request_id),
                 )
+                continue
+            # 终止当前连接中正在执行的 Agent Run
+            if isinstance(command, CancelRunCommand):
+                task = active_run.task
+                if (
+                    task is None
+                    or task.done()
+                    or active_run.run_id != command.run_id
+                ):
+                    await _send_error(
+                        websocket,
+                        send_lock,
+                        "run_not_active",
+                        "Run is not active on this connection",
+                    )
+                    continue
+                # 取消正在执行的task
+                task.cancel()
+                with suppress(asyncio.CancelledError):
+                    await task
                 continue
             # 客户端重连后，通过 ResumeRunCommand 请求补发事件
             if isinstance(command, ResumeRunCommand):
@@ -93,7 +122,7 @@ async def workspace_socket(
                     )
                 continue
             # 当前连接已有活跃 Run 时，拒绝启动第二个 Run
-            if active_task is not None and not active_task.done():
+            if active_run.task is not None and not active_run.task.done():
                 await _send_error(
                     websocket,
                     send_lock,
@@ -101,7 +130,8 @@ async def workspace_socket(
                     "This connection already has an active Run",
                 )
                 continue
-            active_task = asyncio.create_task(
+            active_run.run_id = None
+            active_run.task = asyncio.create_task(
                 _stream_run(
                     websocket,
                     send_lock,
@@ -110,6 +140,7 @@ async def workspace_socket(
                     client_id,
                     command.session_id,
                     command.content,
+                    active_run,
                 )
             )
     # WebSocket 接收消息时检测到断连
@@ -119,11 +150,11 @@ async def workspace_socket(
             client_id,
         )
     finally:
-        if active_task is not None and not active_task.done():
-            active_task.cancel()
+        if active_run.task is not None and not active_run.task.done():
+            active_run.task.cancel()
             # 调用cancel，CancelledError是预期结果，等待任务资源关闭
             with suppress(asyncio.CancelledError):
-                await active_task
+                await active_run.task
 
 
 async def _send_error(
@@ -153,12 +184,15 @@ async def _stream_run(
     client_id: str,
     session_id: str,
     content: str,
+    active_run: ActiveRun,
 ) -> None:
     try:
         async with database.session() as session:
             service = RunExecutionService(session, registry)
             # 异步消费已经拆分好的 Agent 执行事件
             async for item in service.stream(client_id, session_id, content):
+                if active_run.run_id is None:
+                    active_run.run_id = item.run_id
                 await _send_frame(
                     websocket,
                     send_lock,

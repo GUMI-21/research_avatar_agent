@@ -34,8 +34,13 @@ class PingCommand(BaseModel):
     request_id: str = Field(min_length=1, max_length=64)
 
 
+class CancelRunCommand(BaseModel):
+    type: Literal["cancel_run"]
+    run_id: str = Field(min_length=1, max_length=36)
+
+
 WorkspaceCommand = Annotated[
-    SendMessageCommand | ResumeRunCommand | PingCommand,
+    SendMessageCommand | ResumeRunCommand | PingCommand | CancelRunCommand,
     Field(discriminator="type"),
 ]
 WORKSPACE_COMMAND_ADAPTER = TypeAdapter(WorkspaceCommand)

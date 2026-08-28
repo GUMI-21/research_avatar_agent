@@ -86,7 +86,7 @@ class RunExecutionService:
             content=message,
             run_id=run.id,
         )
-        # 获取迭代器
+        # 获取异步迭代器；后续 anext() 才会逐步推进 Agent 执行
         iterator = runtime.stream(
             RuntimeRequest(
                 run_id=run.id,
@@ -107,7 +107,9 @@ class RunExecutionService:
             except asyncio.CancelledError:
                 if not terminal_received:
                     cancelled = RuntimeEvent(type=RuntimeEventType.RUN_CANCELLED)
-                    _ = await self._process(client_id, run.id, cancelled)
+                    streamed = await self._process(client_id, run.id, cancelled)
+                    if streamed is not None:
+                        yield streamed
                 raise
             except Exception as error:
                 if not terminal_received:
