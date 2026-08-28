@@ -9,19 +9,19 @@ from app.adapters.agent.base import (
 )
 from app.adapters.llm import LLMClient, LLMRequest
 
-
+# 符合 AgentRuntimeAdapter 协议的具体实现
 class NativeAgentRuntime:
     """Normalize one provider call into auditable Agent Runtime events."""
 
     def __init__(self, llm_client: LLMClient) -> None:
         self._llm_client = llm_client
 
-    # 返回异步迭代器
+    # 实现 AgentRuntimeAdapter 约定的 stream 接口
     async def stream(
         self,
         request: RuntimeRequest,
     ) -> AsyncIterator[RuntimeEvent]:
-        # 每次调用前进一次
+        # 外部每调用一次 anext()，执行到下一个 yield
         yield RuntimeEvent(type=RuntimeEventType.RUN_STARTED)
         yield RuntimeEvent(
             type=RuntimeEventType.AGENT_STARTED,

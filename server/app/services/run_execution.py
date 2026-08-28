@@ -69,8 +69,9 @@ class RunExecutionService:
         )
         if agent is None:
             raise RunExecutionParentNotFoundError("Agent not found")
+        # 根据表中的 runtime 字段调用已注册的 Factory，创建对应 Runtime 实例
         runtime = self._registry.create(agent.runtime)
-        # 创建agent执行快照
+        # 创建 Agent 执行记录
         run = await self._runs.create_run(
             client_id,
             session_id,

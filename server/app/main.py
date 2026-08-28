@@ -42,6 +42,7 @@ def create_app(settings: Settings) -> FastAPI:
     app.state.database = Database(settings.database.url)
     llm_runtime = LLMRuntime(settings.llm)
     runtime_registry = RuntimeRegistry()
+    # 注册创建 NativeAgentRuntime 的匿名工厂函数
     runtime_registry.register("native", lambda: NativeAgentRuntime(llm_runtime))
     app.state.llm_runtime = llm_runtime
     app.state.runtime_registry = runtime_registry

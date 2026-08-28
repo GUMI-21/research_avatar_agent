@@ -50,6 +50,7 @@ async def workspace_socket(
     log.info("websocket_connected business=agent_workspace client_id={}", client_id)
     # 异步协程锁，保证发送消息不冲突
     send_lock = asyncio.Lock()
+    # 当前连接的活跃 Run 状态
     active_run = ActiveRun()
     try:
         while True:

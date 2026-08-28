@@ -27,7 +27,7 @@ class RuntimeEvent:
     payload: Mapping[str, object] = field(default_factory=dict)
 
 
-# Agent执行状态类型
+# Agent 统一运行事件类型
 class RuntimeEventType(StrEnum):
     """Provider-neutral events exposed to orchestration and WebSocket layers."""
 
@@ -50,7 +50,7 @@ class RuntimeEventType(StrEnum):
     PROVIDER_RETRY = "provider_retry"
 
 
-# 接收RuntimeRequest，产生多个异步RuntimeEvent； ...只声明，不实现
+# 接收 RuntimeRequest 并产生多个 RuntimeEvent；Protocol 只声明接口，不提供实现
 class AgentRuntimeAdapter(Protocol):
     """Stream normalized events without exposing provider-specific output."""
 
