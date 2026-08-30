@@ -6,6 +6,7 @@ from app.adapters.llm.base import (
     LLMRequest,
     LLMResult,
     LLMStreamChunk,
+    LLMUsage,
 )
 from app.adapters.llm.providers import (
     DeepSeekAdapter,
@@ -22,6 +23,7 @@ __all__ = [
     "LLMRequest",
     "LLMResult",
     "LLMStreamChunk",
+    "LLMUsage",
     "MockLLMAdapter",
     "OpenAIAdapter",
 ]

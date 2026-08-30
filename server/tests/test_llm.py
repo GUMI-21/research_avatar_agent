@@ -264,7 +264,10 @@ class ProviderAdapterTest(unittest.IsolatedAsyncioTestCase):
                     'event: response.output_text.delta\ndata: '
                     '{"type":"response.output_text.delta","delta":"lo"}',
                     'event: response.completed\ndata: '
-                    '{"type":"response.completed"}',
+                    '{"type":"response.completed","response":{"usage":'
+                    '{"input_tokens":12,"output_tokens":3,'
+                    '"input_tokens_details":{"cached_tokens":4,'
+                    '"cache_write_tokens":1}}}}',
                 ]
             )
             return httpx.Response(
@@ -284,7 +287,14 @@ class ProviderAdapterTest(unittest.IsolatedAsyncioTestCase):
 
         chunks = [chunk async for chunk in adapter.stream(make_request())]
 
-        self.assertEqual([chunk.text for chunk in chunks], ["Hel", "lo"])
+        self.assertEqual([chunk.text for chunk in chunks], ["Hel", "lo", ""])
+        usage = chunks[-1].usage
+        self.assertIsNotNone(usage)
+        assert usage is not None
+        self.assertEqual(usage.input_tokens, 12)
+        self.assertEqual(usage.output_tokens, 3)
+        self.assertEqual(usage.cache_read_tokens, 4)
+        self.assertEqual(usage.cache_write_tokens, 1)
 
     async def test_gemini_generate_content_format(self) -> None:
         async def handler(request: httpx.Request) -> httpx.Response:

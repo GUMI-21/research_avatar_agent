@@ -13,6 +13,7 @@ from app.adapters.llm.base import (
     LLMRequest,
     LLMResult,
     LLMStreamChunk,
+    LLMUsage,
 )
 from app.adapters.llm.errors import (
     LLMConfigurationError,
@@ -21,6 +22,11 @@ from app.adapters.llm.errors import (
     LLMTimeoutError,
 )
 from app.schemas.llm import LLMProvider
+
+
+def _optional_int(value: object) -> int | None:
+    return value if isinstance(value, int) and not isinstance(value, bool) else None
+
 
 # 继承LLMclient抽象基
 class MockLLMAdapter(LLMClient):
@@ -206,6 +212,28 @@ class OpenAIAdapter(_HTTPAdapter):
                         text=delta,
                         provider=self.config.provider,
                         model=self.config.model,
+                    )
+            # 获取本次消耗的token
+            if event_type == "response.completed":
+                response = event.get("response")
+                usage = response.get("usage") if isinstance(response, dict) else None
+                if isinstance(usage, dict):
+                    details = usage.get("input_tokens_details")
+                    details = details if isinstance(details, dict) else {}
+                    yield LLMStreamChunk(
+                        text="",
+                        provider=self.config.provider,
+                        model=self.config.model,
+                        usage=LLMUsage(
+                            input_tokens=_optional_int(usage.get("input_tokens")),
+                            output_tokens=_optional_int(usage.get("output_tokens")),
+                            cache_read_tokens=_optional_int(
+                                details.get("cached_tokens")
+                            ),
+                            cache_write_tokens=_optional_int(
+                                details.get("cache_write_tokens")
+                            ),
+                        ),
                     )
         if not emitted:
             raise LLMResponseError(self.config.provider)

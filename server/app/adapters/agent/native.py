@@ -7,7 +7,7 @@ from app.adapters.agent.base import (
     RuntimeEventType,
     RuntimeRequest,
 )
-from app.adapters.llm import LLMClient, LLMRequest
+from app.adapters.llm import LLMClient, LLMRequest, LLMUsage
 
 # 符合 AgentRuntimeAdapter 协议的具体实现
 class NativeAgentRuntime:
@@ -29,6 +29,7 @@ class NativeAgentRuntime:
         )
         provider: str | None = None
         model: str | None = None
+        usage: LLMUsage | None = None
         emitted_text = False
         try:
             async for chunk in self._llm_client.stream(
@@ -40,6 +41,7 @@ class NativeAgentRuntime:
             ):
                 provider = chunk.provider.value
                 model = chunk.model
+                usage = chunk.usage or usage
                 if chunk.text:
                     emitted_text = True
                     yield RuntimeEvent(
@@ -60,6 +62,11 @@ class NativeAgentRuntime:
             payload={
                 "provider": provider,
                 "model": model,
+                "input_tokens": usage.input_tokens if usage else None,
+                "output_tokens": usage.output_tokens if usage else None,
+                "cache_read_tokens": usage.cache_read_tokens if usage else None,
+                "cache_write_tokens": usage.cache_write_tokens if usage else None,
+                "usage_status": "reported" if usage else "unavailable",
                 "cost_status": "unavailable",
             },
         )

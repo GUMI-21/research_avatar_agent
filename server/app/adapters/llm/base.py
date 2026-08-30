@@ -28,12 +28,23 @@ class LLMResult:
 
 
 @dataclass(frozen=True)
+class LLMUsage:
+    """Provider-reported token usage normalized across adapters."""
+
+    input_tokens: int | None = None
+    output_tokens: int | None = None
+    cache_read_tokens: int | None = None
+    cache_write_tokens: int | None = None
+
+
+@dataclass(frozen=True)
 class LLMStreamChunk:
-    """One normalized text chunk returned by a streaming provider."""
+    """One normalized text or usage chunk returned by a provider."""
 
     text: str
     provider: LLMProvider
     model: str
+    usage: LLMUsage | None = None
 
 
 @dataclass(frozen=True)

@@ -9,6 +9,7 @@ from app.adapters.llm import (
     LLMRequest,
     LLMResult,
     LLMStreamChunk,
+    LLMUsage,
 )
 from app.schemas.llm import LLMProvider
 
@@ -37,6 +38,12 @@ class ChunkedLLMClient(FakeLLMClient):
                 provider=LLMProvider.MOCK,
                 model="mock-stream",
             )
+        yield LLMStreamChunk(
+            text="",
+            provider=LLMProvider.MOCK,
+            model="mock-stream",
+            usage=LLMUsage(input_tokens=5, output_tokens=2),
+        )
 
 
 def make_request() -> RuntimeRequest:
@@ -80,6 +87,9 @@ class NativeAgentRuntimeTest(unittest.IsolatedAsyncioTestCase):
 
         self.assertEqual(deltas, ["Reply: ", "Hello"])
         self.assertEqual(events[-2].payload["model"], "mock-stream")
+        self.assertEqual(events[-2].payload["input_tokens"], 5)
+        self.assertEqual(events[-2].payload["output_tokens"], 2)
+        self.assertEqual(events[-2].payload["usage_status"], "reported")
 
     async def test_failure_event_is_emitted_before_error_propagates(self) -> None:
         runtime = NativeAgentRuntime(FakeLLMClient(RuntimeError("unavailable")))
