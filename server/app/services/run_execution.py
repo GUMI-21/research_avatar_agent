@@ -26,6 +26,16 @@ TERMINAL_EVENTS = {
     RuntimeEventType.RUN_CANCELLED,
 }
 
+
+def _optional_string(value: object) -> str | None:
+    return value if isinstance(value, str) else None
+
+
+def _optional_token_count(value: object) -> int | None:
+    if isinstance(value, int) and not isinstance(value, bool) and value >= 0:
+        return value
+    return None
+
 # 数据类
 @dataclass(frozen=True)
 class StreamedRunEvent:
@@ -161,6 +171,25 @@ class RunExecutionService:
         status = RUN_EVENT_STATUSES.get(event.type)
         if status is not None:
             await self._runs.transition(client_id, run_id, status)
+        if event.type is RuntimeEventType.USAGE_UPDATED:
+            await self._runs.record_usage(
+                client_id,
+                run_id,
+                provider=_optional_string(event.payload.get("provider")),
+                model=_optional_string(event.payload.get("model")),
+                input_tokens=_optional_token_count(
+                    event.payload.get("input_tokens")
+                ),
+                output_tokens=_optional_token_count(
+                    event.payload.get("output_tokens")
+                ),
+                cache_read_tokens=_optional_token_count(
+                    event.payload.get("cache_read_tokens")
+                ),
+                cache_write_tokens=_optional_token_count(
+                    event.payload.get("cache_write_tokens")
+                ),
+            )
         policy = self._events.policy_for(event)
         record = await self._events.process(client_id, run_id, event)
         if not policy.stream:

@@ -99,3 +99,35 @@ class RunRepository:
             status,
         )
         return run
+
+    async def set_usage(
+        self,
+        client_id: str,
+        run_id: str,
+        *,
+        provider: str | None,
+        model: str | None,
+        input_tokens: int | None,
+        output_tokens: int | None,
+        cache_read_tokens: int | None,
+        cache_write_tokens: int | None,
+    ) -> RunRecord | None:
+        run = await self.get(client_id, run_id)
+        if run is None:
+            return None
+        if provider is not None:
+            run.provider = provider
+        if model is not None:
+            run.model = model
+        run.input_tokens = input_tokens
+        run.output_tokens = output_tokens
+        run.cache_read_tokens = cache_read_tokens
+        run.cache_write_tokens = cache_write_tokens
+        await self._session.flush()
+        log.info(
+            "db_mutation_staged table=runs business=agent_run action=usage "
+            "client_id={} run_id={}",
+            client_id,
+            run.id,
+        )
+        return run

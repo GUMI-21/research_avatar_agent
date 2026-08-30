@@ -77,6 +77,33 @@ class RunService:
         await self._commit("status", updated)
         return updated
 
+    async def record_usage(
+        self,
+        client_id: str,
+        run_id: str,
+        *,
+        provider: str | None,
+        model: str | None,
+        input_tokens: int | None,
+        output_tokens: int | None,
+        cache_read_tokens: int | None,
+        cache_write_tokens: int | None,
+    ) -> RunRecord:
+        updated = await self._repository.set_usage(
+            client_id,
+            run_id,
+            provider=provider,
+            model=model,
+            input_tokens=input_tokens,
+            output_tokens=output_tokens,
+            cache_read_tokens=cache_read_tokens,
+            cache_write_tokens=cache_write_tokens,
+        )
+        if updated is None:
+            raise RunNotFoundError(run_id)
+        await self._commit("usage", updated)
+        return updated
+
     # services调用repositories数据库的封装方法，如果成功就commit，有错误就rollback
     async def _commit(self, action: str, run: RunRecord) -> None:
         try:

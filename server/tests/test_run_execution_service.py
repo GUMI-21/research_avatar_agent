@@ -27,6 +27,17 @@ class SuccessfulRuntime:
             type=RuntimeEventType.ASSISTANT_DELTA,
             payload={"text": request.message},
         )
+        yield RuntimeEvent(
+            type=RuntimeEventType.USAGE_UPDATED,
+            payload={
+                "provider": "openai",
+                "model": "gpt-test",
+                "input_tokens": 12,
+                "output_tokens": 3,
+                "cache_read_tokens": 4,
+                "cache_write_tokens": 1,
+            },
+        )
         yield RuntimeEvent(type=RuntimeEventType.RUN_FINISHED)
 
 
@@ -98,11 +109,17 @@ class RunExecutionServiceTest(unittest.IsolatedAsyncioTestCase):
             )
 
         self.assertEqual(run.status, "completed")
-        self.assertEqual([item.sequence for item in streamed], [1, None, 2])
+        self.assertEqual([item.sequence for item in streamed], [1, None, 2, 3])
         self.assertEqual(
             [record.event_type for record in records],
-            ["run_started", "run_finished"],
+            ["run_started", "usage_updated", "run_finished"],
         )
+        self.assertEqual(run.provider, "openai")
+        self.assertEqual(run.model, "gpt-test")
+        self.assertEqual(run.input_tokens, 12)
+        self.assertEqual(run.output_tokens, 3)
+        self.assertEqual(run.cache_read_tokens, 4)
+        self.assertEqual(run.cache_write_tokens, 1)
         self.assertEqual([item.role for item in messages], ["user", "assistant"])
         self.assertEqual([item.content for item in messages], ["Hello", "Hello"])
         self.assertTrue(all(item.run_id == run.id for item in messages))
