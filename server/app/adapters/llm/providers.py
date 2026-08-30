@@ -185,6 +185,7 @@ class OpenAIAdapter(_HTTPAdapter):
         self, request: LLMRequest
     ) -> AsyncIterator[LLMStreamChunk]:
         emitted = False
+        reported_usage: LLMUsage | None = None
         async for event in self._stream_json(
             "responses",
             headers={
@@ -220,23 +221,25 @@ class OpenAIAdapter(_HTTPAdapter):
                 if isinstance(usage, dict):
                     details = usage.get("input_tokens_details")
                     details = details if isinstance(details, dict) else {}
-                    yield LLMStreamChunk(
-                        text="",
-                        provider=self.config.provider,
-                        model=self.config.model,
-                        usage=LLMUsage(
-                            input_tokens=_optional_int(usage.get("input_tokens")),
-                            output_tokens=_optional_int(usage.get("output_tokens")),
-                            cache_read_tokens=_optional_int(
-                                details.get("cached_tokens")
-                            ),
-                            cache_write_tokens=_optional_int(
-                                details.get("cache_write_tokens")
-                            ),
+                    reported_usage = LLMUsage(
+                        input_tokens=_optional_int(usage.get("input_tokens")),
+                        output_tokens=_optional_int(usage.get("output_tokens")),
+                        cache_read_tokens=_optional_int(
+                            details.get("cached_tokens")
+                        ),
+                        cache_write_tokens=_optional_int(
+                            details.get("cache_write_tokens")
                         ),
                     )
         if not emitted:
             raise LLMResponseError(self.config.provider)
+        if reported_usage is not None:
+            yield LLMStreamChunk(
+                text="",
+                provider=self.config.provider,
+                model=self.config.model,
+                usage=reported_usage,
+            )
 
 class DeepSeekAdapter(_HTTPAdapter):
     """DeepSeek OpenAI-compatible Chat Completions adapter."""
@@ -267,6 +270,7 @@ class DeepSeekAdapter(_HTTPAdapter):
         self, request: LLMRequest
     ) -> AsyncIterator[LLMStreamChunk]:
         emitted = False
+        reported_usage: LLMUsage | None = None
         async for event in self._stream_json(
             "chat/completions",
             headers={
@@ -278,11 +282,21 @@ class DeepSeekAdapter(_HTTPAdapter):
                 "messages": [{"role": "user", "content": request.message}],
                 "max_tokens": self.config.max_output_tokens,
                 "stream": True,
+                "stream_options": {"include_usage": True},
             },
         ):
             if "error" in event:
                 raise LLMProviderError(
                     self.config.provider, "DeepSeek response stream failed"
+                )
+            usage = event.get("usage")
+            if isinstance(usage, dict):
+                reported_usage = LLMUsage(
+                    input_tokens=_optional_int(usage.get("prompt_tokens")),
+                    output_tokens=_optional_int(usage.get("completion_tokens")),
+                    cache_read_tokens=_optional_int(
+                        usage.get("prompt_cache_hit_tokens")
+                    ),
                 )
             choices = event.get("choices")
             if not isinstance(choices, list) or not choices:
@@ -303,6 +317,13 @@ class DeepSeekAdapter(_HTTPAdapter):
                 )
         if not emitted:
             raise LLMResponseError(self.config.provider)
+        if reported_usage is not None:
+            yield LLMStreamChunk(
+                text="",
+                provider=self.config.provider,
+                model=self.config.model,
+                usage=reported_usage,
+            )
 
 
 class GeminiAdapter(_HTTPAdapter):
@@ -344,6 +365,7 @@ class GeminiAdapter(_HTTPAdapter):
     ) -> AsyncIterator[LLMStreamChunk]:
         model = quote(self.config.model, safe="-._")
         emitted = False
+        reported_usage: LLMUsage | None = None
         async for event in self._stream_json(
             f"models/{model}:streamGenerateContent?alt=sse",
             headers={
@@ -362,6 +384,17 @@ class GeminiAdapter(_HTTPAdapter):
             if "error" in event:
                 raise LLMProviderError(
                     self.config.provider, "Gemini response stream failed"
+                )
+            usage = event.get("usageMetadata")
+            if isinstance(usage, dict):
+                reported_usage = LLMUsage(
+                    input_tokens=_optional_int(usage.get("promptTokenCount")),
+                    output_tokens=_optional_int(
+                        usage.get("candidatesTokenCount")
+                    ),
+                    cache_read_tokens=_optional_int(
+                        usage.get("cachedContentTokenCount")
+                    ),
                 )
             candidates = event.get("candidates")
             if not isinstance(candidates, list) or not candidates:
@@ -388,3 +421,10 @@ class GeminiAdapter(_HTTPAdapter):
                     )
         if not emitted:
             raise LLMResponseError(self.config.provider)
+        if reported_usage is not None:
+            yield LLMStreamChunk(
+                text="",
+                provider=self.config.provider,
+                model=self.config.model,
+                usage=reported_usage,
+            )

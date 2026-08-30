@@ -338,7 +338,9 @@ class ProviderAdapterTest(unittest.IsolatedAsyncioTestCase):
                     '{"text":"hidden","thought":true},'
                     '{"text":"Gemini "}]}}]}',
                     'data: {"candidates":[{"content":{"parts":['
-                    '{"text":"reply"}]},"finishReason":"STOP"}]}',
+                    '{"text":"reply"}]},"finishReason":"STOP"}],'
+                    '"usageMetadata":{"promptTokenCount":8,'
+                    '"candidatesTokenCount":2,"cachedContentTokenCount":3}}',
                 ]
             )
             return httpx.Response(
@@ -358,7 +360,15 @@ class ProviderAdapterTest(unittest.IsolatedAsyncioTestCase):
 
         chunks = [chunk async for chunk in adapter.stream(make_request())]
 
-        self.assertEqual([chunk.text for chunk in chunks], ["Gemini ", "reply"])
+        self.assertEqual(
+            [chunk.text for chunk in chunks], ["Gemini ", "reply", ""]
+        )
+        usage = chunks[-1].usage
+        self.assertIsNotNone(usage)
+        assert usage is not None
+        self.assertEqual(usage.input_tokens, 8)
+        self.assertEqual(usage.output_tokens, 2)
+        self.assertEqual(usage.cache_read_tokens, 3)
 
     async def test_deepseek_chat_completions_format(self) -> None:
         async def handler(request: httpx.Request) -> httpx.Response:
@@ -392,6 +402,7 @@ class ProviderAdapterTest(unittest.IsolatedAsyncioTestCase):
             payload = json.loads(request.content)
             self.assertEqual(request.url.path, "/chat/completions")
             self.assertTrue(payload["stream"])
+            self.assertTrue(payload["stream_options"]["include_usage"])
             body = "\n\n".join(
                 [
                     'data: {"choices":[{"delta":{"role":"assistant"}}]}',
@@ -399,6 +410,9 @@ class ProviderAdapterTest(unittest.IsolatedAsyncioTestCase):
                     'data: {"choices":[{"delta":{"content":"Deep"}}]}',
                     'data: {"choices":[{"delta":{"content":"Seek"}}]}',
                     'data: {"choices":[{"delta":{},"finish_reason":"stop"}]}',
+                    'data: {"choices":[],"usage":{"prompt_tokens":10,'
+                    '"completion_tokens":2,"prompt_cache_hit_tokens":6,'
+                    '"prompt_cache_miss_tokens":4}}',
                     "data: [DONE]",
                 ]
             )
@@ -419,7 +433,13 @@ class ProviderAdapterTest(unittest.IsolatedAsyncioTestCase):
 
         chunks = [chunk async for chunk in adapter.stream(make_request())]
 
-        self.assertEqual([chunk.text for chunk in chunks], ["Deep", "Seek"])
+        self.assertEqual([chunk.text for chunk in chunks], ["Deep", "Seek", ""])
+        usage = chunks[-1].usage
+        self.assertIsNotNone(usage)
+        assert usage is not None
+        self.assertEqual(usage.input_tokens, 10)
+        self.assertEqual(usage.output_tokens, 2)
+        self.assertEqual(usage.cache_read_tokens, 6)
 
     async def test_timeout_is_converted(self) -> None:
         async def handler(request: httpx.Request) -> httpx.Response:
