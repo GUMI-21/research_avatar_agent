@@ -56,7 +56,7 @@ class NativeAgentRuntime:
                 payload={"error_type": type(error).__name__},
             )
             raise
-
+        # 计算花费
         yield RuntimeEvent(
             type=RuntimeEventType.USAGE_UPDATED,
             payload={

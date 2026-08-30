@@ -3,6 +3,7 @@
 import asyncio
 import unittest
 from collections.abc import AsyncIterator
+from decimal import Decimal
 from unittest.mock import patch
 
 from app.adapters.agent import RuntimeEvent, RuntimeEventType, RuntimeRequest
@@ -31,11 +32,11 @@ class SuccessfulRuntime:
             type=RuntimeEventType.USAGE_UPDATED,
             payload={
                 "provider": "openai",
-                "model": "gpt-test",
-                "input_tokens": 12,
-                "output_tokens": 3,
-                "cache_read_tokens": 4,
-                "cache_write_tokens": 1,
+                "model": "gpt-5.6-luna",
+                "input_tokens": 12_000,
+                "output_tokens": 3_000,
+                "cache_read_tokens": 4_000,
+                "cache_write_tokens": 1_000,
             },
         )
         yield RuntimeEvent(type=RuntimeEventType.RUN_FINISHED)
@@ -115,11 +116,14 @@ class RunExecutionServiceTest(unittest.IsolatedAsyncioTestCase):
             ["run_started", "usage_updated", "run_finished"],
         )
         self.assertEqual(run.provider, "openai")
-        self.assertEqual(run.model, "gpt-test")
-        self.assertEqual(run.input_tokens, 12)
-        self.assertEqual(run.output_tokens, 3)
-        self.assertEqual(run.cache_read_tokens, 4)
-        self.assertEqual(run.cache_write_tokens, 1)
+        self.assertEqual(run.model, "gpt-5.6-luna")
+        self.assertEqual(run.input_tokens, 12_000)
+        self.assertEqual(run.output_tokens, 3_000)
+        self.assertEqual(run.cache_read_tokens, 4_000)
+        self.assertEqual(run.cache_write_tokens, 1_000)
+        self.assertEqual(run.cost_usd, Decimal("0.005330"))
+        self.assertEqual(run.cost_status, "estimated")
+        self.assertEqual(streamed[2].event.payload["cost_usd"], "0.005330")
         self.assertEqual([item.role for item in messages], ["user", "assistant"])
         self.assertEqual([item.content for item in messages], ["Hello", "Hello"])
         self.assertTrue(all(item.run_id == run.id for item in messages))

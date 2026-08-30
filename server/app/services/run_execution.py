@@ -172,7 +172,7 @@ class RunExecutionService:
         if status is not None:
             await self._runs.transition(client_id, run_id, status)
         if event.type is RuntimeEventType.USAGE_UPDATED:
-            await self._runs.record_usage(
+            run = await self._runs.record_usage(
                 client_id,
                 run_id,
                 provider=_optional_string(event.payload.get("provider")),
@@ -189,6 +189,14 @@ class RunExecutionService:
                 cache_write_tokens=_optional_token_count(
                     event.payload.get("cache_write_tokens")
                 ),
+            )
+            event = RuntimeEvent(
+                type=event.type,
+                payload={
+                    **event.payload,
+                    "cost_usd": str(run.cost_usd) if run.cost_usd is not None else None,
+                    "cost_status": run.cost_status,
+                },
             )
         policy = self._events.policy_for(event)
         record = await self._events.process(client_id, run_id, event)

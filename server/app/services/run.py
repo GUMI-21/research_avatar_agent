@@ -2,6 +2,7 @@
 
 from sqlalchemy.ext.asyncio import AsyncSession
 
+from app.core.llm_pricing import estimate_cost_usd
 from app.models import RunRecord
 from app.repositories import RunRepository
 from logs import log
@@ -89,6 +90,14 @@ class RunService:
         cache_read_tokens: int | None,
         cache_write_tokens: int | None,
     ) -> RunRecord:
+        cost_usd = estimate_cost_usd(
+            provider,
+            model,
+            input_tokens=input_tokens,
+            output_tokens=output_tokens,
+            cache_read_tokens=cache_read_tokens,
+            cache_write_tokens=cache_write_tokens,
+        )
         updated = await self._repository.set_usage(
             client_id,
             run_id,
@@ -98,6 +107,8 @@ class RunService:
             output_tokens=output_tokens,
             cache_read_tokens=cache_read_tokens,
             cache_write_tokens=cache_write_tokens,
+            cost_usd=cost_usd,
+            cost_status="estimated" if cost_usd is not None else "unavailable",
         )
         if updated is None:
             raise RunNotFoundError(run_id)

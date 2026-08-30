@@ -1,5 +1,7 @@
 """Client-scoped persistence operations for Agent Runs."""
 
+from decimal import Decimal
+
 from sqlalchemy import select
 from sqlalchemy.ext.asyncio import AsyncSession
 
@@ -111,6 +113,8 @@ class RunRepository:
         output_tokens: int | None,
         cache_read_tokens: int | None,
         cache_write_tokens: int | None,
+        cost_usd: Decimal | None,
+        cost_status: str,
     ) -> RunRecord | None:
         run = await self.get(client_id, run_id)
         if run is None:
@@ -123,6 +127,8 @@ class RunRepository:
         run.output_tokens = output_tokens
         run.cache_read_tokens = cache_read_tokens
         run.cache_write_tokens = cache_write_tokens
+        run.cost_usd = cost_usd
+        run.cost_status = cost_status
         await self._session.flush()
         log.info(
             "db_mutation_staged table=runs business=agent_run action=usage "
