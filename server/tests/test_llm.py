@@ -342,6 +342,40 @@ class ProviderAdapterTest(unittest.IsolatedAsyncioTestCase):
 
         self.assertEqual(result.text, "DeepSeek reply")
 
+    async def test_deepseek_stream_yields_answer_deltas(self) -> None:
+        async def handler(request: httpx.Request) -> httpx.Response:
+            payload = json.loads(request.content)
+            self.assertEqual(request.url.path, "/chat/completions")
+            self.assertTrue(payload["stream"])
+            body = "\n\n".join(
+                [
+                    'data: {"choices":[{"delta":{"role":"assistant"}}]}',
+                    'data: {"choices":[{"delta":{"reasoning_content":"hidden"}}]}',
+                    'data: {"choices":[{"delta":{"content":"Deep"}}]}',
+                    'data: {"choices":[{"delta":{"content":"Seek"}}]}',
+                    'data: {"choices":[{"delta":{},"finish_reason":"stop"}]}',
+                    "data: [DONE]",
+                ]
+            )
+            return httpx.Response(
+                200,
+                text=body,
+                headers={"Content-Type": "text/event-stream"},
+            )
+
+        adapter = DeepSeekAdapter(
+            make_client_config(
+                LLMProvider.DEEPSEEK,
+                "https://api.deepseek.com",
+                "deepseek-v4-flash",
+            ),
+            transport=httpx.MockTransport(handler),
+        )
+
+        chunks = [chunk async for chunk in adapter.stream(make_request())]
+
+        self.assertEqual([chunk.text for chunk in chunks], ["Deep", "Seek"])
+
     async def test_timeout_is_converted(self) -> None:
         async def handler(request: httpx.Request) -> httpx.Response:
             raise httpx.ReadTimeout("test timeout", request=request)

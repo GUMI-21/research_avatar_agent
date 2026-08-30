@@ -88,7 +88,7 @@ class _HTTPAdapter(LLMClient):
             raise LLMResponseError(self.config.provider)
         return data
 
-    # 流式输出
+    # 通用 HTTP/SSE 工作
     async def _stream_json(
         self,
         path: str,
@@ -106,6 +106,7 @@ class _HTTPAdapter(LLMClient):
                     "POST", url, headers=headers, json=payload
                 ) as response:
                     response.raise_for_status()
+                    # process data
                     async for line in response.aiter_lines():
                         if not line.startswith("data:"):
                             continue
@@ -173,6 +174,7 @@ class OpenAIAdapter(_HTTPAdapter):
             raise LLMResponseError(self.config.provider)
         return LLMResult(text=text, provider=self.config.provider, model=self.config.model)
 
+    # token流式输出
     async def stream(
         self, request: LLMRequest
     ) -> AsyncIterator[LLMStreamChunk]:
@@ -195,6 +197,7 @@ class OpenAIAdapter(_HTTPAdapter):
                 raise LLMProviderError(
                     self.config.provider, "OpenAI response stream failed"
                 )
+            # 一次新增的文本
             delta = event.get("delta")
             if event_type == "response.output_text.delta" and isinstance(delta, str):
                 emitted = emitted or bool(delta)
@@ -230,6 +233,48 @@ class DeepSeekAdapter(_HTTPAdapter):
         if not text:
             raise LLMResponseError(self.config.provider)
         return LLMResult(text=text, provider=self.config.provider, model=self.config.model)
+
+    # 流式输出
+    async def stream(
+        self, request: LLMRequest
+    ) -> AsyncIterator[LLMStreamChunk]:
+        emitted = False
+        async for event in self._stream_json(
+            "chat/completions",
+            headers={
+                "Authorization": f"Bearer {self._api_key()}",
+                "Content-Type": "application/json",
+            },
+            payload={
+                "model": self.config.model,
+                "messages": [{"role": "user", "content": request.message}],
+                "max_tokens": self.config.max_output_tokens,
+                "stream": True,
+            },
+        ):
+            if "error" in event:
+                raise LLMProviderError(
+                    self.config.provider, "DeepSeek response stream failed"
+                )
+            choices = event.get("choices")
+            if not isinstance(choices, list) or not choices:
+                continue
+            choice = choices[0]
+            if not isinstance(choice, dict):
+                continue
+            delta = choice.get("delta")
+            if not isinstance(delta, dict):
+                continue
+            text = delta.get("content")
+            if isinstance(text, str) and text:
+                emitted = True
+                yield LLMStreamChunk(
+                    text=text,
+                    provider=self.config.provider,
+                    model=self.config.model,
+                )
+        if not emitted:
+            raise LLMResponseError(self.config.provider)
 
 
 class GeminiAdapter(_HTTPAdapter):
