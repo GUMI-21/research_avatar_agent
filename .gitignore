@@ -4,6 +4,12 @@ __pycache__/
 .venv/
 venv/
 
+# Web
+web/node_modules/
+web/dist/
+web/coverage/
+web/*.tsbuildinfo
+
 # Unity
 /Packages/
 /ProjectSettings/
