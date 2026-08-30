@@ -252,6 +252,40 @@ class ProviderAdapterTest(unittest.IsolatedAsyncioTestCase):
 
         self.assertEqual(result.text, "OpenAI reply")
 
+    async def test_openai_responses_stream_yields_text_deltas(self) -> None:
+        async def handler(request: httpx.Request) -> httpx.Response:
+            payload = json.loads(request.content)
+            self.assertTrue(payload["stream"])
+            body = "\n\n".join(
+                [
+                    'event: response.created\ndata: {"type":"response.created"}',
+                    'event: response.output_text.delta\ndata: '
+                    '{"type":"response.output_text.delta","delta":"Hel"}',
+                    'event: response.output_text.delta\ndata: '
+                    '{"type":"response.output_text.delta","delta":"lo"}',
+                    'event: response.completed\ndata: '
+                    '{"type":"response.completed"}',
+                ]
+            )
+            return httpx.Response(
+                200,
+                text=body,
+                headers={"Content-Type": "text/event-stream"},
+            )
+
+        adapter = OpenAIAdapter(
+            make_client_config(
+                LLMProvider.OPENAI,
+                "https://api.openai.com/v1",
+                "gpt-5.6-luna",
+            ),
+            transport=httpx.MockTransport(handler),
+        )
+
+        chunks = [chunk async for chunk in adapter.stream(make_request())]
+
+        self.assertEqual([chunk.text for chunk in chunks], ["Hel", "lo"])
+
     async def test_gemini_generate_content_format(self) -> None:
         async def handler(request: httpx.Request) -> httpx.Response:
             self.assertEqual(

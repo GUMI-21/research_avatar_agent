@@ -1,5 +1,7 @@
 """HTTP and mock adapters for the supported LLM providers."""
 
+import json
+from collections.abc import AsyncIterator
 from typing import Any
 from urllib.parse import quote
 
@@ -10,6 +12,7 @@ from app.adapters.llm.base import (
     LLMClientConfig,
     LLMRequest,
     LLMResult,
+    LLMStreamChunk,
 )
 from app.adapters.llm.errors import (
     LLMConfigurationError,
@@ -85,6 +88,52 @@ class _HTTPAdapter(LLMClient):
             raise LLMResponseError(self.config.provider)
         return data
 
+    # 流式输出
+    async def _stream_json(
+        self,
+        path: str,
+        headers: dict[str, str],
+        payload: dict[str, Any],
+    ) -> AsyncIterator[dict[str, Any]]:
+        url = f"{self.config.base_url.rstrip('/')}/{path.lstrip('/')}"
+        try:
+            async with httpx.AsyncClient(
+                timeout=self.config.timeout_seconds,
+                transport=self._transport,
+                follow_redirects=False,
+            ) as client:
+                async with client.stream(
+                    "POST", url, headers=headers, json=payload
+                ) as response:
+                    response.raise_for_status()
+                    async for line in response.aiter_lines():
+                        if not line.startswith("data:"):
+                            continue
+                        raw_data = line.removeprefix("data:").strip()
+                        if raw_data == "[DONE]":
+                            return
+                        try:
+                            data = json.loads(raw_data)
+                        except ValueError as error:
+                            raise LLMResponseError(self.config.provider) from error
+                        if not isinstance(data, dict):
+                            raise LLMResponseError(self.config.provider)
+                        yield data
+        except httpx.TimeoutException as error:
+            raise LLMTimeoutError(self.config.provider) from error
+        except httpx.HTTPStatusError as error:
+            raise LLMProviderError(
+                self.config.provider,
+                f"{self.config.provider.value} returned HTTP "
+                f"{error.response.status_code}",
+                status_code=error.response.status_code,
+            ) from error
+        except httpx.RequestError as error:
+            raise LLMProviderError(
+                self.config.provider,
+                f"Could not connect to {self.config.provider.value}",
+            ) from error
+
     def _api_key(self) -> str:
         api_key = self.config.api_key
         if api_key is None:
@@ -123,6 +172,40 @@ class OpenAIAdapter(_HTTPAdapter):
         if not text:
             raise LLMResponseError(self.config.provider)
         return LLMResult(text=text, provider=self.config.provider, model=self.config.model)
+
+    async def stream(
+        self, request: LLMRequest
+    ) -> AsyncIterator[LLMStreamChunk]:
+        emitted = False
+        async for event in self._stream_json(
+            "responses",
+            headers={
+                "Authorization": f"Bearer {self._api_key()}",
+                "Content-Type": "application/json",
+            },
+            payload={
+                "model": self.config.model,
+                "input": request.message,
+                "max_output_tokens": self.config.max_output_tokens,
+                "stream": True,
+            },
+        ):
+            event_type = event.get("type")
+            if event_type in {"response.failed", "error"}:
+                raise LLMProviderError(
+                    self.config.provider, "OpenAI response stream failed"
+                )
+            delta = event.get("delta")
+            if event_type == "response.output_text.delta" and isinstance(delta, str):
+                emitted = emitted or bool(delta)
+                if delta:
+                    yield LLMStreamChunk(
+                        text=delta,
+                        provider=self.config.provider,
+                        model=self.config.model,
+                    )
+        if not emitted:
+            raise LLMResponseError(self.config.provider)
 
 class DeepSeekAdapter(_HTTPAdapter):
     """DeepSeek OpenAI-compatible Chat Completions adapter."""
