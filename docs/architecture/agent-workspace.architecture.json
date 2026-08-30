@@ -1,0 +1,213 @@
+{
+  "schema_version": 1,
+  "diagram_type": "architecture",
+  "meta": {
+    "title": "Personal Agent Workspace 当前运行架构",
+    "output": "agent-workspace.html",
+    "quality_profile": "showcase"
+  },
+  "components": [
+    {
+      "id": "workspace-client",
+      "type": "frontend",
+      "label": "Workspace Client",
+      "sublabel": "WebSocket commands / events",
+      "pos": [40, 270],
+      "size": [150, 70]
+    },
+    {
+      "id": "fastapi-workspace",
+      "type": "backend",
+      "label": "FastAPI Workspace API",
+      "sublabel": "/api/v1/ws + REST CRUD",
+      "pos": [245, 270],
+      "size": [165, 70]
+    },
+    {
+      "id": "run-execution",
+      "type": "backend",
+      "label": "RunExecutionService",
+      "sublabel": "Run 与事件编排",
+      "pos": [465, 270],
+      "size": [165, 70],
+      "tag": "async stream"
+    },
+    {
+      "id": "runtime-registry",
+      "type": "backend",
+      "label": "RuntimeRegistry",
+      "sublabel": "runtime_id → factory",
+      "pos": [685, 270],
+      "size": [155, 70]
+    },
+    {
+      "id": "native-runtime",
+      "type": "backend",
+      "label": "NativeAgentRuntime",
+      "sublabel": "统一 RuntimeEvent",
+      "pos": [895, 270],
+      "size": [165, 70],
+      "tag": "native"
+    },
+    {
+      "id": "llm-runtime",
+      "type": "backend",
+      "label": "LLMRuntime",
+      "sublabel": "Provider 配置与转发",
+      "pos": [1115, 270],
+      "size": [150, 70]
+    },
+    {
+      "id": "provider-adapters",
+      "type": "backend",
+      "label": "LLM Adapters",
+      "sublabel": "SSE / REST 归一化",
+      "pos": [1320, 270],
+      "size": [155, 70]
+    },
+    {
+      "id": "llm-providers",
+      "type": "external",
+      "label": "LLM Providers",
+      "sublabel": "OpenAI / DeepSeek / Gemini",
+      "pos": [1530, 270],
+      "size": [165, 70]
+    },
+    {
+      "id": "persistence-services",
+      "type": "backend",
+      "label": "Persistence Services",
+      "sublabel": "Run / Message / RunEvent",
+      "pos": [465, 470],
+      "size": [175, 70]
+    },
+    {
+      "id": "sqlite",
+      "type": "database",
+      "label": "SQLite",
+      "sublabel": "client_id scoped records",
+      "pos": [730, 470],
+      "size": [155, 70]
+    }
+  ],
+  "boundaries": [
+    {
+      "kind": "region",
+      "label": "FastAPI 本地服务进程",
+      "wraps": [
+        "fastapi-workspace",
+        "run-execution",
+        "runtime-registry",
+        "native-runtime",
+        "llm-runtime",
+        "provider-adapters",
+        "persistence-services"
+      ],
+      "pad": 24
+    }
+  ],
+  "connections": [
+    {
+      "id": "client-commands",
+      "from": "workspace-client",
+      "to": "fastapi-workspace",
+      "label": "双向 WebSocket commands / RuntimeEvent",
+      "variant": "emphasis",
+      "labelAt": [218, 354]
+    },
+    {
+      "id": "start-run",
+      "from": "fastapi-workspace",
+      "to": "run-execution",
+      "label": "background Task",
+      "variant": "emphasis",
+      "labelAt": [360, 354]
+    },
+    {
+      "id": "select-runtime",
+      "from": "run-execution",
+      "to": "runtime-registry",
+      "label": "create(agent.runtime)",
+      "labelAt": [658, 354]
+    },
+    {
+      "id": "create-native",
+      "from": "runtime-registry",
+      "to": "native-runtime",
+      "label": "RuntimeFactory",
+      "labelAt": [868, 354]
+    },
+    {
+      "id": "stream-llm",
+      "from": "native-runtime",
+      "to": "llm-runtime",
+      "label": "stream(LLMRequest)",
+      "variant": "emphasis",
+      "labelAt": [1088, 354]
+    },
+    {
+      "id": "build-adapter",
+      "from": "llm-runtime",
+      "to": "provider-adapters",
+      "label": "当前 Provider",
+      "labelAt": [1293, 354]
+    },
+    {
+      "id": "provider-call",
+      "from": "provider-adapters",
+      "to": "llm-providers",
+      "label": "HTTPS SSE / REST",
+      "labelAt": [1503, 354]
+    },
+    {
+      "id": "persist-run",
+      "from": "run-execution",
+      "to": "persistence-services",
+      "label": "状态与可审计事件",
+      "fromSide": "bottom",
+      "toSide": "top"
+    },
+    {
+      "id": "crud-replay",
+      "from": "fastapi-workspace",
+      "to": "persistence-services",
+      "label": "CRUD / replay",
+      "variant": "dashed"
+    },
+    {
+      "id": "sqlalchemy",
+      "from": "persistence-services",
+      "to": "sqlite",
+      "label": "SQLAlchemy async"
+    }
+  ],
+  "cards": [
+    {
+      "dot": "cyan",
+      "title": "主执行路径",
+      "items": [
+        "WebSocket 命令启动后台 Run",
+        "Native Runtime 将 Provider 输出归一化为 RuntimeEvent",
+        "文本增量实时返回，终态与关键事件持久化"
+      ]
+    },
+    {
+      "dot": "emerald",
+      "title": "可插拔边界",
+      "items": [
+        "Registry 当前只注册 native Runtime",
+        "Codex 与 Claude 后续通过相同 stream 协议接入",
+        "Provider Adapter 隔离 OpenAI、DeepSeek 与 Gemini 差异"
+      ]
+    },
+    {
+      "dot": "amber",
+      "title": "当前 MVP 边界",
+      "items": [
+        "本地优先、个位数客户端、SQLite 持久化",
+        "RAG、LangGraph handoff 与 Codex/Claude 尚未进入当前拓扑",
+        "client_id 在 Repository 查询中隔离数据"
+      ]
+    }
+  ]
+}
