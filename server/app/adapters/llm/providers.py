@@ -309,3 +309,54 @@ class GeminiAdapter(_HTTPAdapter):
         if not text:
             raise LLMResponseError(self.config.provider)
         return LLMResult(text=text, provider=self.config.provider, model=self.config.model)
+
+    # 流式输出
+    async def stream(
+        self, request: LLMRequest
+    ) -> AsyncIterator[LLMStreamChunk]:
+        model = quote(self.config.model, safe="-._")
+        emitted = False
+        async for event in self._stream_json(
+            f"models/{model}:streamGenerateContent?alt=sse",
+            headers={
+                "x-goog-api-key": self._api_key(),
+                "Content-Type": "application/json",
+            },
+            payload={
+                "contents": [
+                    {"role": "user", "parts": [{"text": request.message}]}
+                ],
+                "generationConfig": {
+                    "maxOutputTokens": self.config.max_output_tokens
+                },
+            },
+        ):
+            if "error" in event:
+                raise LLMProviderError(
+                    self.config.provider, "Gemini response stream failed"
+                )
+            candidates = event.get("candidates")
+            if not isinstance(candidates, list) or not candidates:
+                continue
+            candidate = candidates[0]
+            if not isinstance(candidate, dict):
+                continue
+            content = candidate.get("content")
+            if not isinstance(content, dict):
+                continue
+            parts = content.get("parts")
+            if not isinstance(parts, list):
+                continue
+            for part in parts:
+                if not isinstance(part, dict) or part.get("thought") is True:
+                    continue
+                text = part.get("text")
+                if isinstance(text, str) and text:
+                    emitted = True
+                    yield LLMStreamChunk(
+                        text=text,
+                        provider=self.config.provider,
+                        model=self.config.model,
+                    )
+        if not emitted:
+            raise LLMResponseError(self.config.provider)

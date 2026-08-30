@@ -315,6 +315,41 @@ class ProviderAdapterTest(unittest.IsolatedAsyncioTestCase):
 
         self.assertEqual(result.text, "Gemini reply")
 
+    async def test_gemini_stream_yields_answer_parts(self) -> None:
+        async def handler(request: httpx.Request) -> httpx.Response:
+            self.assertEqual(
+                request.url.path,
+                "/v1beta/models/gemini-3.5-flash:streamGenerateContent",
+            )
+            self.assertEqual(request.url.params["alt"], "sse")
+            body = "\n\n".join(
+                [
+                    'data: {"candidates":[{"content":{"parts":['
+                    '{"text":"hidden","thought":true},'
+                    '{"text":"Gemini "}]}}]}',
+                    'data: {"candidates":[{"content":{"parts":['
+                    '{"text":"reply"}]},"finishReason":"STOP"}]}',
+                ]
+            )
+            return httpx.Response(
+                200,
+                text=body,
+                headers={"Content-Type": "text/event-stream"},
+            )
+
+        adapter = GeminiAdapter(
+            make_client_config(
+                LLMProvider.GEMINI,
+                "https://generativelanguage.googleapis.com/v1beta",
+                "gemini-3.5-flash",
+            ),
+            transport=httpx.MockTransport(handler),
+        )
+
+        chunks = [chunk async for chunk in adapter.stream(make_request())]
+
+        self.assertEqual([chunk.text for chunk in chunks], ["Gemini ", "reply"])
+
     async def test_deepseek_chat_completions_format(self) -> None:
         async def handler(request: httpx.Request) -> httpx.Response:
             payload = json.loads(request.content)
