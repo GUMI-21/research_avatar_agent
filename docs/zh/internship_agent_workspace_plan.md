@@ -211,6 +211,7 @@ Usage 页面优先保证数据诚实，不把估算费用表示成账单实际�
 - Web 前端确定为 React 19、TypeScript、Vite、TanStack Query、Zustand 和 Tailwind CSS。
 - Workspace 采用 Agent/Session 侧栏、对话事件流和 Context/Run/Usage Inspector 三栏布局。
 - Web Shell 已完成并暂停扩展；Usage API 完成后优先进入 Obsidian RAG 与 LangGraph 编排。
+- Obsidian RAG 已开始建设 KnowledgeSource 与 KnowledgeDocument 数据基础。
 
 ### Batch 0：架构与规则
 
