@@ -59,6 +59,8 @@ class RunService:
         *,
         error_type: str | None = None,
         error_message: str | None = None,
+        duration_ms: int | None = None,
+        time_to_first_token_ms: int | None = None,
     ) -> RunRecord:
         run = await self._repository.get(client_id, run_id)
         if run is None:
@@ -72,6 +74,8 @@ class RunService:
             status,
             error_type=error_type,
             error_message=error_message,
+            duration_ms=duration_ms,
+            time_to_first_token_ms=time_to_first_token_ms,
         )
         if updated is None:
             raise RunNotFoundError(run_id)

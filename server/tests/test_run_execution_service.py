@@ -91,6 +91,10 @@ class RunExecutionServiceTest(unittest.IsolatedAsyncioTestCase):
                 patch("app.services.message.log"),
                 patch("app.services.run.log"),
                 patch("app.services.run_event.log"),
+                patch(
+                    "app.services.run_execution.perf_counter",
+                    side_effect=[10.0, 10.125, 10.5],
+                ),
             ):
                 streamed = [
                     item
@@ -123,7 +127,13 @@ class RunExecutionServiceTest(unittest.IsolatedAsyncioTestCase):
         self.assertEqual(run.cache_write_tokens, 1_000)
         self.assertEqual(run.cost_usd, Decimal("0.005330"))
         self.assertEqual(run.cost_status, "estimated")
+        self.assertEqual(run.duration_ms, 500)
+        self.assertEqual(run.time_to_first_token_ms, 125)
         self.assertEqual(streamed[2].event.payload["cost_usd"], "0.005330")
+        self.assertEqual(streamed[-1].event.payload["duration_ms"], 500)
+        self.assertEqual(
+            streamed[-1].event.payload["time_to_first_token_ms"], 125
+        )
         self.assertEqual([item.role for item in messages], ["user", "assistant"])
         self.assertEqual([item.content for item in messages], ["Hello", "Hello"])
         self.assertTrue(all(item.run_id == run.id for item in messages))
@@ -156,6 +166,8 @@ class RunExecutionServiceTest(unittest.IsolatedAsyncioTestCase):
             )
 
         self.assertEqual(run.status, "failed")
+        self.assertEqual(run.error_type, "RuntimeError")
+        self.assertIsNotNone(run.duration_ms)
         self.assertEqual(streamed[-1].event.type, RuntimeEventType.RUN_FAILED)
         self.assertEqual([item.role for item in messages], ["user"])
 
@@ -191,6 +203,7 @@ class RunExecutionServiceTest(unittest.IsolatedAsyncioTestCase):
             )
 
         self.assertEqual(run.status, "cancelled")
+        self.assertIsNotNone(run.duration_ms)
         self.assertEqual(cancelled.event.type, RuntimeEventType.RUN_CANCELLED)
         self.assertEqual(events[-1].event_type, "run_cancelled")
 

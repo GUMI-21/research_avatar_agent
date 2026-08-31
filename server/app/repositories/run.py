@@ -80,6 +80,8 @@ class RunRepository:
         *,
         error_type: str | None = None,
         error_message: str | None = None,
+        duration_ms: int | None = None,
+        time_to_first_token_ms: int | None = None,
     ) -> RunRecord | None:
         run = await self.get(client_id, run_id)
         if run is None:
@@ -90,6 +92,8 @@ class RunRepository:
             run.started_at = now
         if status in {"completed", "failed", "cancelled"}:
             run.completed_at = now
+            run.duration_ms = duration_ms
+            run.time_to_first_token_ms = time_to_first_token_ms
         run.error_type = error_type
         run.error_message = error_message
         await self._session.flush()

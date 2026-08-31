@@ -3,6 +3,7 @@
 import asyncio
 from collections.abc import AsyncIterator
 from dataclasses import dataclass
+from time import perf_counter
 
 from sqlalchemy.ext.asyncio import AsyncSession
 
@@ -35,6 +36,10 @@ def _optional_token_count(value: object) -> int | None:
     if isinstance(value, int) and not isinstance(value, bool) and value >= 0:
         return value
     return None
+
+
+def _elapsed_ms(started_at: float) -> int:
+    return max(0, int((perf_counter() - started_at) * 1000))
 
 # 数据类
 @dataclass(frozen=True)
@@ -97,6 +102,7 @@ class RunExecutionService:
             content=message,
             run_id=run.id,
         )
+        execution_started = perf_counter()
         # 获取异步迭代器；后续 anext() 才会逐步推进 Agent 执行
         iterator = runtime.stream(
             RuntimeRequest(
@@ -109,6 +115,7 @@ class RunExecutionService:
         )
         terminal_received = False
         assistant_parts: list[str] = []
+        time_to_first_token_ms: int | None = None
 
         while True:
             try:
@@ -118,7 +125,13 @@ class RunExecutionService:
             except asyncio.CancelledError:
                 if not terminal_received:
                     cancelled = RuntimeEvent(type=RuntimeEventType.RUN_CANCELLED)
-                    streamed = await self._process(client_id, run.id, cancelled)
+                    streamed = await self._process(
+                        client_id,
+                        run.id,
+                        cancelled,
+                        duration_ms=_elapsed_ms(execution_started),
+                        time_to_first_token_ms=time_to_first_token_ms,
+                    )
                     if streamed is not None:
                         yield streamed
                 raise
@@ -128,7 +141,13 @@ class RunExecutionService:
                         type=RuntimeEventType.RUN_FAILED,
                         payload={"error_type": type(error).__name__},
                     )
-                    streamed = await self._process(client_id, run.id, failure)
+                    streamed = await self._process(
+                        client_id,
+                        run.id,
+                        failure,
+                        duration_ms=_elapsed_ms(execution_started),
+                        time_to_first_token_ms=time_to_first_token_ms,
+                    )
                     if streamed is not None:
                         yield streamed
                 raise
@@ -138,7 +157,20 @@ class RunExecutionService:
                 text = event.payload.get("text")
                 if isinstance(text, str):
                     assistant_parts.append(text)
-            streamed = await self._process(client_id, run.id, event)
+                    if text and time_to_first_token_ms is None:
+                        time_to_first_token_ms = _elapsed_ms(execution_started)
+            duration_ms = (
+                _elapsed_ms(execution_started)
+                if event.type in TERMINAL_EVENTS
+                else None
+            )
+            streamed = await self._process(
+                client_id,
+                run.id,
+                event,
+                duration_ms=duration_ms,
+                time_to_first_token_ms=time_to_first_token_ms,
+            )
             if event.type is RuntimeEventType.RUN_FINISHED and assistant_parts:
                 _ = await self._messages.append(
                     client_id,
@@ -157,7 +189,13 @@ class RunExecutionService:
                 type=RuntimeEventType.RUN_FAILED,
                 payload={"error_type": type(error).__name__},
             )
-            streamed = await self._process(client_id, run.id, failure)
+            streamed = await self._process(
+                client_id,
+                run.id,
+                failure,
+                duration_ms=_elapsed_ms(execution_started),
+                time_to_first_token_ms=time_to_first_token_ms,
+            )
             if streamed is not None:
                 yield streamed
             raise error
@@ -167,10 +205,29 @@ class RunExecutionService:
         client_id: str,
         run_id: str,
         event: RuntimeEvent,
+        *,
+        duration_ms: int | None = None,
+        time_to_first_token_ms: int | None = None,
     ) -> StreamedRunEvent | None:
+        if event.type in TERMINAL_EVENTS:
+            event = RuntimeEvent(
+                type=event.type,
+                payload={
+                    **event.payload,
+                    "duration_ms": duration_ms,
+                    "time_to_first_token_ms": time_to_first_token_ms,
+                },
+            )
         status = RUN_EVENT_STATUSES.get(event.type)
         if status is not None:
-            await self._runs.transition(client_id, run_id, status)
+            await self._runs.transition(
+                client_id,
+                run_id,
+                status,
+                error_type=_optional_string(event.payload.get("error_type")),
+                duration_ms=duration_ms,
+                time_to_first_token_ms=time_to_first_token_ms,
+            )
         if event.type is RuntimeEventType.USAGE_UPDATED:
             run = await self._runs.record_usage(
                 client_id,
