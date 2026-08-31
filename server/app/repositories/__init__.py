@@ -2,7 +2,7 @@
 
 from app.repositories.agent import AgentRepository
 from app.repositories.message import MessageParentNotFoundError, MessageRepository
-from app.repositories.run import RunParentNotFoundError, RunRepository
+from app.repositories.run import RunParentNotFoundError, RunRepository, RunUsageTotals
 from app.repositories.run_event import RunEventRepository, RunEventRunNotFoundError
 from app.repositories.session import (
     SessionAgentNotFoundError,
@@ -16,6 +16,7 @@ __all__ = [
     "MessageRepository",
     "RunParentNotFoundError",
     "RunRepository",
+    "RunUsageTotals",
     "RunEventRepository",
     "RunEventRunNotFoundError",
     "SessionAgentNotFoundError",

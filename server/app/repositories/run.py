@@ -1,13 +1,28 @@
 """Client-scoped persistence operations for Agent Runs."""
 
+from collections.abc import Sequence
+from dataclasses import dataclass
 from decimal import Decimal
 
-from sqlalchemy import select
+from sqlalchemy import case, func, select
 from sqlalchemy.ext.asyncio import AsyncSession
 
 from app.models import AgentRecord, RunRecord, SessionRecord
 from app.models.agent import utc_now
 from logs import log
+
+
+@dataclass(frozen=True)
+class RunUsageTotals:
+    run_count: int
+    failed_count: int
+    unavailable_cost_count: int
+    input_tokens: int
+    output_tokens: int
+    cache_read_tokens: int
+    cache_write_tokens: int
+    cost_usd: Decimal
+    average_duration_ms: int | None
 
 
 class RunParentNotFoundError(LookupError):
@@ -70,6 +85,54 @@ class RunRepository:
         )
         result = await self._session.execute(statement)
         return result.scalar_one_or_none()
+
+    async def list_recent(
+        self,
+        client_id: str,
+        *,
+        limit: int,
+    ) -> Sequence[RunRecord]:
+        statement = (
+            select(RunRecord)
+            .where(RunRecord.client_id == client_id)
+            .order_by(RunRecord.created_at.desc())
+            .limit(limit)
+        )
+        return (await self._session.execute(statement)).scalars().all()
+
+    # 统计用量
+    async def summarize_usage(self, client_id: str) -> RunUsageTotals:
+        statement = select(
+            func.count(RunRecord.id).label("run_count"),
+            func.sum(case((RunRecord.status == "failed", 1), else_=0)).label(
+                "failed_count"
+            ),
+            func.sum(
+                case((RunRecord.cost_status == "unavailable", 1), else_=0)
+            ).label("unavailable_cost_count"),
+            func.sum(RunRecord.input_tokens).label("input_tokens"),
+            func.sum(RunRecord.output_tokens).label("output_tokens"),
+            func.sum(RunRecord.cache_read_tokens).label("cache_read_tokens"),
+            func.sum(RunRecord.cache_write_tokens).label("cache_write_tokens"),
+            func.sum(RunRecord.cost_usd).label("cost_usd"),
+            func.avg(RunRecord.duration_ms).label("average_duration_ms"),
+        ).where(RunRecord.client_id == client_id)
+        row = (await self._session.execute(statement)).one()
+        return RunUsageTotals(
+            run_count=int(row.run_count or 0),
+            failed_count=int(row.failed_count or 0),
+            unavailable_cost_count=int(row.unavailable_cost_count or 0),
+            input_tokens=int(row.input_tokens or 0),
+            output_tokens=int(row.output_tokens or 0),
+            cache_read_tokens=int(row.cache_read_tokens or 0),
+            cache_write_tokens=int(row.cache_write_tokens or 0),
+            cost_usd=Decimal(row.cost_usd or 0).quantize(Decimal("0.000001")),
+            average_duration_ms=(
+                round(row.average_duration_ms)
+                if row.average_duration_ms is not None
+                else None
+            ),
+        )
 
     # 设定快找状态
     async def set_status(

@@ -204,13 +204,13 @@ Usage 页面优先保证数据诚实，不把估算费用表示成账单实际�
 
 ## 开发批次
 
-### 当前实现状态（2026-08-30）
+### 当前实现状态（2026-08-31）
 
 - 已完成 Agent、Session、Message、Run 和 RunEvent 数据基础与客户端隔离。
-- 已完成 Native Runtime、三家 LLM 流式输出、WebSocket 取消/重连、用量成本与运行延迟记录。
+- 已完成 Native Runtime、三家 LLM 流式输出、WebSocket 取消/重连，以及用量、成本、延迟的记录与查询。
 - Web 前端确定为 React 19、TypeScript、Vite、TanStack Query、Zustand 和 Tailwind CSS。
 - Workspace 采用 Agent/Session 侧栏、对话事件流和 Context/Run/Usage Inspector 三栏布局。
-- 下一阶段先完成前后端纵向联调，再进入 Obsidian RAG 与 LangGraph 编排。
+- Web Shell 已完成并暂停扩展；Usage API 完成后优先进入 Obsidian RAG 与 LangGraph 编排。
 
 ### Batch 0：架构与规则
 
