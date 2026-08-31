@@ -1,5 +1,10 @@
 """Application services used by routes and graph nodes."""
 
+from app.services.knowledge import (
+    KnowledgeSourceConflictError,
+    KnowledgeSourcePathError,
+    KnowledgeSourceService,
+)
 from app.services.message import MessageService
 from app.services.run import (
     InvalidRunTransitionError,
@@ -21,6 +26,9 @@ from app.services.run_execution import (
 __all__ = [
     "EventPolicy",
     "InvalidRunTransitionError",
+    "KnowledgeSourceConflictError",
+    "KnowledgeSourcePathError",
+    "KnowledgeSourceService",
     "MessageService",
     "RunExecutionParentNotFoundError",
     "RunExecutionService",

@@ -212,6 +212,7 @@ Usage 页面优先保证数据诚实，不把估算费用表示成账单实际�
 - Workspace 采用 Agent/Session 侧栏、对话事件流和 Context/Run/Usage Inspector 三栏布局。
 - Web Shell 已完成并暂停扩展；Usage API 完成后优先进入 Obsidian RAG 与 LangGraph 编排。
 - Obsidian RAG 已开始建设 KnowledgeSource 与 KnowledgeDocument 数据基础。
+- KnowledgeSource 已具备客户端隔离的 Repository、事务服务和本地目录安全校验。
 
 ### Batch 0：架构与规则
 
