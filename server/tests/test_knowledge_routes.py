@@ -106,12 +106,41 @@ class KnowledgeRoutesTest(unittest.IsolatedAsyncioTestCase):
                     f"/api/v1/knowledge/sources/{source_id}/sync",
                     headers={"X-Client-ID": "client-b"},
                 )
+                first_page = await self.client.get(
+                    f"/api/v1/knowledge/sources/{source_id}/documents",
+                    headers=headers,
+                    params={"limit": 1},
+                )
+                first_document = first_page.json()["documents"][0]
+                second_page = await self.client.get(
+                    f"/api/v1/knowledge/sources/{source_id}/documents",
+                    headers=headers,
+                    params={
+                        "limit": 1,
+                        "after_path": first_page.json()["next_cursor"],
+                    },
+                )
+                detail = await self.client.get(
+                    f"/api/v1/knowledge/sources/{source_id}/documents/"
+                    f"{first_document['id']}",
+                    headers=headers,
+                )
+                hidden_documents = await self.client.get(
+                    f"/api/v1/knowledge/sources/{source_id}/documents",
+                    headers={"X-Client-ID": "client-b"},
+                )
 
         self.assertEqual(first.status_code, 200)
         self.assertEqual(first.json()["created"], 2)
         self.assertEqual(first.json()["status"], "ready")
         self.assertEqual(second.json()["unchanged"], 2)
         self.assertEqual(concealed.status_code, 404)
+        self.assertTrue(first_page.json()["has_more"])
+        self.assertEqual(first_page.json()["next_cursor"], "first.md")
+        self.assertEqual(second_page.json()["documents"][0]["relative_path"], "second.md")
+        self.assertFalse(second_page.json()["has_more"])
+        self.assertEqual(detail.json()["title"], "第一篇")
+        self.assertEqual(hidden_documents.status_code, 404)
 
     async def test_sync_failure_returns_stable_error_and_updates_status(self) -> None:
         with tempfile.TemporaryDirectory() as temp_dir:

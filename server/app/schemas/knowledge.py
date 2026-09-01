@@ -47,3 +47,24 @@ class KnowledgeSyncResponse(BaseModel):
     updated: int
     deleted: int
     unchanged: int
+
+
+class KnowledgeDocumentRead(BaseModel):
+    model_config = ConfigDict(from_attributes=True)
+
+    id: str
+    source_id: str
+    relative_path: str
+    title: str
+    content_hash: str
+    frontmatter: dict[str, object]
+    source_modified_at: datetime
+    indexed_at: datetime | None
+    created_at: datetime
+    updated_at: datetime
+
+
+class KnowledgeDocumentListResponse(BaseModel):
+    documents: list[KnowledgeDocumentRead]
+    next_cursor: str | None
+    has_more: bool

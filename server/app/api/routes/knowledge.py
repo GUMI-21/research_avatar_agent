@@ -1,12 +1,15 @@
 """Client-scoped local knowledge source routes."""
 
 from dataclasses import asdict
+from typing import Annotated
 
-from fastapi import APIRouter, HTTPException, status
+from fastapi import APIRouter, HTTPException, Query, status
 
 from app.api.dependencies import ClientID, DBSession
-from app.repositories import KnowledgeSourceRepository
+from app.repositories import KnowledgeDocumentRepository, KnowledgeSourceRepository
 from app.schemas.knowledge import (
+    KnowledgeDocumentListResponse,
+    KnowledgeDocumentRead,
     KnowledgeSourceCreate,
     KnowledgeSourceListResponse,
     KnowledgeSourceRead,
@@ -105,3 +108,55 @@ async def sync_knowledge_source(
             detail=str(error),
         ) from error
     return KnowledgeSyncResponse(source_id=source_id, **asdict(result))
+
+
+# 展示知识库文档
+@router.get(
+    "/{source_id}/documents",
+    response_model=KnowledgeDocumentListResponse,
+)
+async def list_knowledge_documents(
+    source_id: str,
+    client_id: ClientID,
+    database_session: DBSession,
+    after_path: Annotated[str | None, Query(max_length=1024)] = None,
+    limit: Annotated[int, Query(ge=1, le=100)] = 50,
+) -> KnowledgeDocumentListResponse:
+    source = await KnowledgeSourceRepository(database_session).get(client_id, source_id)
+    if source is None:
+        raise HTTPException(status.HTTP_404_NOT_FOUND, "Knowledge source not found")
+    records = list(
+        await KnowledgeDocumentRepository(database_session).list_page(
+            client_id,
+            source_id,
+            after_path=after_path,
+            limit=limit + 1,
+        )
+    )
+    has_more = len(records) > limit
+    records = records[:limit]
+    return KnowledgeDocumentListResponse(
+        documents=[KnowledgeDocumentRead.model_validate(record) for record in records],
+        next_cursor=records[-1].relative_path if has_more else None,
+        has_more=has_more,
+    )
+
+
+@router.get(
+    "/{source_id}/documents/{document_id}",
+    response_model=KnowledgeDocumentRead,
+)
+async def get_knowledge_document(
+    source_id: str,
+    document_id: str,
+    client_id: ClientID,
+    database_session: DBSession,
+) -> KnowledgeDocumentRead:
+    document = await KnowledgeDocumentRepository(database_session).get(
+        client_id,
+        source_id,
+        document_id,
+    )
+    if document is None:
+        raise HTTPException(status.HTTP_404_NOT_FOUND, "Knowledge document not found")
+    return KnowledgeDocumentRead.model_validate(document)

@@ -79,6 +79,38 @@ class KnowledgeDocumentRepository:
         )
         return (await self._session.execute(statement)).scalars().all()
 
+    async def list_page(
+        self,
+        client_id: str,
+        source_id: str,
+        *,
+        after_path: str | None,
+        limit: int,
+    ) -> Sequence[KnowledgeDocumentRecord]:
+        statement = select(KnowledgeDocumentRecord).where(
+            KnowledgeDocumentRecord.client_id == client_id,
+            KnowledgeDocumentRecord.source_id == source_id,
+        )
+        if after_path is not None:
+            statement = statement.where(
+                KnowledgeDocumentRecord.relative_path > after_path
+            )
+        statement = statement.order_by(KnowledgeDocumentRecord.relative_path).limit(limit)
+        return (await self._session.execute(statement)).scalars().all()
+
+    async def get(
+        self,
+        client_id: str,
+        source_id: str,
+        document_id: str,
+    ) -> KnowledgeDocumentRecord | None:
+        statement = select(KnowledgeDocumentRecord).where(
+            KnowledgeDocumentRecord.client_id == client_id,
+            KnowledgeDocumentRecord.source_id == source_id,
+            KnowledgeDocumentRecord.id == document_id,
+        )
+        return (await self._session.execute(statement)).scalar_one_or_none()
+
     def add(self, document: KnowledgeDocumentRecord) -> None:
         self._session.add(document)
 
