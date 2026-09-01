@@ -2,8 +2,10 @@
 
 from app.services.knowledge import (
     KnowledgeSourceConflictError,
+    KnowledgeSourceNotFoundError,
     KnowledgeSourcePathError,
     KnowledgeSourceService,
+    KnowledgeSyncResult,
 )
 from app.services.message import MessageService
 from app.services.run import (
@@ -27,8 +29,10 @@ __all__ = [
     "EventPolicy",
     "InvalidRunTransitionError",
     "KnowledgeSourceConflictError",
+    "KnowledgeSourceNotFoundError",
     "KnowledgeSourcePathError",
     "KnowledgeSourceService",
+    "KnowledgeSyncResult",
     "MessageService",
     "RunExecutionParentNotFoundError",
     "RunExecutionService",
