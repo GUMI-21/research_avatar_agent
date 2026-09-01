@@ -28,6 +28,7 @@ def _hash_file(path: Path) -> str:
     return digest.hexdigest()
 
 
+# 根据目录提取所有md文件
 def scan_markdown_files(root_path: Path) -> list[ScannedMarkdownFile]:
     root = root_path.resolve(strict=True)
     if not root.is_dir():

@@ -1,5 +1,7 @@
 """Client-scoped local knowledge source routes."""
 
+from dataclasses import asdict
+
 from fastapi import APIRouter, HTTPException, status
 
 from app.api.dependencies import ClientID, DBSession
@@ -8,11 +10,14 @@ from app.schemas.knowledge import (
     KnowledgeSourceCreate,
     KnowledgeSourceListResponse,
     KnowledgeSourceRead,
+    KnowledgeSyncResponse,
 )
 from app.services import (
     KnowledgeSourceConflictError,
+    KnowledgeSourceNotFoundError,
     KnowledgeSourcePathError,
     KnowledgeSourceService,
+    KnowledgeSourceSyncError,
 )
 
 router = APIRouter(prefix="/knowledge/sources")
@@ -75,3 +80,28 @@ async def get_knowledge_source(
             detail="Knowledge source not found",
         )
     return KnowledgeSourceRead.model_validate(source)
+
+
+# 手动更新知识库
+@router.post("/{source_id}/sync", response_model=KnowledgeSyncResponse)
+async def sync_knowledge_source(
+    source_id: str,
+    client_id: ClientID,
+    database_session: DBSession,
+) -> KnowledgeSyncResponse:
+    try:
+        result = await KnowledgeSourceService(database_session).sync(
+            client_id,
+            source_id,
+        )
+    except KnowledgeSourceNotFoundError as error:
+        raise HTTPException(
+            status_code=status.HTTP_404_NOT_FOUND,
+            detail=str(error),
+        ) from error
+    except KnowledgeSourceSyncError as error:
+        raise HTTPException(
+            status_code=status.HTTP_422_UNPROCESSABLE_CONTENT,
+            detail=str(error),
+        ) from error
+    return KnowledgeSyncResponse(source_id=source_id, **asdict(result))

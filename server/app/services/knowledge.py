@@ -31,6 +31,10 @@ class KnowledgeSourceNotFoundError(LookupError):
     pass
 
 
+class KnowledgeSourceSyncError(RuntimeError):
+    pass
+
+
 @dataclass(frozen=True)
 class KnowledgeSyncResult:
     scanned: int
@@ -164,7 +168,7 @@ class KnowledgeSourceService:
                 source_id,
                 type(error).__name__,
             )
-            raise
+            raise KnowledgeSourceSyncError("Knowledge source sync failed") from error
 
         result = KnowledgeSyncResult(
             scanned=len(parsed_files),

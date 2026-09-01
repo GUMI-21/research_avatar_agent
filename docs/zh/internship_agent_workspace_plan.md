@@ -217,6 +217,7 @@ Usage 页面优先保证数据诚实，不把估算费用表示成账单实际�
 - Vault 扫描器可安全发现 Markdown、计算内容哈希，并忽略隐藏目录和越界软链接。
 - Markdown 解析器可提取 frontmatter、标题、Obsidian 双链及图片引用。
 - KnowledgeSource 同步服务可增量创建、更新和删除文档元数据，并记录同步状态。
+- Web 客户端可通过 KnowledgeSource 同步 API 主动导入 Vault 并查看增量统计。
 
 ### Batch 0：架构与规则
 

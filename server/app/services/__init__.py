@@ -5,6 +5,7 @@ from app.services.knowledge import (
     KnowledgeSourceNotFoundError,
     KnowledgeSourcePathError,
     KnowledgeSourceService,
+    KnowledgeSourceSyncError,
     KnowledgeSyncResult,
 )
 from app.services.message import MessageService
@@ -32,6 +33,7 @@ __all__ = [
     "KnowledgeSourceNotFoundError",
     "KnowledgeSourcePathError",
     "KnowledgeSourceService",
+    "KnowledgeSourceSyncError",
     "KnowledgeSyncResult",
     "MessageService",
     "RunExecutionParentNotFoundError",

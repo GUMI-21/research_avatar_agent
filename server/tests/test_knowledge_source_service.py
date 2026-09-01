@@ -6,13 +6,13 @@ from pathlib import Path
 from unittest.mock import patch
 
 from app.core.database import Base, Database
-from app.adapters.knowledge import MarkdownParseError
 from app.repositories import KnowledgeDocumentRepository, KnowledgeSourceRepository
 from app.services import (
     KnowledgeSourceConflictError,
     KnowledgeSourceNotFoundError,
     KnowledgeSourcePathError,
     KnowledgeSourceService,
+    KnowledgeSourceSyncError,
 )
 
 
@@ -121,7 +121,7 @@ class KnowledgeSourceServiceTest(unittest.IsolatedAsyncioTestCase):
                     source = await service.create(
                         "client-a", name="Notes", root_path=temp_dir
                     )
-                    with self.assertRaises(MarkdownParseError):
+                    with self.assertRaises(KnowledgeSourceSyncError):
                         await service.sync("client-a", source.id)
                 self.assertEqual(source.sync_status, "failed")
                 with self.assertRaises(KnowledgeSourceNotFoundError):

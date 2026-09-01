@@ -37,3 +37,13 @@ class KnowledgeSourceRead(BaseModel):
 
 class KnowledgeSourceListResponse(BaseModel):
     sources: list[KnowledgeSourceRead]
+
+
+class KnowledgeSyncResponse(BaseModel):
+    source_id: str
+    status: Literal["ready"] = "ready"
+    scanned: int
+    created: int
+    updated: int
+    deleted: int
+    unchanged: int

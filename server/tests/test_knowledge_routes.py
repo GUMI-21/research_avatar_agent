@@ -82,6 +82,63 @@ class KnowledgeRoutesTest(unittest.IsolatedAsyncioTestCase):
         self.assertEqual(duplicate.status_code, 409)
         self.assertEqual(missing.status_code, 400)
 
+    async def test_sync_returns_incremental_counts_and_is_client_scoped(self) -> None:
+        with tempfile.TemporaryDirectory() as temp_dir:
+            Path(temp_dir, "first.md").write_text("# 第一篇", encoding="utf-8")
+            Path(temp_dir, "second.md").write_text("# 第二篇", encoding="utf-8")
+            headers = {"X-Client-ID": "client-a"}
+            with patch("app.services.knowledge.log"):
+                created = await self.client.post(
+                    "/api/v1/knowledge/sources",
+                    headers=headers,
+                    json={"name": "Notes", "root_path": temp_dir},
+                )
+                source_id = created.json()["id"]
+                first = await self.client.post(
+                    f"/api/v1/knowledge/sources/{source_id}/sync",
+                    headers=headers,
+                )
+                second = await self.client.post(
+                    f"/api/v1/knowledge/sources/{source_id}/sync",
+                    headers=headers,
+                )
+                concealed = await self.client.post(
+                    f"/api/v1/knowledge/sources/{source_id}/sync",
+                    headers={"X-Client-ID": "client-b"},
+                )
+
+        self.assertEqual(first.status_code, 200)
+        self.assertEqual(first.json()["created"], 2)
+        self.assertEqual(first.json()["status"], "ready")
+        self.assertEqual(second.json()["unchanged"], 2)
+        self.assertEqual(concealed.status_code, 404)
+
+    async def test_sync_failure_returns_stable_error_and_updates_status(self) -> None:
+        with tempfile.TemporaryDirectory() as temp_dir:
+            Path(temp_dir, "invalid.md").write_text(
+                "---\ntags: [broken\n---\nbody", encoding="utf-8"
+            )
+            headers = {"X-Client-ID": "client-a"}
+            with patch("app.services.knowledge.log"):
+                created = await self.client.post(
+                    "/api/v1/knowledge/sources",
+                    headers=headers,
+                    json={"name": "Invalid", "root_path": temp_dir},
+                )
+                source_id = created.json()["id"]
+                response = await self.client.post(
+                    f"/api/v1/knowledge/sources/{source_id}/sync",
+                    headers=headers,
+                )
+            source = await self.client.get(
+                f"/api/v1/knowledge/sources/{source_id}",
+                headers=headers,
+            )
+
+        self.assertEqual(response.status_code, 422)
+        self.assertEqual(response.json()["detail"], "Knowledge source sync failed")
+        self.assertEqual(source.json()["sync_status"], "failed")
+
 
 if __name__ == "__main__":
     unittest.main()
