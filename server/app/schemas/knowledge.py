@@ -47,6 +47,7 @@ class KnowledgeSyncResponse(BaseModel):
     updated: int
     deleted: int
     unchanged: int
+    chunks: int
 
 
 class KnowledgeDocumentRead(BaseModel):

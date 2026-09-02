@@ -220,6 +220,7 @@ Usage 页面优先保证数据诚实，不把估算费用表示成账单实际�
 - Web 客户端可通过 KnowledgeSource 同步 API 主动导入 Vault 并查看增量统计。
 - KnowledgeDocument API 支持按路径游标分页和客户端隔离的详情查询。
 - Markdown 标题分块保留标题路径、原文件行号和内容哈希，Chunk 表提供持久化基础。
+- KnowledgeSource 增量同步会原子化重建变化文档的 Chunk，并跳过已索引文档。
 
 ### Batch 0：架构与规则
 

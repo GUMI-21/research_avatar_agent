@@ -5,7 +5,11 @@ from collections.abc import Sequence
 from sqlalchemy import select
 from sqlalchemy.ext.asyncio import AsyncSession
 
-from app.models import KnowledgeDocumentRecord, KnowledgeSourceRecord
+from app.models import (
+    KnowledgeChunkRecord,
+    KnowledgeDocumentRecord,
+    KnowledgeSourceRecord,
+)
 
 
 class KnowledgeSourceRepository:
@@ -116,3 +120,25 @@ class KnowledgeDocumentRepository:
 
     async def delete(self, document: KnowledgeDocumentRecord) -> None:
         await self._session.delete(document)
+
+
+class KnowledgeChunkRepository:
+    def __init__(self, session: AsyncSession) -> None:
+        self._session = session
+
+    async def list_for_source(
+        self,
+        client_id: str,
+        source_id: str,
+    ) -> Sequence[KnowledgeChunkRecord]:
+        statement = select(KnowledgeChunkRecord).where(
+            KnowledgeChunkRecord.client_id == client_id,
+            KnowledgeChunkRecord.source_id == source_id,
+        )
+        return (await self._session.execute(statement)).scalars().all()
+
+    def add(self, chunk: KnowledgeChunkRecord) -> None:
+        self._session.add(chunk)
+
+    async def delete(self, chunk: KnowledgeChunkRecord) -> None:
+        await self._session.delete(chunk)

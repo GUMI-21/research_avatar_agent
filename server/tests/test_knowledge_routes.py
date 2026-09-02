@@ -132,6 +132,7 @@ class KnowledgeRoutesTest(unittest.IsolatedAsyncioTestCase):
 
         self.assertEqual(first.status_code, 200)
         self.assertEqual(first.json()["created"], 2)
+        self.assertEqual(first.json()["chunks"], 0)
         self.assertEqual(first.json()["status"], "ready")
         self.assertEqual(second.json()["unchanged"], 2)
         self.assertEqual(concealed.status_code, 404)

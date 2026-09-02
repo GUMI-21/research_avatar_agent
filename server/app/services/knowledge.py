@@ -8,14 +8,24 @@ from sqlalchemy.exc import IntegrityError
 from sqlalchemy.ext.asyncio import AsyncSession
 
 from app.adapters.knowledge import (
+    MarkdownChunk,
     ParsedMarkdownDocument,
     ScannedMarkdownFile,
+    chunk_markdown,
     parse_markdown,
     scan_markdown_files,
 )
-from app.models import KnowledgeDocumentRecord, KnowledgeSourceRecord
+from app.models import (
+    KnowledgeChunkRecord,
+    KnowledgeDocumentRecord,
+    KnowledgeSourceRecord,
+)
 from app.models.agent import utc_now
-from app.repositories import KnowledgeDocumentRepository, KnowledgeSourceRepository
+from app.repositories import (
+    KnowledgeChunkRepository,
+    KnowledgeDocumentRepository,
+    KnowledgeSourceRepository,
+)
 from logs import log
 
 
@@ -42,6 +52,7 @@ class KnowledgeSyncResult:
     updated: int
     deleted: int
     unchanged: int
+    chunks: int
 
 
 def resolve_knowledge_root(raw_path: str) -> Path:
@@ -58,14 +69,15 @@ def resolve_knowledge_root(raw_path: str) -> Path:
 
 def _read_documents(
     root: Path,
-) -> list[tuple[ScannedMarkdownFile, ParsedMarkdownDocument]]:
-    documents: list[tuple[ScannedMarkdownFile, ParsedMarkdownDocument]] = []
+) -> list[tuple[ScannedMarkdownFile, ParsedMarkdownDocument, list[MarkdownChunk]]]:
+    documents = []
     for scanned in scan_markdown_files(root):
+        raw_text = scanned.path.read_text(encoding="utf-8")
         parsed = parse_markdown(
             scanned.relative_path,
-            scanned.path.read_text(encoding="utf-8"),
+            raw_text,
         )
-        documents.append((scanned, parsed))
+        documents.append((scanned, parsed, chunk_markdown(raw_text)))
     return documents
 
 
@@ -115,6 +127,7 @@ class KnowledgeSourceService:
         await self._session.commit()
 
         documents = KnowledgeDocumentRepository(self._session)
+        chunks = KnowledgeChunkRepository(self._session)
         try:
             parsed_files = await asyncio.to_thread(
                 _read_documents,
@@ -124,10 +137,18 @@ class KnowledgeSourceService:
                 item.relative_path: item
                 for item in await documents.list_for_source(client_id, source.id)
             }
+            existing_chunks: dict[str, list[KnowledgeChunkRecord]] = {}
+            for chunk in await chunks.list_for_source(client_id, source.id):
+                existing_chunks.setdefault(chunk.document_id, []).append(chunk)
             created = updated = unchanged = 0
-            for scanned, parsed in parsed_files:
+            rebuild: list[tuple[KnowledgeDocumentRecord, list[MarkdownChunk]]] = []
+            for scanned, parsed, parsed_chunks in parsed_files:
                 record = existing.pop(scanned.relative_path, None)
-                if record is not None and record.content_hash == scanned.content_hash:
+                if (
+                    record is not None
+                    and record.content_hash == scanned.content_hash
+                    and record.indexed_at is not None
+                ):
                     unchanged += 1
                     continue
                 if record is None:
@@ -149,8 +170,32 @@ class KnowledgeSourceService:
                     record.source_modified_at = scanned.source_modified_at
                     record.indexed_at = None
                     updated += 1
+                record.indexed_at = utc_now()
+                rebuild.append((record, parsed_chunks))
+            await self._session.flush()
+            for record, _ in rebuild:
+                for old_chunk in existing_chunks.get(record.id, []):
+                    await chunks.delete(old_chunk)
             for deleted_record in existing.values():
+                for old_chunk in existing_chunks.get(deleted_record.id, []):
+                    await chunks.delete(old_chunk)
                 await documents.delete(deleted_record)
+            await self._session.flush()
+            for record, parsed_chunks in rebuild:
+                for parsed_chunk in parsed_chunks:
+                    chunks.add(
+                        KnowledgeChunkRecord(
+                            client_id=client_id,
+                            source_id=source.id,
+                            document_id=record.id,
+                            chunk_index=parsed_chunk.chunk_index,
+                            heading_path=list(parsed_chunk.heading_path),
+                            content=parsed_chunk.content,
+                            start_line=parsed_chunk.start_line,
+                            end_line=parsed_chunk.end_line,
+                            content_hash=parsed_chunk.content_hash,
+                        )
+                    )
             source.sync_status = "ready"
             source.last_synced_at = utc_now()
             await self._session.commit()
@@ -176,6 +221,7 @@ class KnowledgeSourceService:
             updated=updated,
             deleted=len(existing),
             unchanged=unchanged,
+            chunks=sum(len(item[2]) for item in parsed_files),
         )
         log.info(
             "db_mutation_committed table=knowledge_documents "

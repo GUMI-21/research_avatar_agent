@@ -6,7 +6,11 @@ from pathlib import Path
 from unittest.mock import patch
 
 from app.core.database import Base, Database
-from app.repositories import KnowledgeDocumentRepository, KnowledgeSourceRepository
+from app.repositories import (
+    KnowledgeChunkRepository,
+    KnowledgeDocumentRepository,
+    KnowledgeSourceRepository,
+)
 from app.services import (
     KnowledgeSourceConflictError,
     KnowledgeSourceNotFoundError,
@@ -80,7 +84,7 @@ class KnowledgeSourceServiceTest(unittest.IsolatedAsyncioTestCase):
     async def test_sync_creates_updates_and_deletes_document_metadata(self) -> None:
         with tempfile.TemporaryDirectory() as temp_dir:
             root = Path(temp_dir)
-            (root / "first.md").write_text("# First", encoding="utf-8")
+            (root / "first.md").write_text("# First\nfirst body", encoding="utf-8")
             (root / "old.md").write_text("old", encoding="utf-8")
             async with self.database.session() as session:
                 service = KnowledgeSourceService(session)
@@ -90,23 +94,37 @@ class KnowledgeSourceServiceTest(unittest.IsolatedAsyncioTestCase):
                     )
                     first_result = await service.sync("client-a", source.id)
                 self.assertEqual((first_result.created, first_result.scanned), (2, 2))
+                self.assertEqual(first_result.chunks, 2)
 
-                (root / "first.md").write_text("# Changed", encoding="utf-8")
+                (root / "first.md").write_text(
+                    "# Changed\nchanged body", encoding="utf-8"
+                )
                 (root / "old.md").unlink()
-                (root / "new.md").write_text("# New", encoding="utf-8")
+                (root / "new.md").write_text("# New\nnew body", encoding="utf-8")
                 with patch("app.services.knowledge.log"):
                     second_result = await service.sync("client-a", source.id)
+                    third_result = await service.sync("client-a", source.id)
                 records = await KnowledgeDocumentRepository(session).list_for_source(
+                    "client-a", source.id
+                )
+                chunk_records = await KnowledgeChunkRepository(session).list_for_source(
                     "client-a", source.id
                 )
 
             self.assertEqual(second_result.created, 1)
             self.assertEqual(second_result.updated, 1)
             self.assertEqual(second_result.deleted, 1)
+            self.assertEqual(second_result.chunks, 2)
+            self.assertEqual(third_result.unchanged, 2)
             self.assertEqual(
                 sorted((record.relative_path, record.title) for record in records),
                 [("first.md", "Changed"), ("new.md", "New")],
             )
+            self.assertEqual(
+                sorted(chunk.content for chunk in chunk_records),
+                ["changed body", "new body"],
+            )
+            self.assertTrue(all(record.indexed_at is not None for record in records))
             self.assertEqual(source.sync_status, "ready")
             self.assertIsNotNone(source.last_synced_at)
 
