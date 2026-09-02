@@ -10,6 +10,9 @@ from app.repositories import KnowledgeDocumentRepository, KnowledgeSourceReposit
 from app.schemas.knowledge import (
     KnowledgeDocumentListResponse,
     KnowledgeDocumentRead,
+    KnowledgeCitation,
+    KnowledgeSearchRequest,
+    KnowledgeSearchResponse,
     KnowledgeSourceCreate,
     KnowledgeSourceListResponse,
     KnowledgeSourceRead,
@@ -21,6 +24,7 @@ from app.services import (
     KnowledgeSourcePathError,
     KnowledgeSourceService,
     KnowledgeSourceSyncError,
+    KnowledgeRetrievalService,
 )
 
 router = APIRouter(prefix="/knowledge/sources")
@@ -160,3 +164,42 @@ async def get_knowledge_document(
     if document is None:
         raise HTTPException(status.HTTP_404_NOT_FOUND, "Knowledge document not found")
     return KnowledgeDocumentRead.model_validate(document)
+
+
+@router.post("/{source_id}/search", response_model=KnowledgeSearchResponse)
+async def search_knowledge_source(
+    source_id: str,
+    request: KnowledgeSearchRequest,
+    client_id: ClientID,
+    database_session: DBSession,
+) -> KnowledgeSearchResponse:
+    try:
+        hits = await KnowledgeRetrievalService(database_session).search_keyword(
+            client_id,
+            source_id,
+            request.query,
+            limit=request.limit,
+        )
+    except KnowledgeSourceNotFoundError as error:
+        raise HTTPException(
+            status_code=status.HTTP_404_NOT_FOUND,
+            detail=str(error),
+        ) from error
+    return KnowledgeSearchResponse(
+        source_id=source_id,
+        query=request.query,
+        citations=[
+            KnowledgeCitation(
+                chunk_id=hit.chunk_id,
+                document_id=hit.document_id,
+                title=hit.title,
+                relative_path=hit.relative_path,
+                heading_path=list(hit.heading_path),
+                snippet=hit.content,
+                start_line=hit.start_line,
+                end_line=hit.end_line,
+                score=hit.score,
+            )
+            for hit in hits
+        ],
+    )

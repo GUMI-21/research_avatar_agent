@@ -69,3 +69,36 @@ class KnowledgeDocumentListResponse(BaseModel):
     documents: list[KnowledgeDocumentRead]
     next_cursor: str | None
     has_more: bool
+
+
+class KnowledgeSearchRequest(BaseModel):
+    query: str = Field(min_length=1, max_length=2000)
+    limit: int = Field(default=8, ge=1, le=20)
+
+    @field_validator("query")
+    @classmethod
+    def strip_query(cls, value: str) -> str:
+        stripped = value.strip()
+        if not stripped:
+            raise ValueError("must not be blank")
+        return stripped
+
+
+class KnowledgeCitation(BaseModel):
+    chunk_id: str
+    document_id: str
+    title: str
+    relative_path: str
+    heading_path: list[str]
+    snippet: str
+    start_line: int
+    end_line: int
+    retrieval_method: Literal["keyword"] = "keyword"
+    score: float
+
+
+class KnowledgeSearchResponse(BaseModel):
+    source_id: str
+    query: str
+    strategy: Literal["keyword"] = "keyword"
+    citations: list[KnowledgeCitation]

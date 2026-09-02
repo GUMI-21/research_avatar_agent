@@ -9,6 +9,7 @@ from app.services.knowledge import (
     KnowledgeSyncResult,
 )
 from app.services.message import MessageService
+from app.services.knowledge_retrieval import KnowledgeRetrievalService
 from app.services.run import (
     InvalidRunTransitionError,
     RunNotFoundError,
@@ -35,6 +36,7 @@ __all__ = [
     "KnowledgeSourceService",
     "KnowledgeSourceSyncError",
     "KnowledgeSyncResult",
+    "KnowledgeRetrievalService",
     "MessageService",
     "RunExecutionParentNotFoundError",
     "RunExecutionService",

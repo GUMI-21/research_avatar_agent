@@ -4,10 +4,14 @@ import asyncio
 import tempfile
 import unittest
 from pathlib import Path
+from unittest.mock import patch
 
+import httpx
 from alembic import command
 from alembic.config import Config
+from fastapi import FastAPI
 
+from app.api.router import api_router
 from app.core.database import Database
 from app.models import (
     KnowledgeChunkRecord,
@@ -29,6 +33,7 @@ class KnowledgeKeywordSearchTest(unittest.TestCase):
             async def scenario() -> None:
                 database = Database(database_url)
                 try:
+                    source_ids: dict[str, str] = {}
                     async with database.session() as session:
                         for client_id in ("client-a", "client-b"):
                             source = KnowledgeSourceRecord(
@@ -38,6 +43,7 @@ class KnowledgeKeywordSearchTest(unittest.TestCase):
                             )
                             session.add(source)
                             await session.flush()
+                            source_ids[client_id] = source.id
                             document = KnowledgeDocumentRecord(
                                 client_id=client_id,
                                 source_id=source.id,
@@ -77,6 +83,35 @@ class KnowledgeKeywordSearchTest(unittest.TestCase):
                     self.assertGreater(hits[0].score, 0)
                     self.assertEqual(len(short_hits), 1)
                     self.assertEqual(blank_hits, [])
+
+                    app = FastAPI()
+                    app.state.database = database
+                    app.include_router(api_router)
+                    async with httpx.AsyncClient(
+                        transport=httpx.ASGITransport(app=app),
+                        base_url="http://testserver",
+                    ) as client:
+                        with patch("app.services.knowledge_retrieval.log"):
+                            response = await client.post(
+                                f"/api/v1/knowledge/sources/"
+                                f"{source_ids['client-a']}/search",
+                                headers={"X-Client-ID": "client-a"},
+                                json={"query": "如何实现混合检索", "limit": 5},
+                            )
+                            concealed = await client.post(
+                                f"/api/v1/knowledge/sources/"
+                                f"{source_ids['client-a']}/search",
+                                headers={"X-Client-ID": "client-b"},
+                                json={"query": "混合检索"},
+                            )
+
+                    self.assertEqual(response.status_code, 200)
+                    citation = response.json()["citations"][0]
+                    self.assertEqual(citation["relative_path"], "RAG.md")
+                    self.assertEqual(citation["start_line"], 3)
+                    self.assertEqual(citation["retrieval_method"], "keyword")
+                    self.assertIn("混合检索", citation["snippet"])
+                    self.assertEqual(concealed.status_code, 404)
                 finally:
                     await database.dispose()
 
