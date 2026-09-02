@@ -4,7 +4,11 @@ import unittest
 from datetime import datetime, timezone
 
 from app.core.database import Base, Database
-from app.models import KnowledgeDocumentRecord, KnowledgeSourceRecord
+from app.models import (
+    KnowledgeChunkRecord,
+    KnowledgeDocumentRecord,
+    KnowledgeSourceRecord,
+)
 
 
 class KnowledgeModelTest(unittest.IsolatedAsyncioTestCase):
@@ -30,12 +34,27 @@ class KnowledgeModelTest(unittest.IsolatedAsyncioTestCase):
                     source_modified_at=datetime.now(timezone.utc),
                 )
                 session.add(document)
+                await session.flush()
+                chunk = KnowledgeChunkRecord(
+                    client_id="client-a",
+                    source_id=source.id,
+                    document_id=document.id,
+                    chunk_index=0,
+                    heading_path=["RAG", "Retrieval"],
+                    content="Hybrid retrieval combines two channels.",
+                    start_line=10,
+                    end_line=12,
+                    content_hash="b" * 64,
+                )
+                session.add(chunk)
                 await session.commit()
 
                 self.assertEqual(source.source_type, "obsidian")
                 self.assertEqual(source.sync_status, "pending")
                 self.assertEqual(document.frontmatter, {})
                 self.assertEqual(document.source_id, source.id)
+                self.assertEqual(chunk.heading_path, ["RAG", "Retrieval"])
+                self.assertEqual((chunk.start_line, chunk.end_line), (10, 12))
         finally:
             await database.dispose()
 

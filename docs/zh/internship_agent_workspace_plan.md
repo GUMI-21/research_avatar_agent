@@ -219,6 +219,7 @@ Usage 页面优先保证数据诚实，不把估算费用表示成账单实际�
 - KnowledgeSource 同步服务可增量创建、更新和删除文档元数据，并记录同步状态。
 - Web 客户端可通过 KnowledgeSource 同步 API 主动导入 Vault 并查看增量统计。
 - KnowledgeDocument API 支持按路径游标分页和客户端隔离的详情查询。
+- Markdown 标题分块保留标题路径、原文件行号和内容哈希，Chunk 表提供持久化基础。
 
 ### Batch 0：架构与规则
 

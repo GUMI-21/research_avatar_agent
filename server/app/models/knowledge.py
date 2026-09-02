@@ -6,6 +6,7 @@ from sqlalchemy import (
     CheckConstraint,
     ForeignKey,
     Index,
+    Integer,
     JSON,
     String,
     Text,
@@ -83,5 +84,39 @@ class KnowledgeDocumentRecord(Base):
     indexed_at: Mapped[datetime | None] = mapped_column(
         nullable=True
     )  # 最近写入检索索引的时间
+    created_at: Mapped[datetime] = mapped_column(default=utc_now)
+    updated_at: Mapped[datetime] = mapped_column(default=utc_now, onupdate=utc_now)
+
+
+class KnowledgeChunkRecord(Base):
+    __tablename__ = "knowledge_chunks"
+    __table_args__ = (
+        UniqueConstraint(
+            "document_id",
+            "chunk_index",
+            name="uq_knowledge_chunks_document_index",
+        ),
+        Index(
+            "ix_knowledge_chunks_client_source_document",
+            "client_id",
+            "source_id",
+            "document_id",
+        ),
+    )
+
+    id: Mapped[str] = mapped_column(String(36), primary_key=True, default=new_id)
+    client_id: Mapped[str] = mapped_column(String(64))  # 数据隔离作用域
+    source_id: Mapped[str] = mapped_column(
+        ForeignKey("knowledge_sources.id", ondelete="CASCADE")
+    )  # 所属知识库
+    document_id: Mapped[str] = mapped_column(
+        ForeignKey("knowledge_documents.id", ondelete="CASCADE")
+    )  # 所属 Markdown 文档
+    chunk_index: Mapped[int] = mapped_column(Integer)  # 文档内稳定顺序
+    heading_path: Mapped[list[str]] = mapped_column(JSON, default=list)  # 标题层级
+    content: Mapped[str] = mapped_column(Text)  # 检索与上下文使用的原文片段
+    start_line: Mapped[int] = mapped_column(Integer)  # 原文件起始行，包含首行
+    end_line: Mapped[int] = mapped_column(Integer)  # 原文件结束行，包含末行
+    content_hash: Mapped[str] = mapped_column(String(64))  # 分块变化检测依据
     created_at: Mapped[datetime] = mapped_column(default=utc_now)
     updated_at: Mapped[datetime] = mapped_column(default=utc_now, onupdate=utc_now)
