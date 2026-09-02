@@ -120,3 +120,37 @@ class KnowledgeChunkRecord(Base):
     content_hash: Mapped[str] = mapped_column(String(64))  # 分块变化检测依据
     created_at: Mapped[datetime] = mapped_column(default=utc_now)
     updated_at: Mapped[datetime] = mapped_column(default=utc_now, onupdate=utc_now)
+
+# embedding
+class KnowledgeChunkEmbeddingRecord(Base):
+    __tablename__ = "knowledge_chunk_embeddings"
+    __table_args__ = (
+        CheckConstraint("dimensions > 0", name="ck_knowledge_embeddings_dimensions"),
+        UniqueConstraint(
+            "chunk_id",
+            "provider",
+            "model",
+            name="uq_knowledge_embeddings_chunk_model",
+        ),
+        Index(
+            "ix_knowledge_embeddings_client_source_model",
+            "client_id",
+            "source_id",
+            "provider",
+            "model",
+        ),
+    )
+
+    id: Mapped[str] = mapped_column(String(36), primary_key=True, default=new_id)
+    client_id: Mapped[str] = mapped_column(String(64))  # 数据隔离作用域
+    source_id: Mapped[str] = mapped_column(String(36))  # 检索时快速限定知识库
+    chunk_id: Mapped[str] = mapped_column(
+        ForeignKey("knowledge_chunks.id", ondelete="CASCADE")
+    )  # 向量对应的原文分块
+    provider: Mapped[str] = mapped_column(String(32))  # embedding 实现来源
+    model: Mapped[str] = mapped_column(String(160))  # 生成向量的模型标识
+    dimensions: Mapped[int] = mapped_column(Integer)  # 向量维度校验依据
+    vector: Mapped[list[float]] = mapped_column(JSON)  # 可替换索引接入前的通用存储
+    content_hash: Mapped[str] = mapped_column(String(64))  # 判断向量是否需要重建
+    created_at: Mapped[datetime] = mapped_column(default=utc_now)
+    updated_at: Mapped[datetime] = mapped_column(default=utc_now, onupdate=utc_now)

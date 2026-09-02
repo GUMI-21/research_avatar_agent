@@ -204,7 +204,7 @@ Usage 页面优先保证数据诚实，不把估算费用表示成账单实际�
 
 ## 开发批次
 
-### 当前实现状态（2026-08-31）
+### 当前实现状态（2026-09-02）
 
 - 已完成 Agent、Session、Message、Run 和 RunEvent 数据基础与客户端隔离。
 - 已完成 Native Runtime、三家 LLM 流式输出、WebSocket 取消/重连，以及用量、成本、延迟的记录与查询。
@@ -223,6 +223,7 @@ Usage 页面优先保证数据诚实，不把估算费用表示成账单实际�
 - KnowledgeSource 增量同步会原子化重建变化文档的 Chunk，并跳过已索引文档。
 - SQLite FTS5 trigram 索引提供中文关键词召回、BM25 排序和短词回退查询。
 - Knowledge Search API 返回可审计 Citation，包括文档路径、标题层级、原文行号和检索分数。
+- Embedding 接口区分查询与文档编码，向量记录可按模型和内容哈希增量更新。
 
 ### Batch 0：架构与规则
 

@@ -12,6 +12,7 @@ from app.core.database import Base
 from app.core.settings import load_settings
 from app.models import (  # noqa: F401
     AgentRecord,
+    KnowledgeChunkEmbeddingRecord,
     KnowledgeChunkRecord,
     KnowledgeDocumentRecord,
     KnowledgeSourceRecord,
