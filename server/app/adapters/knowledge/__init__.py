@@ -7,6 +7,7 @@ from app.adapters.knowledge.markdown import (
     ParsedMarkdownDocument,
     parse_markdown,
 )
+from app.adapters.knowledge.search import build_fts_query
 
 __all__ = [
     "MarkdownParseError",
@@ -14,6 +15,7 @@ __all__ = [
     "ParsedMarkdownDocument",
     "ScannedMarkdownFile",
     "chunk_markdown",
+    "build_fts_query",
     "parse_markdown",
     "scan_markdown_files",
 ]

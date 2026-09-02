@@ -12,6 +12,7 @@ from app.core.database import Base
 from app.core.settings import load_settings
 from app.models import (  # noqa: F401
     AgentRecord,
+    KnowledgeChunkRecord,
     KnowledgeDocumentRecord,
     KnowledgeSourceRecord,
     MessageRecord,
@@ -28,19 +29,36 @@ if not config.get_main_option("sqlalchemy.url"):
 target_metadata = Base.metadata
 
 
+def include_object(
+    _object: object,
+    name: str | None,
+    type_: str,
+    _reflected: bool,
+    _compare_to: object | None,
+) -> bool:
+    if type_ == "table" and name and name.startswith("knowledge_chunks_fts"):
+        return False
+    return True
+
+
 def run_migrations_offline() -> None:
     context.configure(
         url=config.get_main_option("sqlalchemy.url"),
         target_metadata=target_metadata,
         literal_binds=True,
         compare_type=True,
+        include_object=include_object,
     )
     with context.begin_transaction():
         context.run_migrations()
 
 
 def apply_migrations(connection: Connection) -> None:
-    context.configure(connection=connection, target_metadata=target_metadata)
+    context.configure(
+        connection=connection,
+        target_metadata=target_metadata,
+        include_object=include_object,
+    )
     with context.begin_transaction():
         context.run_migrations()
 

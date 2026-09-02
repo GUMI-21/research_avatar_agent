@@ -221,6 +221,7 @@ Usage 页面优先保证数据诚实，不把估算费用表示成账单实际�
 - KnowledgeDocument API 支持按路径游标分页和客户端隔离的详情查询。
 - Markdown 标题分块保留标题路径、原文件行号和内容哈希，Chunk 表提供持久化基础。
 - KnowledgeSource 增量同步会原子化重建变化文档的 Chunk，并跳过已索引文档。
+- SQLite FTS5 trigram 索引提供中文关键词召回、BM25 排序和短词回退查询。
 
 ### Batch 0：架构与规则
 

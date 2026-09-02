@@ -1,8 +1,10 @@
 """Client-scoped persistence for local knowledge sources."""
 
+import json
 from collections.abc import Sequence
+from dataclasses import dataclass
 
-from sqlalchemy import select
+from sqlalchemy import select, text
 from sqlalchemy.ext.asyncio import AsyncSession
 
 from app.models import (
@@ -10,6 +12,20 @@ from app.models import (
     KnowledgeDocumentRecord,
     KnowledgeSourceRecord,
 )
+from app.adapters.knowledge import build_fts_query
+
+
+@dataclass(frozen=True)
+class KeywordChunkHit:
+    chunk_id: str
+    document_id: str
+    title: str
+    relative_path: str
+    heading_path: tuple[str, ...]
+    content: str
+    start_line: int
+    end_line: int
+    score: float
 
 
 class KnowledgeSourceRepository:
@@ -142,3 +158,60 @@ class KnowledgeChunkRepository:
 
     async def delete(self, chunk: KnowledgeChunkRecord) -> None:
         await self._session.delete(chunk)
+
+    async def search_keyword(
+        self,
+        client_id: str,
+        query: str,
+        *,
+        source_id: str | None = None,
+        limit: int = 10,
+    ) -> list[KeywordChunkHit]:
+        normalized_query = query.strip()
+        if not normalized_query:
+            return []
+        match_query = build_fts_query(normalized_query)
+        if match_query is None:
+            where = "c.content LIKE :pattern"
+            score = "0.0"
+        else:
+            where = "knowledge_chunks_fts MATCH :match_query"
+            score = "-bm25(knowledge_chunks_fts, 0, 0, 0, 0, 2.0, 1.0)"
+        statement = text(
+            f"""SELECT c.id AS chunk_id, c.document_id, d.title, d.relative_path,
+            c.heading_path, c.content, c.start_line, c.end_line, {score} AS score
+            FROM knowledge_chunks_fts
+            JOIN knowledge_chunks AS c ON c.id = knowledge_chunks_fts.chunk_id
+            JOIN knowledge_documents AS d ON d.id = c.document_id
+            WHERE knowledge_chunks_fts.client_id = :client_id
+              AND (:source_id IS NULL OR knowledge_chunks_fts.source_id = :source_id)
+              AND {where}
+            ORDER BY score DESC, c.id
+            LIMIT :limit"""
+        )
+        rows = (
+            await self._session.execute(
+                statement,
+                {
+                    "client_id": client_id,
+                    "source_id": source_id,
+                    "match_query": match_query,
+                    "pattern": f"%{normalized_query}%",
+                    "limit": limit,
+                },
+            )
+        ).mappings()
+        return [
+            KeywordChunkHit(
+                chunk_id=row["chunk_id"],
+                document_id=row["document_id"],
+                title=row["title"],
+                relative_path=row["relative_path"],
+                heading_path=tuple(json.loads(row["heading_path"])),
+                content=row["content"],
+                start_line=row["start_line"],
+                end_line=row["end_line"],
+                score=float(row["score"]),
+            )
+            for row in rows
+        ]
