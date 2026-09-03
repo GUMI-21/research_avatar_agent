@@ -203,11 +203,11 @@ async def search_knowledge_source(
 ) -> KnowledgeSearchResponse:
     try:
         service = KnowledgeRetrievalService(database_session, embedding_engine)
-        search = (
-            service.search_vector
-            if request.strategy == "vector"
-            else service.search_keyword
-        )
+        search = {
+            "keyword": service.search_keyword,
+            "vector": service.search_vector,
+            "hybrid": service.search_hybrid,
+        }[request.strategy]
         hits = await search(client_id, source_id, request.query, limit=request.limit)
     except KnowledgeSourceNotFoundError as error:
         raise HTTPException(

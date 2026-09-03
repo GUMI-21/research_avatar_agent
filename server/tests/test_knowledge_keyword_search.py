@@ -15,6 +15,7 @@ from app.adapters.knowledge import HashEmbeddingAdapter
 from app.api.router import api_router
 from app.core.database import Database
 from app.models import (
+    KnowledgeChunkEmbeddingRecord,
     KnowledgeChunkRecord,
     KnowledgeDocumentRecord,
     KnowledgeSourceRecord,
@@ -33,6 +34,7 @@ class KnowledgeKeywordSearchTest(unittest.TestCase):
 
             async def scenario() -> None:
                 database = Database(database_url)
+                embedding = HashEmbeddingAdapter()
                 try:
                     source_ids: dict[str, str] = {}
                     async with database.session() as session:
@@ -55,17 +57,30 @@ class KnowledgeKeywordSearchTest(unittest.TestCase):
                             )
                             session.add(document)
                             await session.flush()
+                            chunk = KnowledgeChunkRecord(
+                                client_id=client_id,
+                                source_id=source.id,
+                                document_id=document.id,
+                                chunk_index=0,
+                                heading_path=["检索"],
+                                content="混合检索结合关键词检索与向量检索。",
+                                start_line=3,
+                                end_line=3,
+                                content_hash="b" * 64,
+                            )
+                            session.add(chunk)
+                            await session.flush()
+                            vector = (await embedding.embed_documents([chunk.content]))[0]
                             session.add(
-                                KnowledgeChunkRecord(
+                                KnowledgeChunkEmbeddingRecord(
                                     client_id=client_id,
                                     source_id=source.id,
-                                    document_id=document.id,
-                                    chunk_index=0,
-                                    heading_path=["检索"],
-                                    content="混合检索结合关键词检索与向量检索。",
-                                    start_line=3,
-                                    end_line=3,
-                                    content_hash="b" * 64,
+                                    chunk_id=chunk.id,
+                                    provider=embedding.provider,
+                                    model=embedding.model,
+                                    dimensions=embedding.dimensions,
+                                    vector=vector,
+                                    content_hash=chunk.content_hash,
                                 )
                             )
                         await session.commit()
@@ -87,7 +102,7 @@ class KnowledgeKeywordSearchTest(unittest.TestCase):
 
                     app = FastAPI()
                     app.state.database = database
-                    app.state.embedding_client = HashEmbeddingAdapter()
+                    app.state.embedding_client = embedding
                     app.include_router(api_router)
                     async with httpx.AsyncClient(
                         transport=httpx.ASGITransport(app=app),
@@ -99,6 +114,12 @@ class KnowledgeKeywordSearchTest(unittest.TestCase):
                                 f"{source_ids['client-a']}/search",
                                 headers={"X-Client-ID": "client-a"},
                                 json={"query": "如何实现混合检索", "limit": 5},
+                            )
+                            hybrid = await client.post(
+                                f"/api/v1/knowledge/sources/"
+                                f"{source_ids['client-a']}/search",
+                                headers={"X-Client-ID": "client-a"},
+                                json={"query": "如何实现检索", "strategy": "hybrid"},
                             )
                             concealed = await client.post(
                                 f"/api/v1/knowledge/sources/"
@@ -113,6 +134,11 @@ class KnowledgeKeywordSearchTest(unittest.TestCase):
                     self.assertEqual(citation["start_line"], 3)
                     self.assertEqual(citation["retrieval_method"], "keyword")
                     self.assertIn("混合检索", citation["snippet"])
+                    self.assertEqual(hybrid.status_code, 200)
+                    self.assertEqual(hybrid.json()["strategy"], "hybrid")
+                    self.assertEqual(
+                        hybrid.json()["citations"][0]["retrieval_method"], "hybrid"
+                    )
                     self.assertEqual(concealed.status_code, 404)
                 finally:
                     await database.dispose()
