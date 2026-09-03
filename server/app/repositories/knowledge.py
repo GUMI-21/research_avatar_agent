@@ -8,6 +8,7 @@ from sqlalchemy import select, text
 from sqlalchemy.ext.asyncio import AsyncSession
 
 from app.models import (
+    KnowledgeChunkEmbeddingRecord,
     KnowledgeChunkRecord,
     KnowledgeDocumentRecord,
     KnowledgeSourceRecord,
@@ -215,3 +216,26 @@ class KnowledgeChunkRepository:
             )
             for row in rows
         ]
+
+
+class KnowledgeEmbeddingRepository:
+    def __init__(self, session: AsyncSession) -> None:
+        self._session = session
+
+    async def list_for_model(
+        self,
+        client_id: str,
+        source_id: str,
+        provider: str,
+        model: str,
+    ) -> Sequence[KnowledgeChunkEmbeddingRecord]:
+        statement = select(KnowledgeChunkEmbeddingRecord).where(
+            KnowledgeChunkEmbeddingRecord.client_id == client_id,
+            KnowledgeChunkEmbeddingRecord.source_id == source_id,
+            KnowledgeChunkEmbeddingRecord.provider == provider,
+            KnowledgeChunkEmbeddingRecord.model == model,
+        )
+        return (await self._session.execute(statement)).scalars().all()
+
+    def add(self, embedding: KnowledgeChunkEmbeddingRecord) -> None:
+        self._session.add(embedding)

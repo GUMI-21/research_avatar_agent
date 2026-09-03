@@ -224,6 +224,7 @@ Usage 页面优先保证数据诚实，不把估算费用表示成账单实际�
 - SQLite FTS5 trigram 索引提供中文关键词召回、BM25 排序和短词回退查询。
 - Knowledge Search API 返回可审计 Citation，包括文档路径、标题层级、原文行号和检索分数。
 - Embedding 接口区分查询与文档编码，向量记录可按模型和内容哈希增量更新。
+- Embedding 索引服务按 Chunk 内容哈希跳过未变化数据，并以批次调用模型。
 
 ### Batch 0：架构与规则
 

@@ -5,6 +5,7 @@ from app.repositories.knowledge import (
     KeywordChunkHit,
     KnowledgeChunkRepository,
     KnowledgeDocumentRepository,
+    KnowledgeEmbeddingRepository,
     KnowledgeSourceRepository,
 )
 from app.repositories.message import MessageParentNotFoundError, MessageRepository
@@ -20,6 +21,7 @@ __all__ = [
     "AgentRepository",
     "KnowledgeChunkRepository",
     "KnowledgeDocumentRepository",
+    "KnowledgeEmbeddingRepository",
     "KnowledgeSourceRepository",
     "KeywordChunkHit",
     "MessageParentNotFoundError",
