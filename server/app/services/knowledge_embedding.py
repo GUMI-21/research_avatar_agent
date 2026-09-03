@@ -35,6 +35,7 @@ class KnowledgeEmbeddingService:
         self._chunks = KnowledgeChunkRepository(session)
         self._embeddings = KnowledgeEmbeddingRepository(session)
 
+    # 增量向量化
     async def index_source(
         self,
         client_id: str,
@@ -48,6 +49,7 @@ class KnowledgeEmbeddingService:
             raise KnowledgeSourceNotFoundError("Knowledge source not found")
 
         chunks = list(await self._chunks.list_for_source(client_id, source_id))
+        # 已向量化的记录
         records = await self._embeddings.list_for_model(
             client_id,
             source_id,
@@ -83,6 +85,7 @@ class KnowledgeEmbeddingService:
                         )
                         self._embeddings.add(record)
                     record.dimensions = self._client.dimensions
+                    # 向量化的数据
                     record.vector = [float(value) for value in vector]
                     record.content_hash = chunk.content_hash
             await self._session.commit()
@@ -96,7 +99,11 @@ class KnowledgeEmbeddingService:
                 source_id,
                 type(error).__name__,
             )
-            raise
+            if isinstance(error, KnowledgeEmbeddingIndexError):
+                raise
+            raise KnowledgeEmbeddingIndexError(
+                "Knowledge embedding index failed"
+            ) from error
 
         result = KnowledgeEmbeddingIndexResult(
             provider=self._client.provider,

@@ -8,6 +8,7 @@ from unittest.mock import patch
 import httpx
 from fastapi import FastAPI
 
+from app.adapters.knowledge import HashEmbeddingAdapter
 from app.api.router import api_router
 from app.core.database import Base, Database
 
@@ -19,6 +20,7 @@ class KnowledgeRoutesTest(unittest.IsolatedAsyncioTestCase):
             await connection.run_sync(Base.metadata.create_all)
         app = FastAPI()
         app.state.database = self.database
+        app.state.embedding_client = HashEmbeddingAdapter(4)
         app.include_router(api_router)
         self.client = httpx.AsyncClient(
             transport=httpx.ASGITransport(app=app),
@@ -168,6 +170,42 @@ class KnowledgeRoutesTest(unittest.IsolatedAsyncioTestCase):
         self.assertEqual(response.status_code, 422)
         self.assertEqual(response.json()["detail"], "Knowledge source sync failed")
         self.assertEqual(source.json()["sync_status"], "failed")
+
+    async def test_embedding_index_is_incremental_and_client_scoped(self) -> None:
+        with tempfile.TemporaryDirectory() as temp_dir:
+            Path(temp_dir, "rag.md").write_text(
+                "# RAG\n向量检索可以召回语义相关内容。",
+                encoding="utf-8",
+            )
+            headers = {"X-Client-ID": "client-a"}
+            with patch("app.services.knowledge.log"):
+                created = await self.client.post(
+                    "/api/v1/knowledge/sources",
+                    headers=headers,
+                    json={"name": "Notes", "root_path": temp_dir},
+                )
+                source_id = created.json()["id"]
+                await self.client.post(
+                    f"/api/v1/knowledge/sources/{source_id}/sync", headers=headers
+                )
+            with patch("app.services.knowledge_embedding.log"):
+                first = await self.client.post(
+                    f"/api/v1/knowledge/sources/{source_id}/embeddings/index",
+                    headers=headers,
+                )
+                second = await self.client.post(
+                    f"/api/v1/knowledge/sources/{source_id}/embeddings/index",
+                    headers=headers,
+                )
+                concealed = await self.client.post(
+                    f"/api/v1/knowledge/sources/{source_id}/embeddings/index",
+                    headers={"X-Client-ID": "client-b"},
+                )
+
+        self.assertEqual(first.status_code, 200)
+        self.assertEqual((first.json()["indexed"], first.json()["unchanged"]), (1, 0))
+        self.assertEqual((second.json()["indexed"], second.json()["unchanged"]), (0, 1))
+        self.assertEqual(concealed.status_code, 404)
 
 
 if __name__ == "__main__":

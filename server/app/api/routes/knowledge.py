@@ -5,11 +5,12 @@ from typing import Annotated
 
 from fastapi import APIRouter, HTTPException, Query, status
 
-from app.api.dependencies import ClientID, DBSession
+from app.api.dependencies import ClientID, DBSession, EmbeddingEngine
 from app.repositories import KnowledgeDocumentRepository, KnowledgeSourceRepository
 from app.schemas.knowledge import (
     KnowledgeDocumentListResponse,
     KnowledgeDocumentRead,
+    KnowledgeEmbeddingIndexResponse,
     KnowledgeCitation,
     KnowledgeSearchRequest,
     KnowledgeSearchResponse,
@@ -19,6 +20,8 @@ from app.schemas.knowledge import (
     KnowledgeSyncResponse,
 )
 from app.services import (
+    KnowledgeEmbeddingIndexError,
+    KnowledgeEmbeddingService,
     KnowledgeSourceConflictError,
     KnowledgeSourceNotFoundError,
     KnowledgeSourcePathError,
@@ -112,6 +115,30 @@ async def sync_knowledge_source(
             detail=str(error),
         ) from error
     return KnowledgeSyncResponse(source_id=source_id, **asdict(result))
+
+
+# 批量向量化指定知识库
+@router.post(
+    "/{source_id}/embeddings/index",
+    response_model=KnowledgeEmbeddingIndexResponse,
+)
+async def index_knowledge_embeddings(
+    source_id: str,
+    client_id: ClientID,
+    database_session: DBSession,
+    embedding_engine: EmbeddingEngine,
+    batch_size: Annotated[int, Query(ge=1, le=128)] = 32,
+) -> KnowledgeEmbeddingIndexResponse:
+    try:
+        result = await KnowledgeEmbeddingService(
+            database_session,
+            embedding_engine,
+        ).index_source(client_id, source_id, batch_size=batch_size)
+    except KnowledgeSourceNotFoundError as error:
+        raise HTTPException(status.HTTP_404_NOT_FOUND, str(error)) from error
+    except KnowledgeEmbeddingIndexError as error:
+        raise HTTPException(status.HTTP_503_SERVICE_UNAVAILABLE, str(error)) from error
+    return KnowledgeEmbeddingIndexResponse(source_id=source_id, **asdict(result))
 
 
 # 展示知识库文档

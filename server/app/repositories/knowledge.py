@@ -143,6 +143,7 @@ class KnowledgeChunkRepository:
     def __init__(self, session: AsyncSession) -> None:
         self._session = session
 
+    # 指定知识库的chunk
     async def list_for_source(
         self,
         client_id: str,

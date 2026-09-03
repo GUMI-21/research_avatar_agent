@@ -2,7 +2,7 @@
 
 ## 阶段目标
 
-在 7 到 9 天内完成一个可在本机稳定演示、可写入简历、可用于 AI Agent 实习面试的个人 Agent Workspace。
+完成一个可在本机稳定演示、可写入简历、可用于 AI Agent 实习面试的个人 Agent Workspace。
 
 项目重点展示：
 
@@ -155,6 +155,27 @@ scan files
   -> build cited context
 ```
 
+### Markdown Chunk 策略
+
+问题：知识库的 Chunk 是如何切分的，是否根据目录区分？
+
+目录不直接决定 Chunk 边界。一个注册目录对应一个 `KnowledgeSource`，目录中的每个
+Markdown 文件对应一个 `KnowledgeDocument`；`source_id` 和 `relative_path` 用于限定
+检索范围及生成引用。每个文件再独立执行以下分块流程：
+
+1. 跳过 YAML frontmatter，不把配置元数据混入正文向量。
+2. 识别一级到六级 Markdown 标题，并保存当前 `heading_path`；标题用于定位上下文，
+   不直接重复写入正文 Chunk。
+3. 同一标题下按完整文本行累积，默认上限为 1200 个字符；加入下一行会超限时切块。
+4. 单行超过上限时进行硬切分；代码块中的 `#` 不被误判为标题。
+5. 排除内嵌 Base64 图片数据；普通图片引用目前由解析器提取，持久化关联表后续实现。
+6. 每个 Chunk 保存文档内顺序、原文件起止行号和内容 SHA-256，支持引用跳转与增量重建。
+
+例如 `notes/AI/RAG.md` 的目录 `AI/` 只是路径元数据；文件内的“检索”“重排”两个标题
+会形成不同的标题上下文，并在内容过长时继续拆成多个 Chunk。当前没有重叠窗口，也不
+按 Token 精确切分；完成真实检索评测后，再根据召回质量决定是否增加 overlap 或改为
+Token 上限。
+
 中文 embedding 模型保持可替换。
 
 ### Embedding 模型选择（2026-09-03）
@@ -224,7 +245,7 @@ Usage 页面优先保证数据诚实，不把估算费用表示成账单实际�
 
 ## 开发批次
 
-### 当前实现状态（2026-09-02）
+### 当前实现状态（2026-09-03）
 
 - 已完成 Agent、Session、Message、Run 和 RunEvent 数据基础与客户端隔离。
 - 已完成 Native Runtime、三家 LLM 流式输出、WebSocket 取消/重连，以及用量、成本、延迟的记录与查询。
@@ -246,6 +267,7 @@ Usage 页面优先保证数据诚实，不把估算费用表示成账单实际�
 - Embedding 接口区分查询与文档编码，向量记录可按模型和内容哈希增量更新。
 - Embedding 索引服务按 Chunk 内容哈希跳过未变化数据，并以批次调用模型。
 - 本地 FastEmbed 使用多语言 MiniLM ONNX 模型，推理放在线程中避免阻塞事件循环。
+- Knowledge Embedding API 可按客户端和知识库触发首次或增量向量化。
 
 ### Batch 0：架构与规则
 

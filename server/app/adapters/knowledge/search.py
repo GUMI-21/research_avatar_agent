@@ -5,7 +5,7 @@ import re
 
 WORD = re.compile(r"\w+", re.UNICODE)
 
-# FTS5 trigram 中文索引。
+# FTS5 trigram 中文索引
 def build_fts_query(query: str) -> str | None:
     terms: list[str] = []
     for word in WORD.findall(query.lower()):

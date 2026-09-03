@@ -50,6 +50,14 @@ class KnowledgeSyncResponse(BaseModel):
     chunks: int
 
 
+class KnowledgeEmbeddingIndexResponse(BaseModel):
+    source_id: str
+    provider: str
+    model: str
+    indexed: int
+    unchanged: int
+
+
 class KnowledgeDocumentRead(BaseModel):
     model_config = ConfigDict(from_attributes=True)
 

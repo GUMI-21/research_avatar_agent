@@ -6,6 +6,7 @@ from typing import Annotated
 from fastapi import Depends, Header, HTTPException, Request, status
 from sqlalchemy.ext.asyncio import AsyncSession
 
+from app.adapters.knowledge import EmbeddingClient
 from app.core.database import Database
 from app.services.llm_runtime import LLMRuntime
 
@@ -13,6 +14,11 @@ from app.services.llm_runtime import LLMRuntime
 def get_llm_runtime(request: Request) -> LLMRuntime:
     """Return the application-scoped runtime LLM client."""
     return request.app.state.llm_runtime
+
+
+def get_embedding_client(request: Request) -> EmbeddingClient:
+    """Return the application-scoped local embedding engine."""
+    return request.app.state.embedding_client
 
 
 async def get_db_session(request: Request) -> AsyncIterator[AsyncSession]:
@@ -39,3 +45,4 @@ def get_client_id(
 # Annotated[参数类型, Depends(获取参数方法)]
 DBSession = Annotated[AsyncSession, Depends(get_db_session)]
 ClientID = Annotated[str, Depends(get_client_id)]
+EmbeddingEngine = Annotated[EmbeddingClient, Depends(get_embedding_client)]
