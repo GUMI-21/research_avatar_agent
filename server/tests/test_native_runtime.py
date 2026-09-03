@@ -17,8 +17,10 @@ from app.schemas.llm import LLMProvider
 class FakeLLMClient(LLMClient):
     def __init__(self, error: Exception | None = None) -> None:
         self.error = error
+        self.last_request: LLMRequest | None = None
 
     async def generate(self, request: LLMRequest) -> LLMResult:
+        self.last_request = request
         if self.error is not None:
             raise self.error
         return LLMResult(
@@ -46,21 +48,29 @@ class ChunkedLLMClient(FakeLLMClient):
         )
 
 
-def make_request() -> RuntimeRequest:
+def make_request(knowledge_context: str = "") -> RuntimeRequest:
     return RuntimeRequest(
         run_id="run-1",
         client_id="client-a",
         agent_id="agent-1",
         session_id="session-1",
         message="Hello",
+        system_prompt="You are a personal assistant.",
+        knowledge_context=knowledge_context,
     )
 
 
 class NativeAgentRuntimeTest(unittest.IsolatedAsyncioTestCase):
     async def test_success_is_normalized_to_runtime_events(self) -> None:
-        runtime = NativeAgentRuntime(FakeLLMClient())
+        client = FakeLLMClient()
+        runtime = NativeAgentRuntime(client)
 
-        events = [event async for event in runtime.stream(make_request())]
+        events = [
+            event
+            async for event in runtime.stream(
+                make_request("<knowledge_context>Notes</knowledge_context>")
+            )
+        ]
 
         self.assertEqual(
             [event.type for event in events],
@@ -72,8 +82,17 @@ class NativeAgentRuntimeTest(unittest.IsolatedAsyncioTestCase):
                 RuntimeEventType.RUN_FINISHED,
             ],
         )
-        self.assertEqual(events[2].payload["text"], "Reply: Hello")
+        self.assertIn("用户问题:\nHello", events[2].payload["text"])
         self.assertEqual(events[3].payload["cost_status"], "unavailable")
+        assert client.last_request is not None
+        self.assertEqual(
+            client.last_request.instructions,
+            "You are a personal assistant.",
+        )
+        self.assertEqual(
+            client.last_request.message,
+            "<knowledge_context>Notes</knowledge_context>\n\n用户问题:\nHello",
+        )
 
     async def test_stream_chunks_become_separate_assistant_deltas(self) -> None:
         runtime = NativeAgentRuntime(ChunkedLLMClient())

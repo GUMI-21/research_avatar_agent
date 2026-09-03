@@ -111,6 +111,8 @@ class RunExecutionService:
                 agent_id=agent.id,
                 session_id=session_id,
                 message=message,
+                # 默认身份prompt + rag附加上下文
+                system_prompt=agent.system_prompt,
             )
         )
         terminal_received = False

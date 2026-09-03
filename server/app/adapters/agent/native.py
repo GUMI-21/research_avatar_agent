@@ -31,12 +31,20 @@ class NativeAgentRuntime:
         model: str | None = None
         usage: LLMUsage | None = None
         emitted_text = False
+        instructions = request.system_prompt.strip() or None
+        message = request.message
+        if request.knowledge_context.strip():
+            message = (
+                f"{request.knowledge_context.strip()}\n\n"
+                f"用户问题:\n{request.message}"
+            )
         try:
             async for chunk in self._llm_client.stream(
                 LLMRequest(
                     request_id=request.run_id,
                     session_id=request.session_id,
-                    message=request.message,
+                    message=message,
+                    instructions=instructions,
                 )
             ):
                 provider = chunk.provider.value

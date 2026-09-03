@@ -76,6 +76,7 @@ def make_request() -> LLMRequest:
         request_id="req_test",
         session_id="unity-demo",
         message="Hello",
+        instructions="Follow the Agent instructions.",
     )
 
 
@@ -225,6 +226,7 @@ class ProviderAdapterTest(unittest.IsolatedAsyncioTestCase):
             self.assertEqual(request.url.path, "/v1/responses")
             self.assertEqual(request.headers["Authorization"], "Bearer test-key")
             self.assertEqual(payload["model"], "gpt-5.6-luna")
+            self.assertEqual(payload["instructions"], "Follow the Agent instructions.")
             return httpx.Response(
                 200,
                 json={
@@ -256,6 +258,7 @@ class ProviderAdapterTest(unittest.IsolatedAsyncioTestCase):
         async def handler(request: httpx.Request) -> httpx.Response:
             payload = json.loads(request.content)
             self.assertTrue(payload["stream"])
+            self.assertEqual(payload["instructions"], "Follow the Agent instructions.")
             body = "\n\n".join(
                 [
                     'event: response.created\ndata: {"type":"response.created"}',
@@ -298,11 +301,16 @@ class ProviderAdapterTest(unittest.IsolatedAsyncioTestCase):
 
     async def test_gemini_generate_content_format(self) -> None:
         async def handler(request: httpx.Request) -> httpx.Response:
+            payload = json.loads(request.content)
             self.assertEqual(
                 request.url.path,
                 "/v1beta/models/gemini-3.5-flash:generateContent",
             )
             self.assertEqual(request.headers["x-goog-api-key"], "test-key")
+            self.assertEqual(
+                payload["systemInstruction"]["parts"][0]["text"],
+                "Follow the Agent instructions.",
+            )
             return httpx.Response(
                 200,
                 json={
@@ -327,11 +335,16 @@ class ProviderAdapterTest(unittest.IsolatedAsyncioTestCase):
 
     async def test_gemini_stream_yields_answer_parts(self) -> None:
         async def handler(request: httpx.Request) -> httpx.Response:
+            payload = json.loads(request.content)
             self.assertEqual(
                 request.url.path,
                 "/v1beta/models/gemini-3.5-flash:streamGenerateContent",
             )
             self.assertEqual(request.url.params["alt"], "sse")
+            self.assertEqual(
+                payload["systemInstruction"]["parts"][0]["text"],
+                "Follow the Agent instructions.",
+            )
             body = "\n\n".join(
                 [
                     'data: {"candidates":[{"content":{"parts":['
@@ -375,6 +388,8 @@ class ProviderAdapterTest(unittest.IsolatedAsyncioTestCase):
             payload = json.loads(request.content)
             self.assertEqual(request.url.path, "/chat/completions")
             self.assertEqual(payload["model"], "deepseek-v4-flash")
+            self.assertEqual(payload["messages"][0]["role"], "system")
+            self.assertEqual(payload["messages"][1]["role"], "user")
             return httpx.Response(
                 200,
                 json={
@@ -403,6 +418,8 @@ class ProviderAdapterTest(unittest.IsolatedAsyncioTestCase):
             self.assertEqual(request.url.path, "/chat/completions")
             self.assertTrue(payload["stream"])
             self.assertTrue(payload["stream_options"]["include_usage"])
+            self.assertEqual(payload["messages"][0]["role"], "system")
+            self.assertEqual(payload["messages"][1]["role"], "user")
             body = "\n\n".join(
                 [
                     'data: {"choices":[{"delta":{"role":"assistant"}}]}',

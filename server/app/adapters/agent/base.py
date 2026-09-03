@@ -18,6 +18,8 @@ class RuntimeRequest:
     agent_id: str
     session_id: str
     message: str
+    system_prompt: str = ""
+    knowledge_context: str = ""
 
 # playload：事件执行的具体数据，根据type内容不同；dataclass：自动创建构造函数
 @dataclass(frozen=True)

@@ -162,6 +162,11 @@ class OpenAIAdapter(_HTTPAdapter):
                 "model": self.config.model,
                 "input": request.message,
                 "max_output_tokens": self.config.max_output_tokens,
+                **(
+                    {"instructions": request.instructions}
+                    if request.instructions
+                    else {}
+                ),
             },
         )
 
@@ -197,6 +202,11 @@ class OpenAIAdapter(_HTTPAdapter):
                 "input": request.message,
                 "max_output_tokens": self.config.max_output_tokens,
                 "stream": True,
+                **(
+                    {"instructions": request.instructions}
+                    if request.instructions
+                    else {}
+                ),
             },
         ):
             event_type = event.get("type")
@@ -253,7 +263,11 @@ class DeepSeekAdapter(_HTTPAdapter):
             },
             payload={
                 "model": self.config.model,
-                "messages": [{"role": "user", "content": request.message}],
+                "messages": (
+                    [{"role": "system", "content": request.instructions}]
+                    if request.instructions
+                    else []
+                ) + [{"role": "user", "content": request.message}],
                 "max_tokens": self.config.max_output_tokens,
             },
         )
@@ -279,7 +293,11 @@ class DeepSeekAdapter(_HTTPAdapter):
             },
             payload={
                 "model": self.config.model,
-                "messages": [{"role": "user", "content": request.message}],
+                "messages": (
+                    [{"role": "system", "content": request.instructions}]
+                    if request.instructions
+                    else []
+                ) + [{"role": "user", "content": request.message}],
                 "max_tokens": self.config.max_output_tokens,
                 "stream": True,
                 "stream_options": {"include_usage": True},
@@ -341,6 +359,11 @@ class GeminiAdapter(_HTTPAdapter):
                 "contents": [
                     {"role": "user", "parts": [{"text": request.message}]}
                 ],
+                **(
+                    {"systemInstruction": {"parts": [{"text": request.instructions}]}}
+                    if request.instructions
+                    else {}
+                ),
                 "generationConfig": {
                     "maxOutputTokens": self.config.max_output_tokens
                 },
@@ -376,6 +399,11 @@ class GeminiAdapter(_HTTPAdapter):
                 "contents": [
                     {"role": "user", "parts": [{"text": request.message}]}
                 ],
+                **(
+                    {"systemInstruction": {"parts": [{"text": request.instructions}]}}
+                    if request.instructions
+                    else {}
+                ),
                 "generationConfig": {
                     "maxOutputTokens": self.config.max_output_tokens
                 },

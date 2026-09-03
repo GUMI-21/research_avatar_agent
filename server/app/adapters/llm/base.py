@@ -16,6 +16,7 @@ class LLMRequest:
     request_id: str
     session_id: str
     message: str
+    instructions: str | None = None
 
 
 @dataclass(frozen=True)
