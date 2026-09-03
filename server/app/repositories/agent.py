@@ -5,7 +5,7 @@ from collections.abc import Sequence
 from sqlalchemy import select
 from sqlalchemy.ext.asyncio import AsyncSession
 
-from app.models import AgentRecord
+from app.models import AgentKnowledgeSourceRecord, AgentRecord, KnowledgeSourceRecord
 
 
 class AgentRepository:
@@ -20,6 +20,7 @@ class AgentRepository:
         system_prompt: str,
         runtime: str = "native",
         model: str | None = None,
+        knowledge_sources: Sequence[KnowledgeSourceRecord] = (),
     ) -> AgentRecord:
         agent = AgentRecord(
             client_id=client_id,
@@ -27,6 +28,14 @@ class AgentRepository:
             system_prompt=system_prompt,
             runtime=runtime,
             model=model,
+            # 绑定知识库
+            knowledge_links=[
+                AgentKnowledgeSourceRecord(
+                    client_id=client_id,
+                    source_id=source.id,
+                )
+                for source in knowledge_sources
+            ],
         )
         self._session.add(agent)
         await self._session.flush()

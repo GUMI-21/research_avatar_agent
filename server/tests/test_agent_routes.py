@@ -7,6 +7,7 @@ from fastapi import FastAPI
 
 from app.api.router import api_router
 from app.core.database import Base, Database
+from app.models import KnowledgeSourceRecord
 
 
 class AgentRoutesTest(unittest.IsolatedAsyncioTestCase):
@@ -96,6 +97,46 @@ class AgentRoutesTest(unittest.IsolatedAsyncioTestCase):
             {"detail": "Agent name already exists"},
         )
         self.assertEqual(other_client.status_code, 201)
+
+    async def test_agent_knowledge_sources_are_client_scoped(self) -> None:
+        async with self.database.session() as session:
+            own_source = KnowledgeSourceRecord(
+                client_id="client-a", name="Own Notes", root_path="/notes/a"
+            )
+            foreign_source = KnowledgeSourceRecord(
+                client_id="client-b", name="Other Notes", root_path="/notes/b"
+            )
+            session.add_all([own_source, foreign_source])
+            await session.commit()
+
+        created = await self.client.post(
+            "/api/v1/agents",
+            headers={"X-Client-ID": "client-a"},
+            json={
+                "name": "Researcher",
+                "system_prompt": "Use my notes.",
+                "knowledge_source_ids": [own_source.id],
+            },
+        )
+        concealed = await self.client.post(
+            "/api/v1/agents",
+            headers={"X-Client-ID": "client-a"},
+            json={
+                "name": "Invalid",
+                "system_prompt": "Do not cross client boundaries.",
+                "knowledge_source_ids": [foreign_source.id],
+            },
+        )
+        detail = await self.client.get(
+            f"/api/v1/agents/{created.json()['id']}",
+            headers={"X-Client-ID": "client-a"},
+        )
+
+        self.assertEqual(created.status_code, 201)
+        self.assertEqual(created.json()["knowledge_source_ids"], [own_source.id])
+        self.assertEqual(detail.json()["knowledge_source_ids"], [own_source.id])
+        self.assertEqual(concealed.status_code, 404)
+        self.assertEqual(concealed.json()["detail"], "Knowledge source not found")
 
 
 if __name__ == "__main__":

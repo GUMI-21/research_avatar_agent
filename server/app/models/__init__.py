@@ -1,6 +1,6 @@
 """Relational persistence models."""
 
-from app.models.agent import AgentRecord
+from app.models.agent import AgentKnowledgeSourceRecord, AgentRecord
 from app.models.knowledge import (
     KnowledgeChunkEmbeddingRecord,
     KnowledgeChunkRecord,
@@ -14,6 +14,7 @@ from app.models.session import SessionRecord
 
 __all__ = [
     "AgentRecord",
+    "AgentKnowledgeSourceRecord",
     "KnowledgeChunkEmbeddingRecord",
     "KnowledgeChunkRecord",
     "KnowledgeDocumentRecord",

@@ -25,6 +25,7 @@ class AgentMigrationTest(unittest.TestCase):
             sync_engine = create_engine(f"sqlite:///{database_path}")
             inspector = inspect(sync_engine)
             self.assertIn(AgentRecord.__tablename__, inspector.get_table_names())
+            self.assertIn("agent_knowledge_sources", inspector.get_table_names())
             self.assertIn(
                 "uq_agents_client_name",
                 {item["name"] for item in inspector.get_unique_constraints("agents")},
@@ -53,6 +54,7 @@ class AgentModelTest(unittest.IsolatedAsyncioTestCase):
                 await session.commit()
 
                 self.assertEqual(agent.runtime, "native")
+                self.assertEqual(agent.knowledge_source_ids, [])
                 self.assertIsNotNone(agent.id)
                 self.assertIsNotNone(agent.created_at)
         finally:

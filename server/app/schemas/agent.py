@@ -10,6 +10,7 @@ class AgentCreate(BaseModel):
     system_prompt: str = Field(min_length=1, max_length=50_000)
     runtime: str = Field(default="native", min_length=1, max_length=64)
     model: str | None = Field(default=None, min_length=1, max_length=128)
+    knowledge_source_ids: list[str] = Field(default_factory=list, max_length=20)
 
     # 校验三个字段
     @field_validator("name", "runtime", "model")
@@ -29,6 +30,16 @@ class AgentCreate(BaseModel):
             raise ValueError("must not be blank")
         return value
 
+    @field_validator("knowledge_source_ids")
+    @classmethod
+    def validate_source_ids(cls, values: list[str]) -> list[str]:
+        normalized = [value.strip() for value in values]
+        if any(not value or len(value) > 36 for value in normalized):
+            raise ValueError("knowledge source id is invalid")
+        if len(normalized) != len(set(normalized)):
+            raise ValueError("knowledge source ids must be unique")
+        return normalized
+
 # response 字段
 class AgentRead(BaseModel):
     model_config = ConfigDict(from_attributes=True)
@@ -39,6 +50,7 @@ class AgentRead(BaseModel):
     system_prompt: str
     runtime: str
     model: str | None
+    knowledge_source_ids: list[str]
     created_at: datetime
     updated_at: datetime
 

@@ -1,5 +1,6 @@
 """Application services used by routes and graph nodes."""
 
+from app.services.agent import AgentKnowledgeSourceNotFoundError, AgentService
 from app.services.knowledge import (
     KnowledgeSourceConflictError,
     KnowledgeSourceNotFoundError,
@@ -37,6 +38,8 @@ from app.services.run_execution import (
 )
 
 __all__ = [
+    "AgentKnowledgeSourceNotFoundError",
+    "AgentService",
     "EventPolicy",
     "InvalidRunTransitionError",
     "KnowledgeSourceConflictError",

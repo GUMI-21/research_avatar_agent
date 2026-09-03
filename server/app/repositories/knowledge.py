@@ -84,6 +84,19 @@ class KnowledgeSourceRepository:
         )
         return (await self._session.execute(statement)).scalar_one_or_none()
 
+    async def list_by_ids(
+        self,
+        client_id: str,
+        source_ids: Sequence[str],
+    ) -> Sequence[KnowledgeSourceRecord]:
+        if not source_ids:
+            return []
+        statement = select(KnowledgeSourceRecord).where(
+            KnowledgeSourceRecord.client_id == client_id,
+            KnowledgeSourceRecord.id.in_(source_ids),
+        )
+        return (await self._session.execute(statement)).scalars().all()
+
 
 class KnowledgeDocumentRepository:
     def __init__(self, session: AsyncSession) -> None:

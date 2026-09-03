@@ -6,6 +6,7 @@ from sqlalchemy.exc import IntegrityError
 from app.api.dependencies import ClientID, DBSession
 from app.repositories import AgentRepository
 from app.schemas.agent import AgentCreate, AgentListResponse, AgentRead
+from app.services import AgentKnowledgeSourceNotFoundError, AgentService
 
 router = APIRouter(prefix="/agents")
 
@@ -17,9 +18,8 @@ async def create_agent(
     client_id: ClientID,
     session: DBSession,
 ) -> AgentRead:
-    repository = AgentRepository(session)
     try:
-        agent = await repository.create(
+        agent = await AgentService(session).create(
             client_id,
             # 展开字典
             **request.model_dump(),
@@ -30,6 +30,12 @@ async def create_agent(
         raise HTTPException(
             status_code=status.HTTP_409_CONFLICT,
             detail="Agent name already exists",
+        ) from error
+    except AgentKnowledgeSourceNotFoundError as error:
+        await session.rollback()
+        raise HTTPException(
+            status_code=status.HTTP_404_NOT_FOUND,
+            detail="Knowledge source not found",
         ) from error
     return AgentRead.model_validate(agent)
 
