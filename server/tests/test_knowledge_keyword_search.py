@@ -134,6 +134,11 @@ class KnowledgeKeywordSearchTest(unittest.TestCase):
                     self.assertEqual(citation["start_line"], 3)
                     self.assertEqual(citation["retrieval_method"], "keyword")
                     self.assertIn("混合检索", citation["snippet"])
+                    self.assertIn("文件: RAG.md", response.json()["context"]["text"])
+                    self.assertIn(
+                        citation["chunk_id"],
+                        response.json()["context"]["included_chunk_ids"],
+                    )
                     self.assertEqual(hybrid.status_code, 200)
                     self.assertEqual(hybrid.json()["strategy"], "hybrid")
                     self.assertEqual(

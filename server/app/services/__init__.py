@@ -9,6 +9,10 @@ from app.services.knowledge import (
     KnowledgeSyncResult,
 )
 from app.services.message import MessageService
+from app.services.knowledge_context import (
+    KnowledgeContextResult,
+    assemble_knowledge_context,
+)
 from app.services.knowledge_retrieval import KnowledgeRetrievalService
 from app.services.knowledge_embedding import (
     KnowledgeEmbeddingIndexError,
@@ -45,6 +49,8 @@ __all__ = [
     "KnowledgeEmbeddingIndexError",
     "KnowledgeEmbeddingIndexResult",
     "KnowledgeEmbeddingService",
+    "KnowledgeContextResult",
+    "assemble_knowledge_context",
     "MessageService",
     "RunExecutionParentNotFoundError",
     "RunExecutionService",

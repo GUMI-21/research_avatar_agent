@@ -12,6 +12,7 @@ from app.schemas.knowledge import (
     KnowledgeDocumentRead,
     KnowledgeEmbeddingIndexResponse,
     KnowledgeCitation,
+    KnowledgeContextRead,
     KnowledgeSearchRequest,
     KnowledgeSearchResponse,
     KnowledgeSourceCreate,
@@ -28,6 +29,7 @@ from app.services import (
     KnowledgeSourceService,
     KnowledgeSourceSyncError,
     KnowledgeRetrievalService,
+    assemble_knowledge_context,
 )
 
 router = APIRouter(prefix="/knowledge/sources")
@@ -214,6 +216,10 @@ async def search_knowledge_source(
             status_code=status.HTTP_404_NOT_FOUND,
             detail=str(error),
         ) from error
+    context = assemble_knowledge_context(
+        hits,
+        max_chars=request.max_context_chars,
+    )
     return KnowledgeSearchResponse(
         source_id=source_id,
         query=request.query,
@@ -233,4 +239,11 @@ async def search_knowledge_source(
             )
             for hit in hits
         ],
+        context=KnowledgeContextRead(
+            text=context.text,
+            included_chunk_ids=list(context.included_chunk_ids),
+            used_chars=context.used_chars,
+            budget_chars=context.budget_chars,
+            truncated=context.truncated,
+        ),
     )

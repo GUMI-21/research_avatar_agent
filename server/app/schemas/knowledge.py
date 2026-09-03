@@ -83,6 +83,7 @@ class KnowledgeSearchRequest(BaseModel):
     query: str = Field(min_length=1, max_length=2000)
     limit: int = Field(default=8, ge=1, le=20)
     strategy: Literal["keyword", "vector", "hybrid"] = "keyword"
+    max_context_chars: int = Field(default=6000, ge=512, le=20000)
 
     @field_validator("query")
     @classmethod
@@ -106,8 +107,17 @@ class KnowledgeCitation(BaseModel):
     score: float
 
 
+class KnowledgeContextRead(BaseModel):
+    text: str
+    included_chunk_ids: list[str]
+    used_chars: int
+    budget_chars: int
+    truncated: bool
+
+
 class KnowledgeSearchResponse(BaseModel):
     source_id: str
     query: str
     strategy: Literal["keyword", "vector", "hybrid"] = "keyword"
     citations: list[KnowledgeCitation]
+    context: KnowledgeContextRead
