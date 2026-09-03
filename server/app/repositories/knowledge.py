@@ -17,7 +17,7 @@ from app.adapters.knowledge import build_fts_query
 
 
 @dataclass(frozen=True)
-class KeywordChunkHit:
+class KnowledgeChunkHit:
     chunk_id: str
     document_id: str
     title: str
@@ -168,7 +168,7 @@ class KnowledgeChunkRepository:
         *,
         source_id: str | None = None,
         limit: int = 10,
-    ) -> list[KeywordChunkHit]:
+    ) -> list[KnowledgeChunkHit]:
         normalized_query = query.strip()
         if not normalized_query:
             return []
@@ -204,7 +204,7 @@ class KnowledgeChunkRepository:
             )
         ).mappings()
         return [
-            KeywordChunkHit(
+            KnowledgeChunkHit(
                 chunk_id=row["chunk_id"],
                 document_id=row["document_id"],
                 title=row["title"],
@@ -217,6 +217,69 @@ class KnowledgeChunkRepository:
             )
             for row in rows
         ]
+
+    # 向量搜索
+    async def search_vector(
+        self,
+        client_id: str,
+        source_id: str,
+        provider: str,
+        model: str,
+        query_vector: list[float],
+        *,
+        limit: int = 10,
+    ) -> list[KnowledgeChunkHit]:
+        statement = (
+            select(
+                KnowledgeChunkEmbeddingRecord,
+                KnowledgeChunkRecord,
+                KnowledgeDocumentRecord,
+            )
+            .join(
+                KnowledgeChunkRecord,
+                KnowledgeChunkRecord.id == KnowledgeChunkEmbeddingRecord.chunk_id,
+            )
+            .join(
+                KnowledgeDocumentRecord,
+                KnowledgeDocumentRecord.id == KnowledgeChunkRecord.document_id,
+            )
+            .where(
+                KnowledgeChunkEmbeddingRecord.client_id == client_id,
+                KnowledgeChunkEmbeddingRecord.source_id == source_id,
+                KnowledgeChunkEmbeddingRecord.provider == provider,
+                KnowledgeChunkEmbeddingRecord.model == model,
+                KnowledgeChunkRecord.client_id == client_id,
+                KnowledgeChunkRecord.source_id == source_id,
+                KnowledgeDocumentRecord.client_id == client_id,
+                KnowledgeChunkEmbeddingRecord.content_hash
+                == KnowledgeChunkRecord.content_hash,
+            )
+        )
+        hits: list[KnowledgeChunkHit] = []
+        for embedding, chunk, document in (await self._session.execute(statement)):
+            if (
+                embedding.dimensions != len(query_vector)
+                or len(embedding.vector) != len(query_vector)
+            ):
+                continue
+            score = sum(
+                left * right
+                for left, right in zip(embedding.vector, query_vector, strict=True)
+            )
+            hits.append(
+                KnowledgeChunkHit(
+                    chunk_id=chunk.id,
+                    document_id=document.id,
+                    title=document.title,
+                    relative_path=document.relative_path,
+                    heading_path=tuple(chunk.heading_path),
+                    content=chunk.content,
+                    start_line=chunk.start_line,
+                    end_line=chunk.end_line,
+                    score=score,
+                )
+            )
+        return sorted(hits, key=lambda hit: (-hit.score, hit.chunk_id))[:limit]
 
 
 class KnowledgeEmbeddingRepository:

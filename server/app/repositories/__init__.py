@@ -2,7 +2,7 @@
 
 from app.repositories.agent import AgentRepository
 from app.repositories.knowledge import (
-    KeywordChunkHit,
+    KnowledgeChunkHit,
     KnowledgeChunkRepository,
     KnowledgeDocumentRepository,
     KnowledgeEmbeddingRepository,
@@ -23,7 +23,7 @@ __all__ = [
     "KnowledgeDocumentRepository",
     "KnowledgeEmbeddingRepository",
     "KnowledgeSourceRepository",
-    "KeywordChunkHit",
+    "KnowledgeChunkHit",
     "MessageParentNotFoundError",
     "MessageRepository",
     "RunParentNotFoundError",

@@ -82,6 +82,7 @@ class KnowledgeDocumentListResponse(BaseModel):
 class KnowledgeSearchRequest(BaseModel):
     query: str = Field(min_length=1, max_length=2000)
     limit: int = Field(default=8, ge=1, le=20)
+    strategy: Literal["keyword", "vector"] = "keyword"
 
     @field_validator("query")
     @classmethod
@@ -101,12 +102,12 @@ class KnowledgeCitation(BaseModel):
     snippet: str
     start_line: int
     end_line: int
-    retrieval_method: Literal["keyword"] = "keyword"
+    retrieval_method: Literal["keyword", "vector"] = "keyword"
     score: float
 
 
 class KnowledgeSearchResponse(BaseModel):
     source_id: str
     query: str
-    strategy: Literal["keyword"] = "keyword"
+    strategy: Literal["keyword", "vector"] = "keyword"
     citations: list[KnowledgeCitation]

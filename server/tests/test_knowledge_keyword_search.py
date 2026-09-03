@@ -11,6 +11,7 @@ from alembic import command
 from alembic.config import Config
 from fastapi import FastAPI
 
+from app.adapters.knowledge import HashEmbeddingAdapter
 from app.api.router import api_router
 from app.core.database import Database
 from app.models import (
@@ -86,6 +87,7 @@ class KnowledgeKeywordSearchTest(unittest.TestCase):
 
                     app = FastAPI()
                     app.state.database = database
+                    app.state.embedding_client = HashEmbeddingAdapter()
                     app.include_router(api_router)
                     async with httpx.AsyncClient(
                         transport=httpx.ASGITransport(app=app),

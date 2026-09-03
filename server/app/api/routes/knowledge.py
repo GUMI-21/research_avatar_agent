@@ -199,14 +199,16 @@ async def search_knowledge_source(
     request: KnowledgeSearchRequest,
     client_id: ClientID,
     database_session: DBSession,
+    embedding_engine: EmbeddingEngine,
 ) -> KnowledgeSearchResponse:
     try:
-        hits = await KnowledgeRetrievalService(database_session).search_keyword(
-            client_id,
-            source_id,
-            request.query,
-            limit=request.limit,
+        service = KnowledgeRetrievalService(database_session, embedding_engine)
+        search = (
+            service.search_vector
+            if request.strategy == "vector"
+            else service.search_keyword
         )
+        hits = await search(client_id, source_id, request.query, limit=request.limit)
     except KnowledgeSourceNotFoundError as error:
         raise HTTPException(
             status_code=status.HTTP_404_NOT_FOUND,
@@ -215,6 +217,7 @@ async def search_knowledge_source(
     return KnowledgeSearchResponse(
         source_id=source_id,
         query=request.query,
+        strategy=request.strategy,
         citations=[
             KnowledgeCitation(
                 chunk_id=hit.chunk_id,
@@ -225,6 +228,7 @@ async def search_knowledge_source(
                 snippet=hit.content,
                 start_line=hit.start_line,
                 end_line=hit.end_line,
+                retrieval_method=request.strategy,
                 score=hit.score,
             )
             for hit in hits
