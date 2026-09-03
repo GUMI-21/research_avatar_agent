@@ -155,7 +155,27 @@ scan files
   -> build cited context
 ```
 
-中文 embedding 模型保持可替换。Batch 3 开始前在目标 Mac 上比较小型多语言模型与 BGE 系列的安装体积、速度和检索质量，再冻结默认值。
+中文 embedding 模型保持可替换。
+
+### Embedding 模型选择（2026-09-03）
+
+问题：为什么当前选择 `paraphrase-multilingual-MiniLM-L12-v2`，而不是其他模型？
+
+当前阶段以 Mac 本地运行、快速形成面试 Demo 为优先，因此默认使用 FastEmbed 的
+ONNX 版本：约 0.22 GB、384 维、支持约 50 种语言，不需要 API Key，也不会把私人
+笔记发送到云端。它的检索质量不是最终结论，但足以低成本验证完整 RAG 链路。
+
+| 候选模型 | 优点 | 当前未选择的原因 |
+| --- | --- | --- |
+| multilingual MiniLM（当前） | 轻量、多语言、本地 ONNX 推理 | 更偏语义相似度，后续仍需用真实问题评估召回质量 |
+| BGE-small-zh-v1.5 | 更小且针对中文 | 不符合笔记中英文、日文混合的长期需求 |
+| multilingual-e5-large | 1024 维、多语言、面向检索 | FastEmbed 模型约 2.24 GB，本阶段部署和推理成本偏高 |
+| BGE-M3 | 100+ 语言、8192 Token，支持 dense、sparse 和 ColBERT | 能力更完整，但模型及检索链路更复杂，留作质量升级候选 |
+| 云端 Embedding API | 无需在本地加载模型 | 有网络、费用和私人笔记外发问题 |
+
+冻结策略：接口与数据表不绑定模型。先用当前模型完成向量召回与混合检索，再从真实
+笔记整理一组查询及相关 Chunk，对 MiniLM 和 BGE-M3 做速度、内存与 Recall@K 对比；
+只有评测显示明显收益时才更换默认模型，更换后通过 `model + content_hash` 重建向量。
 
 ## 多 Agent 模型
 
@@ -225,6 +245,7 @@ Usage 页面优先保证数据诚实，不把估算费用表示成账单实际�
 - Knowledge Search API 返回可审计 Citation，包括文档路径、标题层级、原文行号和检索分数。
 - Embedding 接口区分查询与文档编码，向量记录可按模型和内容哈希增量更新。
 - Embedding 索引服务按 Chunk 内容哈希跳过未变化数据，并以批次调用模型。
+- 本地 FastEmbed 使用多语言 MiniLM ONNX 模型，推理放在线程中避免阻塞事件循环。
 
 ### Batch 0：架构与规则
 

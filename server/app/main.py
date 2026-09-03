@@ -6,6 +6,7 @@ from contextlib import asynccontextmanager
 from fastapi import FastAPI
 
 from app.adapters.agent import NativeAgentRuntime
+from app.adapters.knowledge import FastEmbedAdapter
 from app.api.router import api_router
 from app.core.database import Database
 from app.core.settings import Settings, get_settings
@@ -40,6 +41,11 @@ def create_app(settings: Settings) -> FastAPI:
     )
     app.state.settings = settings
     app.state.database = Database(settings.database.url)
+    app.state.embedding_client = FastEmbedAdapter(
+        model=settings.embedding.model,
+        dimensions=settings.embedding.dimensions,
+        cache_dir=settings.embedding.cache_dir,
+    )
     llm_runtime = LLMRuntime(settings.llm)
     runtime_registry = RuntimeRegistry()
     # 注册创建 NativeAgentRuntime 的匿名工厂函数

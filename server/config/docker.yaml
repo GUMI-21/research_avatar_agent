@@ -20,6 +20,11 @@ logging:
 database:
   url: sqlite+aiosqlite:////app/runtime/data/personal_agent.db
 
+embedding:
+  model: sentence-transformers/paraphrase-multilingual-MiniLM-L12-v2
+  dimensions: 384
+  cache_dir: /app/runtime/data/models/fastembed
+
 llm:
   default_provider: mock
   timeout_seconds: 30

@@ -56,6 +56,14 @@ class DatabaseSettings(StrictSettingsModel):
     url: str = Field(min_length=1)
 
 
+class EmbeddingSettings(StrictSettingsModel):
+    """Local multilingual model used to index private knowledge."""
+
+    model: str = "sentence-transformers/paraphrase-multilingual-MiniLM-L12-v2"
+    dimensions: int = Field(default=384, ge=1)
+    cache_dir: Path = SERVER_ROOT / "data" / "models" / "fastembed"
+
+
 class LLMProviderSettings(StrictSettingsModel):
     """Default model and endpoint for one cloud provider."""
 
@@ -82,6 +90,7 @@ class Settings(StrictSettingsModel):
     server: ServerSettings
     logging: LoggingSettings
     database: DatabaseSettings
+    embedding: EmbeddingSettings = Field(default_factory=EmbeddingSettings)
     llm: LLMSettings
 
 

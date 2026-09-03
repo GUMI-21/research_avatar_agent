@@ -1,6 +1,7 @@
 # Python
 __pycache__/
 *.py[cod]
+*.ses
 .venv/
 venv/
 
@@ -38,6 +39,7 @@ server/logs/**/*.log
 server/logs/*.log
 server/runtime/
 server/data/*.db
+server/data/models/
 
 # Environment and local secrets
 .env
