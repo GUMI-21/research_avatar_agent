@@ -17,6 +17,13 @@ logging:
   compression: gz
   console: true
 
+database:
+  url: sqlite+aiosqlite:///data/personal_agent.db
+
+embedding:
+  model: sentence-transformers/paraphrase-multilingual-MiniLM-L12-v2
+  dimensions: 384
+
 llm:
   default_provider: mock
   timeout_seconds: 30

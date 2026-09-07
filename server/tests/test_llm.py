@@ -76,6 +76,7 @@ def make_request() -> LLMRequest:
         request_id="req_test",
         session_id="unity-demo",
         message="Hello",
+        instructions="Follow the Agent instructions.",
     )
 
 
@@ -131,6 +132,10 @@ class LLMRuntimeConfigurationTest(unittest.TestCase):
 
         settings = Settings.model_validate(raw_config)
 
+        self.assertEqual(
+            settings.database.url,
+            "sqlite+aiosqlite:///data/personal_agent.db",
+        )
         self.assertEqual(settings.llm.default_provider, LLMProvider.MOCK)
         catalog = {item.provider: item for item in LLM_PROVIDER_CATALOG.providers}
         for provider in (
@@ -146,6 +151,10 @@ class LLMRuntimeConfigurationTest(unittest.TestCase):
 
         self.assertEqual(settings.server.host, "0.0.0.0")
         self.assertFalse(settings.server.reload)
+        self.assertEqual(
+            settings.database.url,
+            "sqlite+aiosqlite:////app/runtime/data/personal_agent.db",
+        )
         self.assertEqual(settings.llm.default_provider, LLMProvider.MOCK)
 
 
@@ -217,6 +226,7 @@ class ProviderAdapterTest(unittest.IsolatedAsyncioTestCase):
             self.assertEqual(request.url.path, "/v1/responses")
             self.assertEqual(request.headers["Authorization"], "Bearer test-key")
             self.assertEqual(payload["model"], "gpt-5.6-luna")
+            self.assertEqual(payload["instructions"], "Follow the Agent instructions.")
             return httpx.Response(
                 200,
                 json={
@@ -244,13 +254,63 @@ class ProviderAdapterTest(unittest.IsolatedAsyncioTestCase):
 
         self.assertEqual(result.text, "OpenAI reply")
 
+    async def test_openai_responses_stream_yields_text_deltas(self) -> None:
+        async def handler(request: httpx.Request) -> httpx.Response:
+            payload = json.loads(request.content)
+            self.assertTrue(payload["stream"])
+            self.assertEqual(payload["instructions"], "Follow the Agent instructions.")
+            body = "\n\n".join(
+                [
+                    'event: response.created\ndata: {"type":"response.created"}',
+                    'event: response.output_text.delta\ndata: '
+                    '{"type":"response.output_text.delta","delta":"Hel"}',
+                    'event: response.output_text.delta\ndata: '
+                    '{"type":"response.output_text.delta","delta":"lo"}',
+                    'event: response.completed\ndata: '
+                    '{"type":"response.completed","response":{"usage":'
+                    '{"input_tokens":12,"output_tokens":3,'
+                    '"input_tokens_details":{"cached_tokens":4,'
+                    '"cache_write_tokens":1}}}}',
+                ]
+            )
+            return httpx.Response(
+                200,
+                text=body,
+                headers={"Content-Type": "text/event-stream"},
+            )
+
+        adapter = OpenAIAdapter(
+            make_client_config(
+                LLMProvider.OPENAI,
+                "https://api.openai.com/v1",
+                "gpt-5.6-luna",
+            ),
+            transport=httpx.MockTransport(handler),
+        )
+
+        chunks = [chunk async for chunk in adapter.stream(make_request())]
+
+        self.assertEqual([chunk.text for chunk in chunks], ["Hel", "lo", ""])
+        usage = chunks[-1].usage
+        self.assertIsNotNone(usage)
+        assert usage is not None
+        self.assertEqual(usage.input_tokens, 12)
+        self.assertEqual(usage.output_tokens, 3)
+        self.assertEqual(usage.cache_read_tokens, 4)
+        self.assertEqual(usage.cache_write_tokens, 1)
+
     async def test_gemini_generate_content_format(self) -> None:
         async def handler(request: httpx.Request) -> httpx.Response:
+            payload = json.loads(request.content)
             self.assertEqual(
                 request.url.path,
                 "/v1beta/models/gemini-3.5-flash:generateContent",
             )
             self.assertEqual(request.headers["x-goog-api-key"], "test-key")
+            self.assertEqual(
+                payload["systemInstruction"]["parts"][0]["text"],
+                "Follow the Agent instructions.",
+            )
             return httpx.Response(
                 200,
                 json={
@@ -273,11 +333,63 @@ class ProviderAdapterTest(unittest.IsolatedAsyncioTestCase):
 
         self.assertEqual(result.text, "Gemini reply")
 
+    async def test_gemini_stream_yields_answer_parts(self) -> None:
+        async def handler(request: httpx.Request) -> httpx.Response:
+            payload = json.loads(request.content)
+            self.assertEqual(
+                request.url.path,
+                "/v1beta/models/gemini-3.5-flash:streamGenerateContent",
+            )
+            self.assertEqual(request.url.params["alt"], "sse")
+            self.assertEqual(
+                payload["systemInstruction"]["parts"][0]["text"],
+                "Follow the Agent instructions.",
+            )
+            body = "\n\n".join(
+                [
+                    'data: {"candidates":[{"content":{"parts":['
+                    '{"text":"hidden","thought":true},'
+                    '{"text":"Gemini "}]}}]}',
+                    'data: {"candidates":[{"content":{"parts":['
+                    '{"text":"reply"}]},"finishReason":"STOP"}],'
+                    '"usageMetadata":{"promptTokenCount":8,'
+                    '"candidatesTokenCount":2,"cachedContentTokenCount":3}}',
+                ]
+            )
+            return httpx.Response(
+                200,
+                text=body,
+                headers={"Content-Type": "text/event-stream"},
+            )
+
+        adapter = GeminiAdapter(
+            make_client_config(
+                LLMProvider.GEMINI,
+                "https://generativelanguage.googleapis.com/v1beta",
+                "gemini-3.5-flash",
+            ),
+            transport=httpx.MockTransport(handler),
+        )
+
+        chunks = [chunk async for chunk in adapter.stream(make_request())]
+
+        self.assertEqual(
+            [chunk.text for chunk in chunks], ["Gemini ", "reply", ""]
+        )
+        usage = chunks[-1].usage
+        self.assertIsNotNone(usage)
+        assert usage is not None
+        self.assertEqual(usage.input_tokens, 8)
+        self.assertEqual(usage.output_tokens, 2)
+        self.assertEqual(usage.cache_read_tokens, 3)
+
     async def test_deepseek_chat_completions_format(self) -> None:
         async def handler(request: httpx.Request) -> httpx.Response:
             payload = json.loads(request.content)
             self.assertEqual(request.url.path, "/chat/completions")
             self.assertEqual(payload["model"], "deepseek-v4-flash")
+            self.assertEqual(payload["messages"][0]["role"], "system")
+            self.assertEqual(payload["messages"][1]["role"], "user")
             return httpx.Response(
                 200,
                 json={
@@ -299,6 +411,52 @@ class ProviderAdapterTest(unittest.IsolatedAsyncioTestCase):
         result = await adapter.generate(make_request())
 
         self.assertEqual(result.text, "DeepSeek reply")
+
+    async def test_deepseek_stream_yields_answer_deltas(self) -> None:
+        async def handler(request: httpx.Request) -> httpx.Response:
+            payload = json.loads(request.content)
+            self.assertEqual(request.url.path, "/chat/completions")
+            self.assertTrue(payload["stream"])
+            self.assertTrue(payload["stream_options"]["include_usage"])
+            self.assertEqual(payload["messages"][0]["role"], "system")
+            self.assertEqual(payload["messages"][1]["role"], "user")
+            body = "\n\n".join(
+                [
+                    'data: {"choices":[{"delta":{"role":"assistant"}}]}',
+                    'data: {"choices":[{"delta":{"reasoning_content":"hidden"}}]}',
+                    'data: {"choices":[{"delta":{"content":"Deep"}}]}',
+                    'data: {"choices":[{"delta":{"content":"Seek"}}]}',
+                    'data: {"choices":[{"delta":{},"finish_reason":"stop"}]}',
+                    'data: {"choices":[],"usage":{"prompt_tokens":10,'
+                    '"completion_tokens":2,"prompt_cache_hit_tokens":6,'
+                    '"prompt_cache_miss_tokens":4}}',
+                    "data: [DONE]",
+                ]
+            )
+            return httpx.Response(
+                200,
+                text=body,
+                headers={"Content-Type": "text/event-stream"},
+            )
+
+        adapter = DeepSeekAdapter(
+            make_client_config(
+                LLMProvider.DEEPSEEK,
+                "https://api.deepseek.com",
+                "deepseek-v4-flash",
+            ),
+            transport=httpx.MockTransport(handler),
+        )
+
+        chunks = [chunk async for chunk in adapter.stream(make_request())]
+
+        self.assertEqual([chunk.text for chunk in chunks], ["Deep", "Seek", ""])
+        usage = chunks[-1].usage
+        self.assertIsNotNone(usage)
+        assert usage is not None
+        self.assertEqual(usage.input_tokens, 10)
+        self.assertEqual(usage.output_tokens, 2)
+        self.assertEqual(usage.cache_read_tokens, 6)
 
     async def test_timeout_is_converted(self) -> None:
         async def handler(request: httpx.Request) -> httpx.Response:

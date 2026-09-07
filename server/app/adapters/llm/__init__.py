@@ -1,6 +1,13 @@
 """LLM provider adapters."""
 
-from app.adapters.llm.base import LLMClient, LLMClientConfig, LLMRequest, LLMResult
+from app.adapters.llm.base import (
+    LLMClient,
+    LLMClientConfig,
+    LLMRequest,
+    LLMResult,
+    LLMStreamChunk,
+    LLMUsage,
+)
 from app.adapters.llm.providers import (
     DeepSeekAdapter,
     GeminiAdapter,
@@ -15,7 +22,8 @@ __all__ = [
     "LLMClientConfig",
     "LLMRequest",
     "LLMResult",
+    "LLMStreamChunk",
+    "LLMUsage",
     "MockLLMAdapter",
     "OpenAIAdapter",
 ]
-

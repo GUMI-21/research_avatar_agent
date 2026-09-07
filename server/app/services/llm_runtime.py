@@ -1,6 +1,7 @@
 """In-memory LLM provider selection shared by API clients."""
 
 import os
+from collections.abc import AsyncIterator
 from time import perf_counter
 
 from pydantic import SecretStr
@@ -12,6 +13,7 @@ from app.adapters.llm import (
     LLMClientConfig,
     LLMRequest,
     LLMResult,
+    LLMStreamChunk,
     MockLLMAdapter,
     OpenAIAdapter,
 )
@@ -125,6 +127,35 @@ class LLMRuntime(LLMClient):
             elapsed_ms,
         )
         return result
+
+    async def stream(
+        self, request: LLMRequest
+    ) -> AsyncIterator[LLMStreamChunk]:
+        """Stream with the provider active at the start of this call."""
+        config = self._config
+        adapter = self._build_adapter(config)
+        started_at = perf_counter()
+        try:
+            async for chunk in adapter.stream(request):
+                yield chunk
+        except LLMError as error:
+            log.warning(
+                "LLM stream failed request_id={} provider={} model={} "
+                "elapsed_ms={} error_type={}",
+                request.request_id,
+                config.provider.value,
+                config.model,
+                int((perf_counter() - started_at) * 1000),
+                type(error).__name__,
+            )
+            raise
+        log.info(
+            "LLM stream completed request_id={} provider={} model={} elapsed_ms={}",
+            request.request_id,
+            config.provider.value,
+            config.model,
+            int((perf_counter() - started_at) * 1000),
+        )
 
     def _resolve_api_key(
         self, request: LLMConfigRequest

@@ -52,9 +52,12 @@ Concise backend implementation documents are maintained in English under
 `server/docs/`.
 
 - English:
+  - [Internship agent workspace plan](docs/en/internship_agent_workspace_plan.md)
   - [Research plan](docs/en/research_plan.md)
   - [July 21 development kickoff plan](docs/en/july21_demo_plan.md)
 - 中文：
+  - [实习作品集 Agent Workspace 计划](docs/zh/internship_agent_workspace_plan.md)
+  - [项目面试复盘](docs/zh/interview/)
   - [研究计划](docs/zh/research_plan.md)
   - [7 月 21 日开发启动计划](docs/zh/july21_demo_plan.md)
 
