@@ -8,10 +8,17 @@ from unittest.mock import patch
 from fastapi import FastAPI
 from fastapi.testclient import TestClient
 
-from app.adapters.agent import RuntimeEvent, RuntimeEventType, RuntimeRequest
+from app.adapters.agent import (
+    NativeAgentRuntime,
+    RuntimeEvent,
+    RuntimeEventType,
+    RuntimeRequest,
+)
+from app.adapters.llm import LLMClient, LLMRequest, LLMResult
 from app.api.router import api_router
 from app.core.database import Base, Database
-from app.repositories import AgentRepository, SessionRepository
+from app.repositories import AgentRepository, KnowledgeSourceRepository, SessionRepository
+from app.schemas.llm import LLMProvider
 from app.services.runtime_registry import RuntimeRegistry
 
 
@@ -28,12 +35,30 @@ class WebSocketRuntime:
         yield RuntimeEvent(type=RuntimeEventType.RUN_FINISHED)
 
 
+class RecordingLLMClient(LLMClient):
+    def __init__(self) -> None:
+        self.requests: list[LLMRequest] = []
+
+    async def generate(self, request: LLMRequest) -> LLMResult:
+        self.requests.append(request)
+        return LLMResult("answer", LLMProvider.MOCK, "mock-echo")
+
+
+class BlockingRetrieval:
+    async def search_keyword(
+        self, *args: object, **kwargs: object
+    ) -> list[object]:
+        await asyncio.Event().wait()
+        return []
+
+
 class WorkspaceWebSocketTest(unittest.TestCase):
     def setUp(self) -> None:
         self.database = Database("sqlite+aiosqlite:///:memory:")
         asyncio.run(self._create_tables())
         registry = RuntimeRegistry()
         registry.register("native", WebSocketRuntime)
+        self.registry = registry
         app = FastAPI()
         app.state.database = self.database
         app.state.runtime_registry = registry
@@ -53,6 +78,27 @@ class WorkspaceWebSocketTest(unittest.TestCase):
         async with self.database.session() as database_session:
             agent = await AgentRepository(database_session).create(
                 "client-a", name="Personal", system_prompt="Help me."
+            )
+            conversation = await SessionRepository(database_session).create(
+                "client-a", agent.id
+            )
+            await database_session.commit()
+            return conversation.id
+
+    async def _create_bound_session(self) -> str:
+        async with self.database.session() as database_session:
+            source = await KnowledgeSourceRepository(database_session).create(
+                "client-a",
+                name="Notes",
+                root_path="C:/temporary-notes",
+                source_type="markdown",
+            )
+            agent = await AgentRepository(database_session).create(
+                "client-a",
+                name="RAG",
+                system_prompt="Use notes.",
+                runtime="native",
+                knowledge_sources=[source],
             )
             conversation = await SessionRepository(database_session).create(
                 "client-a", agent.id
@@ -187,6 +233,46 @@ class WorkspaceWebSocketTest(unittest.TestCase):
         self.assertEqual(cancelled["type"], "run_cancelled")
         self.assertEqual(cancelled["sequence"], 2)
         self.assertEqual(rejected["code"], "run_not_active")
+
+    @patch("app.services.run_execution.KnowledgeRetrievalService")
+    @patch("app.api.routes.workspace_ws.log")
+    @patch("app.repositories.message.log")
+    @patch("app.repositories.run.log")
+    @patch("app.repositories.run_event.log")
+    @patch("app.services.message.log")
+    @patch("app.services.run.log")
+    @patch("app.services.run_event.log")
+    def test_cancel_during_retrieval_prevents_native_llm_call(
+        self, *_mocks
+    ) -> None:
+        llm = RecordingLLMClient()
+        self.registry._factories["native"] = lambda: NativeAgentRuntime(llm)
+        session_id = asyncio.run(self._create_bound_session())
+        with patch(
+            "app.services.run_execution.KnowledgeRetrievalService",
+            return_value=BlockingRetrieval(),
+        ):
+            with self.client.websocket_connect(
+                "/api/v1/ws?client_id=client-a"
+            ) as websocket:
+                websocket.send_json(
+                    {
+                        "type": "send_message",
+                        "session_id": session_id,
+                        "content": "检索问题",
+                    }
+                )
+                started = websocket.receive_json()
+                retrieval_started = websocket.receive_json()
+                websocket.send_json(
+                    {"type": "cancel_run", "run_id": started["run_id"]}
+                )
+                cancelled = websocket.receive_json()
+
+        self.assertEqual(started["type"], "run_started")
+        self.assertEqual(retrieval_started["type"], "retrieval_started")
+        self.assertEqual(cancelled["type"], "run_cancelled")
+        self.assertEqual(llm.requests, [])
 
     @patch("app.api.routes.workspace_ws.log")
     def test_session_is_hidden_from_other_client(self, _mocked_log) -> None:

@@ -10,6 +10,8 @@ from sqlalchemy.ext.asyncio import AsyncSession
 from app.adapters.agent import RuntimeEvent, RuntimeEventType, RuntimeRequest
 from app.repositories import AgentRepository, SessionRepository
 from app.services.message import MessageService
+from app.services.knowledge_context import assemble_knowledge_context
+from app.services.knowledge_retrieval import KnowledgeRetrievalService
 from app.services.run import RunService
 from app.services.run_event import RunEventService
 from app.services.runtime_registry import RuntimeRegistry
@@ -65,6 +67,7 @@ class RunExecutionService:
         self._messages = MessageService(session)
         self._runs = RunService(session)
         self._events = RunEventService(session)
+        self._retrieval = KnowledgeRetrievalService(session)
 
     async def stream(
         self,
@@ -103,6 +106,82 @@ class RunExecutionService:
             run_id=run.id,
         )
         execution_started = perf_counter()
+        run_started = await self._process(
+            client_id,
+            run.id,
+            RuntimeEvent(type=RuntimeEventType.RUN_STARTED),
+        )
+        if run_started is not None:
+            yield run_started
+
+        knowledge_context = ""
+        try:
+            source_ids = (
+                sorted(set(agent.knowledge_source_ids))
+                if agent.runtime == "native"
+                else []
+            )
+            if source_ids:
+                started = await self._process(
+                    client_id,
+                    run.id,
+                    RuntimeEvent(
+                        type=RuntimeEventType.RETRIEVAL_STARTED,
+                        payload={
+                            "source_count": len(source_ids),
+                            "per_source_limit": 5,
+                            "budget_chars": 6000,
+                        },
+                    ),
+                )
+                if started is not None:
+                    yield started
+                hits = []
+                for source_id in source_ids:
+                    source_hits = await self._retrieval.search_keyword(
+                        client_id, source_id, message, limit=5
+                    )
+                    hits.extend(source_hits)
+                    result = await self._process(
+                        client_id,
+                        run.id,
+                        RuntimeEvent(
+                            type=RuntimeEventType.RETRIEVAL_RESULT,
+                            payload={
+                                "source_id": source_id,
+                                "hit_count": len(source_hits),
+                                "chunk_ids": [hit.chunk_id for hit in source_hits],
+                                "budget_chars": 6000,
+                            },
+                        ),
+                    )
+                    if result is not None:
+                        yield result
+                # 组装上下文
+                knowledge_context = assemble_knowledge_context(
+                    hits, max_chars=6000
+                ).text
+        except asyncio.CancelledError:
+            cancelled = await self._process_terminal(
+                client_id, run.id, RuntimeEvent(type=RuntimeEventType.RUN_CANCELLED),
+                execution_started,
+            )
+            if cancelled is not None:
+                yield cancelled
+            raise
+        except Exception as error:
+            failure = await self._process_terminal(
+                client_id,
+                run.id,
+                RuntimeEvent(
+                    type=RuntimeEventType.RUN_FAILED,
+                    payload={"error_type": type(error).__name__},
+                ),
+                execution_started,
+            )
+            if failure is not None:
+                yield failure
+            raise
         # 获取异步迭代器；后续 anext() 才会逐步推进 Agent 执行
         iterator = runtime.stream(
             RuntimeRequest(
@@ -113,6 +192,7 @@ class RunExecutionService:
                 message=message,
                 # 默认身份prompt + rag附加上下文
                 system_prompt=agent.system_prompt,
+                knowledge_context=knowledge_context,
             )
         )
         terminal_received = False
@@ -161,6 +241,8 @@ class RunExecutionService:
                     assistant_parts.append(text)
                     if text and time_to_first_token_ms is None:
                         time_to_first_token_ms = _elapsed_ms(execution_started)
+            if event.type is RuntimeEventType.RUN_STARTED:
+                continue
             duration_ms = (
                 _elapsed_ms(execution_started)
                 if event.type in TERMINAL_EVENTS
@@ -201,6 +283,20 @@ class RunExecutionService:
             if streamed is not None:
                 yield streamed
             raise error
+
+    async def _process_terminal(
+        self,
+        client_id: str,
+        run_id: str,
+        event: RuntimeEvent,
+        execution_started: float,
+    ) -> StreamedRunEvent | None:
+        return await self._process(
+            client_id,
+            run_id,
+            event,
+            duration_ms=_elapsed_ms(execution_started),
+        )
 
     async def _process(
         self,
