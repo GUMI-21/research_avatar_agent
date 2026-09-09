@@ -5,9 +5,11 @@ import unittest
 from collections.abc import AsyncIterator
 from decimal import Decimal
 from unittest.mock import patch
+from langgraph.checkpoint.memory import InMemorySaver
 
 from app.adapters.agent import RuntimeEvent, RuntimeEventType, RuntimeRequest
 from app.core.database import Base, Database
+from app.orchestration import LangGraphRunOrchestrator
 from app.repositories import (
     AgentRepository,
     KnowledgeSourceRepository,
@@ -164,7 +166,12 @@ class RunExecutionServiceTest(unittest.IsolatedAsyncioTestCase):
             session_id = await self._create_session(database_session, "native")
             registry = RuntimeRegistry()
             registry.register("native", SuccessfulRuntime)
-            service = RunExecutionService(database_session, registry)
+            checkpointer = InMemorySaver()
+            service = RunExecutionService(
+                database_session,
+                registry,
+                graph_checkpointer=checkpointer,
+            )
 
             with (
                 patch("app.repositories.run.log"),
@@ -194,8 +201,13 @@ class RunExecutionServiceTest(unittest.IsolatedAsyncioTestCase):
             messages = await MessageRepository(database_session).list_messages(
                 "client-a", session_id
             )
+            graph_state = await LangGraphRunOrchestrator(
+                SuccessfulRuntime(), checkpointer
+            ).get_state(run.id)
 
         self.assertEqual(run.status, "completed")
+        self.assertEqual(graph_state["phase"], "completed")
+        self.assertEqual(graph_state["terminal_event"], "run_finished")
         self.assertEqual([item.sequence for item in streamed], [1, None, 2, 3])
         self.assertEqual(
             [record.event_type for record in records],

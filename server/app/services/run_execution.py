@@ -7,9 +7,11 @@ from hashlib import sha256
 from time import perf_counter
 
 from sqlalchemy.ext.asyncio import AsyncSession
+from langgraph.checkpoint.base import BaseCheckpointSaver
 
 from app.adapters.agent import RuntimeEvent, RuntimeEventType, RuntimeRequest
 from app.adapters.knowledge import EmbeddingClient
+from app.orchestration import LangGraphRunOrchestrator
 from app.repositories import AgentRepository, SessionRepository
 from app.services.message import MessageService
 from app.services.knowledge_context import (
@@ -92,6 +94,7 @@ class RunExecutionService:
         session: AsyncSession,
         registry: RuntimeRegistry,
         embedding_client: EmbeddingClient | None = None,
+        graph_checkpointer: BaseCheckpointSaver[str] | None = None,
     ) -> None:
         self._session = session
         self._registry = registry
@@ -100,6 +103,7 @@ class RunExecutionService:
         self._events = RunEventService(session)
         self._retrieval = KnowledgeRetrievalService(session, embedding_client)
         self._retrieval_strategy = "hybrid" if embedding_client else "keyword"
+        self._graph_checkpointer = graph_checkpointer
 
     async def stream(
         self,
@@ -232,7 +236,10 @@ class RunExecutionService:
                 yield failure
             raise
         # 获取异步迭代器；后续 anext() 才会逐步推进 Agent 执行
-        iterator = runtime.stream(
+        orchestrator = LangGraphRunOrchestrator(
+            runtime, self._graph_checkpointer
+        )
+        iterator = orchestrator.stream(
             RuntimeRequest(
                 run_id=run.id,
                 client_id=client_id,

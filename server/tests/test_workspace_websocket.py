@@ -7,6 +7,7 @@ from unittest.mock import patch
 
 from fastapi import FastAPI
 from fastapi.testclient import TestClient
+from langgraph.checkpoint.memory import InMemorySaver
 
 from app.adapters.agent import (
     NativeAgentRuntime,
@@ -70,6 +71,7 @@ class WorkspaceWebSocketTest(unittest.TestCase):
         app.state.database = self.database
         app.state.runtime_registry = registry
         app.state.embedding_client = HashEmbeddingAdapter()
+        app.state.graph_checkpointer = InMemorySaver()
         app.include_router(api_router)
         self.client = TestClient(app)
         self.session_id = asyncio.run(self._create_session())

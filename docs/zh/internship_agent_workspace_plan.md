@@ -58,8 +58,8 @@ FastAPI
 SQLite WAL + FTS5 + Qdrant Local vector index
 ```
 
-以上为目标架构。2026-09-08 代码使用 SQLite 保存向量并执行精确余弦检索，尚未接入
-Qdrant；也尚未配置 WAL。LangGraph 仍待实现，当前运行由 RunExecutionService 协调。
+以上为目标架构。2026-09-09 代码使用 SQLite 保存向量并执行精确余弦检索，尚未接入
+Qdrant；也尚未配置 WAL。RunExecutionService 已通过 LangGraph 状态图协调运行。
 
 FastAPI 是服务边界。LangGraph 只负责一次 Agent run 内的状态转移，不直接负责 API、数据库、文件扫描或 CLI 子进程生命周期。
 
@@ -261,9 +261,9 @@ Native Agent 聊天执行链已接入其绑定知识库的混合检索，并在 
 当前优先完成 LangGraph、handoff 和可正常使用的 Web Workspace。Windows 环境步骤见
 [Server README](../../server/README.md)。
 
-LangGraph 第一批已建立独立的 `prepare -> agent` 状态图，能够透传现有 Runtime 流事件，
-并以 `run_id` 保存不含消息、Prompt 和 RAG 正文的内存 checkpoint。生产
-`RunExecutionService` 尚未切换到该图，持久化 checkpoint 和 handoff 仍待后续批次。
+LangGraph 第二批已将生产 `RunExecutionService` 和 WebSocket 执行链路切换到
+`prepare -> agent` 状态图，并由应用共享的内存 checkpointer 按 `run_id` 保存运行元数据。
+checkpoint 不包含消息、Prompt 或 RAG 正文；持久化 checkpoint 和 handoff 仍待后续批次。
 
 - 已完成 Agent、Session、Message、Run 和 RunEvent 数据基础与客户端隔离。
 - 已完成 Native Runtime、三家 LLM 流式输出、WebSocket 取消/重连，以及用量、成本、延迟的记录与查询。

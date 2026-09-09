@@ -6,6 +6,7 @@ from dataclasses import dataclass
 from typing import Annotated
 
 from fastapi import APIRouter, Query, WebSocket, WebSocketDisconnect
+from langgraph.checkpoint.base import BaseCheckpointSaver
 from pydantic import BaseModel, ValidationError
 
 from app.adapters.agent import RuntimeEventType
@@ -49,6 +50,9 @@ async def workspace_socket(
     database: Database = websocket.app.state.database
     registry: RuntimeRegistry = websocket.app.state.runtime_registry
     embedding_client: EmbeddingClient = websocket.app.state.embedding_client
+    graph_checkpointer: BaseCheckpointSaver[str] = (
+        websocket.app.state.graph_checkpointer
+    )
     log.info("websocket_connected business=agent_workspace client_id={}", client_id)
     # 异步协程锁，保证发送消息不冲突
     send_lock = asyncio.Lock()
@@ -141,6 +145,7 @@ async def workspace_socket(
                     database,
                     registry,
                     embedding_client,
+                    graph_checkpointer,
                     client_id,
                     command.session_id,
                     command.content,
@@ -186,6 +191,7 @@ async def _stream_run(
     database: Database,
     registry: RuntimeRegistry,
     embedding_client: EmbeddingClient,
+    graph_checkpointer: BaseCheckpointSaver[str],
     client_id: str,
     session_id: str,
     content: str,
@@ -193,7 +199,9 @@ async def _stream_run(
 ) -> None:
     try:
         async with database.session() as session:
-            service = RunExecutionService(session, registry, embedding_client)
+            service = RunExecutionService(
+                session, registry, embedding_client, graph_checkpointer
+            )
             # 异步消费已经拆分好的 Agent 执行事件
             async for item in service.stream(client_id, session_id, content):
                 if active_run.run_id is None:

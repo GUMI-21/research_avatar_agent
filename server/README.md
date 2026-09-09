@@ -5,8 +5,8 @@ emotion-aware avatar assistant.
 
 FastAPI currently owns REST/WebSocket routes, native Agent runs, usage recording,
 and Markdown retrieval backed by SQLite. Services, repositories, and runtime
-adapters remain separate. A checkpointed LangGraph runtime boundary is under
-development; production integration and multi-agent handoff remain planned. See
+adapters remain separate. Workspace runs now pass through LangGraph with a shared
+in-memory checkpointer; durable checkpoints and multi-agent handoff remain planned. See
 the [active workspace roadmap](../docs/zh/internship_agent_workspace_plan.md).
 
 ## Directory Layout
