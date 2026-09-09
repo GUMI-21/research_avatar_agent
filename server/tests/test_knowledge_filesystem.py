@@ -40,8 +40,14 @@ class KnowledgeFilesystemTest(unittest.TestCase):
             root.mkdir()
             outside = base / "private.md"
             outside.write_text("private", encoding="utf-8")
-            (root / "linked.md").symlink_to(outside)
-            (root / "broken.md").symlink_to(base / "missing.md")
+            try:
+                (root / "linked.md").symlink_to(outside)
+                (root / "broken.md").symlink_to(base / "missing.md")
+            except OSError as error:
+                # Windows requires Developer Mode or the symlink privilege.
+                if getattr(error, "winerror", None) == 1314:
+                    self.skipTest("Windows user lacks symbolic-link privilege")
+                raise
 
             scanned = scan_markdown_files(root)
 

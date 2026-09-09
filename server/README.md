@@ -3,12 +3,10 @@
 This directory contains the backend service for the personal AI workspace and
 emotion-aware avatar assistant.
 
-The backend is planned as a FastAPI service boundary around a LangGraph agent
-workflow. FastAPI owns service infrastructure such as HTTP routes, validation,
-streaming, health checks, and future connectors. LangGraph owns the agent
-workflow, including project context retrieval, memory lookup, task planning,
-assistant response generation, emotion state update, and avatar payload
-generation.
+FastAPI currently owns REST/WebSocket routes, native Agent runs, usage recording,
+and Markdown retrieval backed by SQLite. Services, repositories, and runtime
+adapters remain separate. LangGraph orchestration and multi-agent handoff are
+planned; see the [active workspace roadmap](../docs/zh/internship_agent_workspace_plan.md).
 
 ## Directory Layout
 
@@ -38,8 +36,8 @@ server/
 
 ## Logging
 
-Runtime log files should be written outside the repository. The planned default
-log directory is:
+The template uses the Unix temporary log path below. Windows development uses
+the Git-ignored `server/runtime/logs/` directory instead:
 
 ```text
 /tmp/avatar_agent_log/server.log
@@ -76,6 +74,47 @@ key to a local runtime configuration endpoint.
 
 ## Local Startup
 
+### Windows PowerShell
+
+From the repository root, use Python 3.11 and the project virtual environment.
+Calling its interpreter directly avoids PowerShell activation-policy changes:
+
+```powershell
+cd server
+py -3.11 -m venv .venv
+.\.venv\Scripts\python.exe -m pip install -r requirements.txt
+if (!(Test-Path config/debug.yaml)) {
+    Copy-Item config/config_example.yaml config/debug.yaml
+}
+```
+
+In `config/debug.yaml`, set `logging.directory` to `./runtime/logs` on Windows.
+Keep `database.url: sqlite+aiosqlite:///data/personal_agent.db` and the default
+`mock` provider. Existing configs must also include the template's database and
+embedding sections. The local YAML, database, models, and runtime logs are ignored
+by Git. No cloud API key is needed for Mock chat.
+
+```powershell
+New-Item -ItemType Directory -Force data | Out-Null
+$env:APP_ENV = "debug"
+.\.venv\Scripts\python.exe -m alembic upgrade head
+.\.venv\Scripts\python.exe -m pip check
+.\.venv\Scripts\python.exe -m unittest discover -s tests -v
+.\.venv\Scripts\python.exe run_avatar_server.py --env debug
+```
+
+In another terminal, run `Invoke-RestMethod http://127.0.0.1:8000/ping`.
+API documentation is at `http://127.0.0.1:8000/docs`. Workspace REST requests
+currently require `X-Client-ID` for local client scoping; this is not authentication.
+Run commands from `server/` because the database path is relative to that directory.
+The first server startup downloads the embedding model into `data/models/fastembed`;
+ordinary unit tests use substitutes and do not validate model download or quality.
+The real symlink-escape test skips on Windows error 1314 when the current user
+lacks symlink privileges; run it with Developer Mode or appropriate privileges
+to cover that filesystem case.
+
+### macOS / Linux
+
 Install dependencies in a virtual environment, then start the API server from
 the `server/` directory:
 
@@ -83,6 +122,7 @@ the `server/` directory:
 python3 -m venv .venv
 source .venv/bin/activate
 python -m pip install -r requirements.txt
+APP_ENV=debug python -m alembic upgrade head
 python run_avatar_server.py --env debug
 ```
 
@@ -138,15 +178,15 @@ Unity and web clients use this shared endpoint to update the same in-memory
 runtime configuration. See the [API design](docs/api.md) for explicit-key
 examples and security constraints.
 
-Run the logging tests from the `server/` directory:
+Run the backend tests from the `server/` directory:
 
 ```bash
 python -m unittest discover -s tests -v
 ```
 
-## First Backend Slice
+## Deferred Avatar Workflow
 
-The first LangGraph flow should be:
+The future teaching workflow below is separate from the current Workspace milestone:
 
 ```text
 user_input
