@@ -261,6 +261,10 @@ Native Agent 聊天执行链已接入其绑定知识库的混合检索，并在 
 当前优先完成 LangGraph、handoff 和可正常使用的 Web Workspace。Windows 环境步骤见
 [Server README](../../server/README.md)。
 
+LangGraph 第一批已建立独立的 `prepare -> agent` 状态图，能够透传现有 Runtime 流事件，
+并以 `run_id` 保存不含消息、Prompt 和 RAG 正文的内存 checkpoint。生产
+`RunExecutionService` 尚未切换到该图，持久化 checkpoint 和 handoff 仍待后续批次。
+
 - 已完成 Agent、Session、Message、Run 和 RunEvent 数据基础与客户端隔离。
 - 已完成 Native Runtime、三家 LLM 流式输出、WebSocket 取消/重连，以及用量、成本、延迟的记录与查询。
 - Web 前端确定为 React 19、TypeScript、Vite、TanStack Query、Zustand 和 Tailwind CSS。

@@ -37,8 +37,14 @@ runs now use hybrid retrieval over their bound sources and inject cited context
 within a 6,000-character budget, with keyword fallback when no Embedding Client
 is available. Durable events record the strategy and distinguish candidate
 Chunks from the final budgeted selection without storing note text. Real-Vault
-validation, the Context Inspector, LangGraph, and handoff remain planned. See
-the [Server README](../../server/README.md) for Windows environment setup.
+validation, the Context Inspector, production LangGraph integration, and
+handoff remain planned. See the [Server README](../../server/README.md) for
+Windows environment setup.
+
+The first LangGraph slice now provides an isolated `prepare -> agent` graph,
+streams the existing Runtime events, and checkpoints metadata by `run_id`
+without storing messages, prompts, or RAG text. Production RunExecutionService
+integration, persistent checkpoints, and handoff remain subsequent slices.
 
 FastAPI remains the service boundary. LangGraph coordinates state transitions within a run; it does not own APIs, repositories, file scanning, or subprocess lifecycle.
 
