@@ -245,7 +245,10 @@ CLI adapter 必须限制工作目录、超时、允许工具和环境变量；�
 - RAG 命中的 chunk 和最终注入上下文。
 - handoff 和工具执行次数。
 
-Usage 页面优先保证数据诚实，不把估算费用表示成账单实际费用。
+首版在每条 Assistant 回复对应的 Run 详情中展示 Provider、Model、输入/输出/缓存 Token、
+估算费用、首 Token 延迟、总耗时和错误；会话详情汇总该 Session 下的 Runs。Usage 页面
+优先保证数据诚实，不把估算费用表示成账单实际费用。CC Switch 风格的时间曲线及按
+Provider/Model 聚合属于后续增强，不阻塞可用 Workspace。
 
 ## 开发批次
 
@@ -316,11 +319,11 @@ Native Agent 聊天执行链已接入其绑定知识库的混合检索，并在 
 ### Batch 5：可用 Web Workspace
 
 - 接入真实 Agent/Session CRUD、消息历史、流式运行、取消和重连。
-- 展示 Agent 状态、handoff、工具事件、错误和基础 Run Inspector。
+- 展示 Agent 状态、handoff、工具事件和错误；在每个回复的 Run 详情及会话详情展示 Usage。
 
 ### Batch 6：Usage 与面试版本
 
-- Usage 参考 [CC Switch Usage Statistics](https://cc-switch.dev/docs/local-routing/usage-statistics/)：用时间、Provider、Model 筛选驱动请求数、标准化 Token、缓存命中率、估算费用和成功率汇总，并提供趋势和运行明细。
+- 若核心工作流完成后仍有时间，Usage Dashboard 参考 [CC Switch Usage Statistics](https://cc-switch.dev/docs/local-routing/usage-statistics/)：用时间、Provider、Model 筛选驱动请求数、标准化 Token、缓存命中率、估算费用和成功率汇总，并提供趋势和运行明细。
 - Demo mode、安全收口和错误处理。
 - README、测试、演示视频和面试讲解。
 

@@ -95,8 +95,8 @@ Retrieval combines keyword and vector results, applies client/source filters, de
 3. React shell and WebSocket Mock Chat vertical slice.
 4. Obsidian import, Chinese hybrid RAG, citations, and Context Inspector.
 5. LangGraph runs, checkpoints, traces, and streamed manual/automatic handoff. This is the current priority.
-6. Connect the Web Shell to real Agent/Session CRUD, message history, WebSocket runs, cancellation, reconnect, handoff, and run inspection.
-7. Build Usage around the [CC Switch statistics hierarchy](https://cc-switch.dev/docs/local-routing/usage-statistics/): filter-driven request, normalized-token, cache-hit, estimated-cost, and success summaries, followed by trends and run details. Finish restricted demo mode, documentation, tests, and interview packaging.
+6. Connect the Web Shell to real Agent/Session CRUD, message history, WebSocket runs, cancellation, reconnect, and handoff. Show provider, model, tokens, estimated cost, latency, and errors on each Run/turn and aggregate Runs in the conversation detail.
+7. Finish restricted demo mode, documentation, tests, and interview packaging. If the core workflow is ready, add a dashboard based on the [CC Switch statistics hierarchy](https://cc-switch.dev/docs/local-routing/usage-statistics/), with time/provider/model filters, summary cards, trends, and run details; these aggregate charts do not block the first usable workspace.
 8. After the interview-ready workspace, resume real-Vault RAG tuning, full Context Inspector and asset previews, then optional ACP/Codex/Claude workers and multimodal retrieval.
 
 Each batch contains about 100 lines of core implementation, is tested independently, and pauses for review.

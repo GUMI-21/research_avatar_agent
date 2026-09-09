@@ -43,7 +43,7 @@
 
 - Use `docs/zh/internship_agent_workspace_plan.md` as the active roadmap; distinguish implemented behavior from target architecture.
 - Implemented: workspace persistence and client scoping, native streaming runtime, WebSocket cancellation/replay, usage APIs, Markdown indexing, hybrid retrieval, Agent knowledge-source bindings, and auditable RAG context injection.
-- Priority order: LangGraph run orchestration; streamed manual/automatic handoff; connect the existing Web Shell to real Agent/Session/WebSocket flows; then Usage and run inspection. Model the Usage information hierarchy on CC Switch with filter-driven summary cards, trends, and request details while preserving honest estimated-cost labels.
+- Priority order: LangGraph run orchestration; streamed manual/automatic handoff; then connect the existing Web Shell to real Agent/Session/WebSocket flows. In the first frontend, show the recorded provider, model, token, estimated cost, latency, and error data on each Run/turn and aggregate it in the conversation detail. CC Switch-style time curves and provider/model grouping are a later dashboard enhancement and must not delay a usable workspace.
 - After the usable workspace milestone, resume real-Vault RAG validation, Context Inspector detail, note-to-asset persistence, and optional ACP workers. Qdrant and LangGraph are not current runtime dependencies.
 - Windows setup and validation commands belong in `server/README.md`. Use `server/.venv/Scripts/python.exe`, apply Alembic migrations before startup, and run the server unittest suite for each backend batch.
 - API keys must stay outside Git, documentation, logs, and project memory.
