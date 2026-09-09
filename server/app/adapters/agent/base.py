@@ -41,6 +41,7 @@ class RuntimeEventType(StrEnum):
     AGENT_STATUS = "agent_status"
     RETRIEVAL_STARTED = "retrieval_started"
     RETRIEVAL_RESULT = "retrieval_result"
+    CONTEXT_PREPARED = "context_prepared"
     TOOL_STARTED = "tool_started"
     TOOL_FINISHED = "tool_finished"
     # 转交任务

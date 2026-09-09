@@ -3,6 +3,7 @@
 import asyncio
 from collections.abc import AsyncIterator
 from dataclasses import dataclass
+from hashlib import sha256
 from time import perf_counter
 
 from sqlalchemy.ext.asyncio import AsyncSession
@@ -10,7 +11,10 @@ from sqlalchemy.ext.asyncio import AsyncSession
 from app.adapters.agent import RuntimeEvent, RuntimeEventType, RuntimeRequest
 from app.repositories import AgentRepository, SessionRepository
 from app.services.message import MessageService
-from app.services.knowledge_context import assemble_knowledge_context
+from app.services.knowledge_context import (
+    KnowledgeContextResult,
+    assemble_knowledge_context,
+)
 from app.services.knowledge_retrieval import KnowledgeRetrievalService
 from app.services.run import RunService
 from app.services.run_event import RunEventService
@@ -28,6 +32,8 @@ TERMINAL_EVENTS = {
     RuntimeEventType.RUN_FAILED,
     RuntimeEventType.RUN_CANCELLED,
 }
+KNOWLEDGE_PER_SOURCE_LIMIT = 5
+KNOWLEDGE_CONTEXT_BUDGET_CHARS = 6000
 
 
 def _optional_string(value: object) -> str | None:
@@ -42,6 +48,21 @@ def _optional_token_count(value: object) -> int | None:
 
 def _elapsed_ms(started_at: float) -> int:
     return max(0, int((perf_counter() - started_at) * 1000))
+
+
+def _context_prepared_event(context: KnowledgeContextResult) -> RuntimeEvent:
+    return RuntimeEvent(
+        type=RuntimeEventType.CONTEXT_PREPARED,
+        payload={
+            "included_chunk_ids": list(context.included_chunk_ids),
+            "used_chars": context.used_chars,
+            "budget_chars": context.budget_chars,
+            "truncated": context.truncated,
+            "context_sha256": sha256(
+                context.text.encode("utf-8")
+            ).hexdigest(),
+        },
+    )
 
 # 数据类
 @dataclass(frozen=True)
@@ -129,8 +150,8 @@ class RunExecutionService:
                         type=RuntimeEventType.RETRIEVAL_STARTED,
                         payload={
                             "source_count": len(source_ids),
-                            "per_source_limit": 5,
-                            "budget_chars": 6000,
+                            "per_source_limit": KNOWLEDGE_PER_SOURCE_LIMIT,
+                            "budget_chars": KNOWLEDGE_CONTEXT_BUDGET_CHARS,
                         },
                     ),
                 )
@@ -139,7 +160,10 @@ class RunExecutionService:
                 hits = []
                 for source_id in source_ids:
                     source_hits = await self._retrieval.search_keyword(
-                        client_id, source_id, message, limit=5
+                        client_id,
+                        source_id,
+                        message,
+                        limit=KNOWLEDGE_PER_SOURCE_LIMIT,
                     )
                     hits.extend(source_hits)
                     result = await self._process(
@@ -151,16 +175,25 @@ class RunExecutionService:
                                 "source_id": source_id,
                                 "hit_count": len(source_hits),
                                 "chunk_ids": [hit.chunk_id for hit in source_hits],
-                                "budget_chars": 6000,
+                                "budget_chars": KNOWLEDGE_CONTEXT_BUDGET_CHARS,
                             },
                         ),
                     )
                     if result is not None:
                         yield result
                 # 组装上下文
-                knowledge_context = assemble_knowledge_context(
-                    hits, max_chars=6000
-                ).text
+                context = assemble_knowledge_context(
+                    hits, max_chars=KNOWLEDGE_CONTEXT_BUDGET_CHARS
+                )
+                knowledge_context = context.text
+                # 记录截断后的选择；prepared 不代表下游模型已收到或使用这些内容。
+                prepared = await self._process(
+                    client_id,
+                    run.id,
+                    _context_prepared_event(context),
+                )
+                if prepared is not None:
+                    yield prepared
         except asyncio.CancelledError:
             cancelled = await self._process_terminal(
                 client_id, run.id, RuntimeEvent(type=RuntimeEventType.RUN_CANCELLED),

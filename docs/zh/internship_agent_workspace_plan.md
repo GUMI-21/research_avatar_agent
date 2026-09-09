@@ -58,6 +58,9 @@ FastAPI
 SQLite WAL + FTS5 + Qdrant Local vector index
 ```
 
+以上为目标架构。2026-09-08 代码使用 SQLite 保存向量并执行精确余弦检索，尚未接入
+Qdrant；也尚未配置 WAL。LangGraph 仍待实现，当前运行由 RunExecutionService 协调。
+
 FastAPI 是服务边界。LangGraph 只负责一次 Agent run 内的状态转移，不直接负责 API、数据库、文件扫描或 CLI 子进程生命周期。
 
 ## 通信协议
@@ -86,6 +89,7 @@ WebSocket 用于长时间运行且需要双向控制的 Agent turn：
 ```text
 run_started
 retrieval_started / retrieval_result
+context_prepared
 agent_started / agent_status
 assistant_delta
 tool_started / tool_finished
@@ -182,7 +186,7 @@ Token 上限。
 
 问题：为什么当前选择 `paraphrase-multilingual-MiniLM-L12-v2`，而不是其他模型？
 
-当前阶段以 Mac 本地运行、快速形成面试 Demo 为优先，因此默认使用 FastEmbed 的
+当前阶段以 Windows/macOS 本地运行、快速形成面试 Demo 为优先，因此默认使用 FastEmbed 的
 ONNX 版本：约 0.22 GB、384 维、支持约 50 种语言，不需要 API Key，也不会把私人
 笔记发送到云端。它的检索质量不是最终结论，但足以低成本验证完整 RAG 链路。
 
@@ -247,6 +251,11 @@ Usage 页面优先保证数据诚实，不把估算费用表示成账单实际�
 
 ### 当前实现状态（2026-09-03）
 
+2026-09-08 核对：Native Agent 聊天执行链已接入其绑定知识库的关键词检索，并在
+6000 字符预算内注入带引用上下文。运行事件会区分每个知识库的候选 Chunk 与预算后
+实际选中的 Chunk，但不持久化笔记正文。混合检索接入、Context Inspector、LangGraph
+与 handoff 仍待实现。Windows 环境步骤见 [Server README](../../server/README.md)。
+
 - 已完成 Agent、Session、Message、Run 和 RunEvent 数据基础与客户端隔离。
 - 已完成 Native Runtime、三家 LLM 流式输出、WebSocket 取消/重连，以及用量、成本、延迟的记录与查询。
 - Web 前端确定为 React 19、TypeScript、Vite、TanStack Query、Zustand 和 Tailwind CSS。
@@ -273,6 +282,7 @@ Usage 页面优先保证数据诚实，不把估算费用表示成账单实际�
 - 检索结果按文件、标题与原文行号组装为有字符预算的上下文，并将笔记标注为不可信参考资料。
 - Agent 可显式绑定多个同客户端知识库，为运行时 RAG 限定检索范围。
 - Agent system prompt 通过统一 LLM 请求传递，并映射为各厂商原生 system instruction。
+- Native Agent Run 使用绑定知识库构造引用上下文，并持久化可重放的上下文选择元数据。
 
 ### Batch 0：架构与规则
 

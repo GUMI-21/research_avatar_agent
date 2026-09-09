@@ -6,6 +6,27 @@ provider. JSON is encoded as UTF-8.
 Annotated examples use JSONC for readability. Remove `//` comments before
 sending them as JSON request bodies.
 
+## Workspace Run Stream
+
+```text
+WS /api/v1/ws?client_id={client_id}
+```
+
+After `send_message`, durable run events can be replayed by sequence. A Native
+Agent with bound knowledge sources emits the following RAG events before model
+execution:
+
+- `retrieval_started`: source count, per-source result limit, and context budget.
+- `retrieval_result`: candidate Chunk IDs and hit count for one bound source.
+- `context_prepared`: Chunk IDs that remain after the shared context budget is
+  applied, actual/budget character counts, truncation status, and a SHA-256 hash
+  of the exact prepared context.
+
+`context_prepared` never contains note text. It means that context was prepared
+for the Runtime; it does not claim that a downstream model received or used it.
+An empty result is recorded with no included Chunk IDs and zero used characters.
+All events and replay queries remain scoped by `client_id`.
+
 ## Health Check
 
 ```http

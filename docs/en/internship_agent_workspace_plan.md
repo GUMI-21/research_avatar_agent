@@ -31,6 +31,14 @@ FastAPI
 SQLite WAL + FTS5 + Qdrant Local vector index
 ```
 
+Implementation check (2026-09-08): vectors currently live in SQLite with exact
+cosine search; Qdrant and WAL configuration are not implemented. Native Agent
+runs now retrieve keyword matches from their bound sources and inject cited
+context within a 6,000-character budget. Durable events distinguish candidate
+Chunks from the final budgeted selection without storing note text. Hybrid run
+retrieval, the Context Inspector, LangGraph, and handoff remain planned. See the
+[Server README](../../server/README.md) for Windows environment setup.
+
 FastAPI remains the service boundary. LangGraph coordinates state transitions within a run; it does not own APIs, repositories, file scanning, or subprocess lifecycle.
 
 ## Protocols
@@ -42,6 +50,7 @@ WebSocket owns long-running turns using AG-UI-compatible events plus project-spe
 ```text
 run_started
 retrieval_started / retrieval_result
+context_prepared
 agent_started / agent_status
 assistant_delta
 tool_started / tool_finished
@@ -66,7 +75,7 @@ The importer supports Markdown, frontmatter, wiki links, `![[asset.png]]`, and s
 
 OCR, image embeddings, and multimodal retrieval follow after text RAG is stable.
 
-Retrieval combines keyword and vector results, applies client/source filters, deduplicates chunks, and builds cited context. The default Chinese-capable embedding model is selected after a speed and quality smoke test on the target Mac.
+Retrieval combines keyword and vector results, applies client/source filters, deduplicates chunks, and builds cited context. The current local default is FastEmbed multilingual MiniLM; evaluate retrieval quality on real notes on Windows/macOS before changing models.
 
 ## Multi-Agent Model
 

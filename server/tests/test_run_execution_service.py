@@ -369,6 +369,31 @@ class RunExecutionServiceTest(unittest.IsolatedAsyncioTestCase):
         assert ContextRuntime.request is not None
         self.assertEqual(ContextRuntime.request.message, "原始问题")
         self.assertEqual(ContextRuntime.request.knowledge_context, "")
+        self.assertFalse(any(
+            item.event.type is RuntimeEventType.CONTEXT_PREPARED for item in streamed
+        ))
+
+    async def test_cancel_after_context_prepared_does_not_claim_model_use(self) -> None:
+        ContextRuntime.request = None
+        async with self.database.session() as database_session:
+            session_id, _, _ = await self._create_bound_session(database_session)
+            registry = RuntimeRegistry()
+            registry.register("native", ContextRuntime)
+            service = RunExecutionService(database_session, registry)
+            service._retrieval = StubRetrieval({})
+            stream = service.stream("client-a", session_id, "问题")
+            async for item in stream:
+                if item.event.type is RuntimeEventType.CONTEXT_PREPARED:
+                    prepared = item
+                    break
+            self.assertIsNone(ContextRuntime.request)
+            cancelled = await stream.athrow(asyncio.CancelledError())
+            self.assertEqual(cancelled.event.type, RuntimeEventType.RUN_CANCELLED)
+            with self.assertRaises(asyncio.CancelledError):
+                await anext(stream)
+            run = await RunRepository(database_session).get("client-a", prepared.run_id)
+            self.assertEqual(run.status, "cancelled")
+            self.assertIsNone(ContextRuntime.request)
 
     async def test_cancellation_during_retrieval_does_not_call_runtime(self) -> None:
         ContextRuntime.request = None

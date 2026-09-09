@@ -3,6 +3,7 @@
 import asyncio
 import tempfile
 import unittest
+from hashlib import sha256
 from pathlib import Path
 
 from alembic import command
@@ -13,7 +14,7 @@ from app.adapters.llm import LLMClient, LLMRequest, LLMResult
 from app.core.database import Database
 from app.repositories import AgentRepository, SessionRepository
 from app.schemas.llm import LLMProvider
-from app.services import KnowledgeSourceService, RunExecutionService
+from app.services import KnowledgeSourceService, RunEventService, RunExecutionService
 from app.services.runtime_registry import RuntimeRegistry
 
 
@@ -121,6 +122,37 @@ class NativeKnowledgeRunTest(unittest.IsolatedAsyncioTestCase):
                     ),
                     1,
                 )
+                prepared = [
+                    item for item in streamed
+                    if item.event.type is RuntimeEventType.CONTEXT_PREPARED
+                ]
+                self.assertEqual(len(prepared), 1)
+                audit = prepared[0].event.payload
+                candidate_ids = [
+                    chunk_id for item in retrieval
+                    for chunk_id in item.event.payload["chunk_ids"]
+                ]
+                included_ids = audit["included_chunk_ids"]
+                self.assertGreater(len(included_ids), 0)
+                self.assertLess(len(included_ids), len(candidate_ids))
+                self.assertEqual(included_ids, candidate_ids[:len(included_ids)])
+                self.assertEqual(len(included_ids), context.count("[来源 "))
+                self.assertEqual(audit["used_chars"], len(context))
+                self.assertEqual(audit["budget_chars"], 6000)
+                self.assertTrue(audit["truncated"])
+                self.assertEqual(
+                    audit["context_sha256"], sha256(context.encode("utf-8")).hexdigest()
+                )
+                self.assertEqual(set(audit), {
+                    "included_chunk_ids", "used_chars", "budget_chars",
+                    "truncated", "context_sha256",
+                })
+                self.assertLess(streamed.index(retrieval[-1]), streamed.index(prepared[0]))
+                agent_started = next(
+                    item for item in streamed
+                    if item.event.type is RuntimeEventType.AGENT_STARTED
+                )
+                self.assertLess(streamed.index(prepared[0]), streamed.index(agent_started))
 
                 no_context_agent = await AgentRepository(session).create(
                     "client-a", name="NoContext", system_prompt="Plain."
@@ -138,20 +170,47 @@ class NativeKnowledgeRunTest(unittest.IsolatedAsyncioTestCase):
                     "client-a", zero_hit_agent.id
                 )
                 await session.commit()
-                _ = [
+                plain_events = [
                     item
                     async for item in RunExecutionService(session, registry).stream(
                         "client-a", no_context_session.id, "没有绑定源"
                     )
                 ]
                 self.assertEqual(llm.requests[-1].message, "没有绑定源")
-                _ = [
+                self.assertFalse(any(
+                    item.event.type is RuntimeEventType.CONTEXT_PREPARED
+                    for item in plain_events
+                ))
+                empty_events = [
                     item
                     async for item in RunExecutionService(session, registry).stream(
                         "client-a", zero_hit_session.id, "完全不存在的词"
                     )
                 ]
                 self.assertEqual(llm.requests[-1].message, "完全不存在的词")
+                empty_audit = next(
+                    item.event.payload for item in empty_events
+                    if item.event.type is RuntimeEventType.CONTEXT_PREPARED
+                )
+                self.assertEqual(empty_audit, {
+                    "included_chunk_ids": [], "used_chars": 0,
+                    "budget_chars": 6000, "truncated": False,
+                    "context_sha256": sha256(b"").hexdigest(),
+                })
+
+                # 重建索引后旧事件仍保留当次准备的元数据，而不是重算当前笔记。
+                for source, note_root in ((bound, bound_root), (second_bound, second_bound_root)):
+                    (note_root / "note.md").write_text("# 更新\n新的笔记。", encoding="utf-8")
+                    await sources.sync("client-a", source.id)
+                async with database.session() as reader:
+                    events = RunEventService(reader)
+                    replayed = await events.replay("client-a", prepared[0].run_id)
+                    persisted = next(
+                        item for item in replayed if item.event_type == "context_prepared"
+                    )
+                    self.assertEqual(persisted.payload, audit)
+                    self.assertEqual(persisted.sequence, prepared[0].sequence)
+                    self.assertEqual(await events.replay("client-b", prepared[0].run_id), [])
             finally:
                 await database.dispose()
 
