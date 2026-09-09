@@ -15,6 +15,7 @@ from app.adapters.agent import (
     RuntimeRequest,
 )
 from app.adapters.llm import LLMClient, LLMRequest, LLMResult
+from app.adapters.knowledge import HashEmbeddingAdapter
 from app.api.router import api_router
 from app.core.database import Base, Database
 from app.repositories import AgentRepository, KnowledgeSourceRepository, SessionRepository
@@ -51,6 +52,12 @@ class BlockingRetrieval:
         await asyncio.Event().wait()
         return []
 
+    async def search_hybrid(
+        self, *args: object, **kwargs: object
+    ) -> list[object]:
+        await asyncio.Event().wait()
+        return []
+
 
 class WorkspaceWebSocketTest(unittest.TestCase):
     def setUp(self) -> None:
@@ -62,6 +69,7 @@ class WorkspaceWebSocketTest(unittest.TestCase):
         app = FastAPI()
         app.state.database = self.database
         app.state.runtime_registry = registry
+        app.state.embedding_client = HashEmbeddingAdapter()
         app.include_router(api_router)
         self.client = TestClient(app)
         self.session_id = asyncio.run(self._create_session())

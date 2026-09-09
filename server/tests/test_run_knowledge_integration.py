@@ -10,11 +10,17 @@ from alembic import command
 from alembic.config import Config
 
 from app.adapters.agent import NativeAgentRuntime, RuntimeEventType
+from app.adapters.knowledge import HashEmbeddingAdapter
 from app.adapters.llm import LLMClient, LLMRequest, LLMResult
 from app.core.database import Database
 from app.repositories import AgentRepository, SessionRepository
 from app.schemas.llm import LLMProvider
-from app.services import KnowledgeSourceService, RunEventService, RunExecutionService
+from app.services import (
+    KnowledgeEmbeddingService,
+    KnowledgeSourceService,
+    RunEventService,
+    RunExecutionService,
+)
 from app.services.runtime_registry import RuntimeRegistry
 
 
@@ -55,6 +61,7 @@ class NativeKnowledgeRunTest(unittest.IsolatedAsyncioTestCase):
 
             database = Database(database_url)
             llm = RecordingLLMClient()
+            embedding = HashEmbeddingAdapter()
             try:
                 async with database.session() as session:
                     sources = KnowledgeSourceService(session)
@@ -76,6 +83,9 @@ class NativeKnowledgeRunTest(unittest.IsolatedAsyncioTestCase):
                     await sources.sync("client-a", second_bound.id)
                     await sources.sync("client-a", unbound.id)
                     await sources.sync("client-b", foreign.id)
+                    index = KnowledgeEmbeddingService(session, embedding)
+                    await index.index_source("client-a", bound.id)
+                    await index.index_source("client-a", second_bound.id)
                     agent = await AgentRepository(session).create(
                         "client-a",
                         name="Personal",
@@ -88,7 +98,7 @@ class NativeKnowledgeRunTest(unittest.IsolatedAsyncioTestCase):
                     await session.commit()
                     registry = RuntimeRegistry()
                     registry.register("native", lambda: NativeAgentRuntime(llm))
-                    service = RunExecutionService(session, registry)
+                    service = RunExecutionService(session, registry, embedding)
                     streamed = [
                         item
                         async for item in service.stream(
@@ -109,6 +119,10 @@ class NativeKnowledgeRunTest(unittest.IsolatedAsyncioTestCase):
                     if item.event.type is RuntimeEventType.RETRIEVAL_RESULT
                 ]
                 self.assertEqual(len(retrieval), 2)
+                self.assertTrue(all(
+                    item.event.payload["strategy"] == "hybrid"
+                    for item in retrieval
+                ))
                 self.assertEqual(
                     [item.event.payload["source_id"] for item in retrieval],
                     sorted((bound.id, second_bound.id)),
@@ -145,8 +159,9 @@ class NativeKnowledgeRunTest(unittest.IsolatedAsyncioTestCase):
                 )
                 self.assertEqual(set(audit), {
                     "included_chunk_ids", "used_chars", "budget_chars",
-                    "truncated", "context_sha256",
+                    "truncated", "context_sha256", "retrieval_strategy",
                 })
+                self.assertEqual(audit["retrieval_strategy"], "hybrid")
                 self.assertLess(streamed.index(retrieval[-1]), streamed.index(prepared[0]))
                 agent_started = next(
                     item for item in streamed
@@ -164,7 +179,8 @@ class NativeKnowledgeRunTest(unittest.IsolatedAsyncioTestCase):
                     "client-a",
                     name="ZeroHit",
                     system_prompt="Plain.",
-                    knowledge_sources=[bound],
+                    # 此源已同步但未建立向量索引，且查询不匹配关键词。
+                    knowledge_sources=[unbound],
                 )
                 zero_hit_session = await SessionRepository(session).create(
                     "client-a", zero_hit_agent.id
@@ -172,7 +188,9 @@ class NativeKnowledgeRunTest(unittest.IsolatedAsyncioTestCase):
                 await session.commit()
                 plain_events = [
                     item
-                    async for item in RunExecutionService(session, registry).stream(
+                    async for item in RunExecutionService(
+                        session, registry, embedding
+                    ).stream(
                         "client-a", no_context_session.id, "没有绑定源"
                     )
                 ]
@@ -183,7 +201,9 @@ class NativeKnowledgeRunTest(unittest.IsolatedAsyncioTestCase):
                 ))
                 empty_events = [
                     item
-                    async for item in RunExecutionService(session, registry).stream(
+                    async for item in RunExecutionService(
+                        session, registry, embedding
+                    ).stream(
                         "client-a", zero_hit_session.id, "完全不存在的词"
                     )
                 ]
@@ -195,6 +215,7 @@ class NativeKnowledgeRunTest(unittest.IsolatedAsyncioTestCase):
                 self.assertEqual(empty_audit, {
                     "included_chunk_ids": [], "used_chars": 0,
                     "budget_chars": 6000, "truncated": False,
+                    "retrieval_strategy": "hybrid",
                     "context_sha256": sha256(b"").hexdigest(),
                 })
 

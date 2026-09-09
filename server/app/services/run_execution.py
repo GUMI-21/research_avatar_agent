@@ -9,6 +9,7 @@ from time import perf_counter
 from sqlalchemy.ext.asyncio import AsyncSession
 
 from app.adapters.agent import RuntimeEvent, RuntimeEventType, RuntimeRequest
+from app.adapters.knowledge import EmbeddingClient
 from app.repositories import AgentRepository, SessionRepository
 from app.services.message import MessageService
 from app.services.knowledge_context import (
@@ -50,7 +51,10 @@ def _elapsed_ms(started_at: float) -> int:
     return max(0, int((perf_counter() - started_at) * 1000))
 
 
-def _context_prepared_event(context: KnowledgeContextResult) -> RuntimeEvent:
+def _context_prepared_event(
+    context: KnowledgeContextResult,
+    strategy: str,
+) -> RuntimeEvent:
     return RuntimeEvent(
         type=RuntimeEventType.CONTEXT_PREPARED,
         payload={
@@ -58,6 +62,7 @@ def _context_prepared_event(context: KnowledgeContextResult) -> RuntimeEvent:
             "used_chars": context.used_chars,
             "budget_chars": context.budget_chars,
             "truncated": context.truncated,
+            "retrieval_strategy": strategy,
             "context_sha256": sha256(
                 context.text.encode("utf-8")
             ).hexdigest(),
@@ -82,13 +87,19 @@ class RuntimeEndedWithoutTerminalEventError(RuntimeError):
 
 # Agent Run 执行与事件编排服务
 class RunExecutionService:
-    def __init__(self, session: AsyncSession, registry: RuntimeRegistry) -> None:
+    def __init__(
+        self,
+        session: AsyncSession,
+        registry: RuntimeRegistry,
+        embedding_client: EmbeddingClient | None = None,
+    ) -> None:
         self._session = session
         self._registry = registry
         self._messages = MessageService(session)
         self._runs = RunService(session)
         self._events = RunEventService(session)
-        self._retrieval = KnowledgeRetrievalService(session)
+        self._retrieval = KnowledgeRetrievalService(session, embedding_client)
+        self._retrieval_strategy = "hybrid" if embedding_client else "keyword"
 
     async def stream(
         self,
@@ -150,6 +161,7 @@ class RunExecutionService:
                         type=RuntimeEventType.RETRIEVAL_STARTED,
                         payload={
                             "source_count": len(source_ids),
+                            "strategy": self._retrieval_strategy,
                             "per_source_limit": KNOWLEDGE_PER_SOURCE_LIMIT,
                             "budget_chars": KNOWLEDGE_CONTEXT_BUDGET_CHARS,
                         },
@@ -159,10 +171,13 @@ class RunExecutionService:
                     yield started
                 hits = []
                 for source_id in source_ids:
-                    source_hits = await self._retrieval.search_keyword(
-                        client_id,
-                        source_id,
-                        message,
+                    search = (
+                        self._retrieval.search_hybrid
+                        if self._retrieval_strategy == "hybrid"
+                        else self._retrieval.search_keyword
+                    )
+                    source_hits = await search(
+                        client_id, source_id, message,
                         limit=KNOWLEDGE_PER_SOURCE_LIMIT,
                     )
                     hits.extend(source_hits)
@@ -173,6 +188,7 @@ class RunExecutionService:
                             type=RuntimeEventType.RETRIEVAL_RESULT,
                             payload={
                                 "source_id": source_id,
+                                "strategy": self._retrieval_strategy,
                                 "hit_count": len(source_hits),
                                 "chunk_ids": [hit.chunk_id for hit in source_hits],
                                 "budget_chars": KNOWLEDGE_CONTEXT_BUDGET_CHARS,
@@ -190,7 +206,7 @@ class RunExecutionService:
                 prepared = await self._process(
                     client_id,
                     run.id,
-                    _context_prepared_event(context),
+                    _context_prepared_event(context, self._retrieval_strategy),
                 )
                 if prepared is not None:
                     yield prepared

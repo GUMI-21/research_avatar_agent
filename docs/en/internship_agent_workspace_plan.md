@@ -31,13 +31,14 @@ FastAPI
 SQLite WAL + FTS5 + Qdrant Local vector index
 ```
 
-Implementation check (2026-09-08): vectors currently live in SQLite with exact
+Implementation check (2026-09-09): vectors currently live in SQLite with exact
 cosine search; Qdrant and WAL configuration are not implemented. Native Agent
-runs now retrieve keyword matches from their bound sources and inject cited
-context within a 6,000-character budget. Durable events distinguish candidate
-Chunks from the final budgeted selection without storing note text. Hybrid run
-retrieval, the Context Inspector, LangGraph, and handoff remain planned. See the
-[Server README](../../server/README.md) for Windows environment setup.
+runs now use hybrid retrieval over their bound sources and inject cited context
+within a 6,000-character budget, with keyword fallback when no Embedding Client
+is available. Durable events record the strategy and distinguish candidate
+Chunks from the final budgeted selection without storing note text. Real-Vault
+validation, the Context Inspector, LangGraph, and handoff remain planned. See
+the [Server README](../../server/README.md) for Windows environment setup.
 
 FastAPI remains the service boundary. LangGraph coordinates state transitions within a run; it does not own APIs, repositories, file scanning, or subprocess lifecycle.
 

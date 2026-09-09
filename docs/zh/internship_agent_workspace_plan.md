@@ -249,12 +249,13 @@ Usage 页面优先保证数据诚实，不把估算费用表示成账单实际�
 
 ## 开发批次
 
-### 当前实现状态（2026-09-03）
+### 当前实现状态（2026-09-09）
 
-2026-09-08 核对：Native Agent 聊天执行链已接入其绑定知识库的关键词检索，并在
-6000 字符预算内注入带引用上下文。运行事件会区分每个知识库的候选 Chunk 与预算后
-实际选中的 Chunk，但不持久化笔记正文。混合检索接入、Context Inspector、LangGraph
-与 handoff 仍待实现。Windows 环境步骤见 [Server README](../../server/README.md)。
+Native Agent 聊天执行链已接入其绑定知识库的混合检索，并在 6000 字符预算内注入带
+引用上下文；缺少 Embedding Client 的轻量执行仍可回退到关键词检索。运行事件会记录
+检索策略、每个知识库的候选 Chunk 与预算后实际选中的 Chunk，但不持久化笔记正文。
+真实 Vault 验证、Context Inspector、LangGraph 与 handoff 仍待实现。Windows 环境步骤
+见 [Server README](../../server/README.md)。
 
 - 已完成 Agent、Session、Message、Run 和 RunEvent 数据基础与客户端隔离。
 - 已完成 Native Runtime、三家 LLM 流式输出、WebSocket 取消/重连，以及用量、成本、延迟的记录与查询。
@@ -283,6 +284,7 @@ Usage 页面优先保证数据诚实，不把估算费用表示成账单实际�
 - Agent 可显式绑定多个同客户端知识库，为运行时 RAG 限定检索范围。
 - Agent system prompt 通过统一 LLM 请求传递，并映射为各厂商原生 system instruction。
 - Native Agent Run 使用绑定知识库构造引用上下文，并持久化可重放的上下文选择元数据。
+- Native Agent Run 默认使用混合检索，并在无 Embedding Client 时回退到关键词检索。
 
 ### Batch 0：架构与规则
 

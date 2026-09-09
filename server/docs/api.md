@@ -16,11 +16,15 @@ After `send_message`, durable run events can be replayed by sequence. A Native
 Agent with bound knowledge sources emits the following RAG events before model
 execution:
 
-- `retrieval_started`: source count, per-source result limit, and context budget.
-- `retrieval_result`: candidate Chunk IDs and hit count for one bound source.
+- `retrieval_started`: strategy, source count, per-source result limit, and context budget.
+- `retrieval_result`: strategy, candidate Chunk IDs, and hit count for one bound source.
 - `context_prepared`: Chunk IDs that remain after the shared context budget is
   applied, actual/budget character counts, truncation status, and a SHA-256 hash
   of the exact prepared context.
+
+The application uses hybrid keyword/vector retrieval when an Embedding Client is
+available. `RunExecutionService` retains keyword-only fallback for lightweight
+or isolated execution. Each event records which strategy produced its result.
 
 `context_prepared` never contains note text. It means that context was prepared
 for the Runtime; it does not claim that a downstream model received or used it.

@@ -324,6 +324,19 @@ class RunExecutionServiceTest(unittest.IsolatedAsyncioTestCase):
         )
         self.assertTrue(all(client_id == "client-a" for client_id, _, _ in retrieval.calls))
         self.assertTrue(all(limit == 5 for _, _, limit in retrieval.calls))
+        retrieval_started = next(
+            item for item in streamed
+            if item.event.type is RuntimeEventType.RETRIEVAL_STARTED
+        )
+        retrieval_results = [
+            item for item in streamed
+            if item.event.type is RuntimeEventType.RETRIEVAL_RESULT
+        ]
+        self.assertEqual(retrieval_started.event.payload["strategy"], "keyword")
+        self.assertTrue(all(
+            item.event.payload["strategy"] == "keyword"
+            for item in retrieval_results
+        ))
         self.assertEqual(streamed[-1].event.type, RuntimeEventType.RUN_FINISHED)
 
     async def test_retrieval_failure_marks_run_failed(self) -> None:
