@@ -254,14 +254,15 @@ Usage 页面优先保证数据诚实，不把估算费用表示成账单实际�
 Native Agent 聊天执行链已接入其绑定知识库的混合检索，并在 6000 字符预算内注入带
 引用上下文；缺少 Embedding Client 的轻量执行仍可回退到关键词检索。运行事件会记录
 检索策略、每个知识库的候选 Chunk 与预算后实际选中的 Chunk，但不持久化笔记正文。
-真实 Vault 验证、Context Inspector、LangGraph 与 handoff 仍待实现。Windows 环境步骤
-见 [Server README](../../server/README.md)。
+文本 RAG 基础链路到此暂缓；真实 Vault 调优、图片关系和完整 Context Inspector 延后。
+当前优先完成 LangGraph、handoff 和可正常使用的 Web Workspace。Windows 环境步骤见
+[Server README](../../server/README.md)。
 
 - 已完成 Agent、Session、Message、Run 和 RunEvent 数据基础与客户端隔离。
 - 已完成 Native Runtime、三家 LLM 流式输出、WebSocket 取消/重连，以及用量、成本、延迟的记录与查询。
 - Web 前端确定为 React 19、TypeScript、Vite、TanStack Query、Zustand 和 Tailwind CSS。
 - Workspace 采用 Agent/Session 侧栏、对话事件流和 Context/Run/Usage Inspector 三栏布局。
-- Web Shell 已完成并暂停扩展；Usage API 完成后优先进入 Obsidian RAG 与 LangGraph 编排。
+- Web Shell 已完成静态骨架；LangGraph/handoff 后立即接入真实 Agent、Session 和 WebSocket。
 - Obsidian RAG 已开始建设 KnowledgeSource 与 KnowledgeDocument 数据基础。
 - KnowledgeSource 已具备客户端隔离的 Repository、事务服务和本地目录安全校验。
 - KnowledgeSource REST API 支持注册、列表和详情查询；目录扫描通过后续同步操作显式触发。
@@ -305,23 +306,29 @@ Native Agent 聊天执行链已接入其绑定知识库的混合检索，并在 
 ### Batch 3：Obsidian RAG
 
 - Vault 导入、Markdown/asset 解析、增量同步。
-- 中文混合检索、引用和 Context Inspector。
+- 中文混合检索、引用和运行时上下文注入已完成；其余完善暂缓。
 
-### Batch 4：Agent 编排
+### Batch 4：Agent 编排（当前最高优先级）
 
-- LangGraph run、checkpoint 和 trace。
-- 手动/自动 handoff。
+- 用 LangGraph 管理 run state、节点推进、checkpoint 和可审计 trace。
+- 实现同一会话中的手动 `@agent` 与受限自动 handoff，并沿用现有 WebSocket 事件流。
 
-### Batch 5：外部 Agent Runtime
+### Batch 5：可用 Web Workspace
 
-- ACP 兼容性验证和 Codex/Claude Adapter；必要时增加直接 CLI 回退。
-- 运行取消、超时和事件归一化。
+- 接入真实 Agent/Session CRUD、消息历史、流式运行、取消和重连。
+- 展示 Agent 状态、handoff、工具事件、错误和基础 Run Inspector。
 
-### Batch 6：面试打包
+### Batch 6：Usage 与面试版本
 
-- Usage Dashboard。
+- Usage 参考 [CC Switch Usage Statistics](https://cc-switch.dev/docs/local-routing/usage-statistics/)：用时间、Provider、Model 筛选驱动请求数、标准化 Token、缓存命中率、估算费用和成功率汇总，并提供趋势和运行明细。
 - Demo mode、安全收口和错误处理。
 - README、测试、演示视频和面试讲解。
+
+### Batch 7：投递后增强
+
+- 恢复真实 Vault 验证、完整 Context Inspector、图片关系与安全预览。
+- ACP 兼容性验证和 Codex/Claude Adapter；必要时增加直接 CLI 回退。
+- OCR、多模态检索和更复杂的自动 handoff 策略。
 
 每批核心实现约 100 行，完成后测试并暂停 Review。
 
@@ -330,10 +337,10 @@ Native Agent 聊天执行链已接入其绑定知识库的混合检索，并在 
 - 新环境能够按照 README 启动。
 - 可以创建 Agent 和 Session。
 - WebSocket 可以稳定流式输出运行事件和回复。
-- 可以导入真实 Obsidian 笔记并回答带引用的问题。
+- 已有文本 RAG 能力不阻塞首个可投递版本；真实 Vault 调优列入投递后增强。
 - 自研 Personal Agent 在没有 Codex/Claude CLI 时也可以独立检索、编排并回答。
 - 可以在同一对话中将任务交给另一个 Agent。
-- Codex 和 Claude 至少完成受控的真实运行验证。
+- Codex 和 Claude 的真实运行验证不阻塞原生 Personal Agent 首版。
 - 客户端之间无法通过资源 ID 读取彼此的数据。
 - 页面可以解释一次回答使用了哪些上下文、模型、Token、费用和时间。
 - 有可重复的两分钟演示脚本，并可按需生成项目面试题。

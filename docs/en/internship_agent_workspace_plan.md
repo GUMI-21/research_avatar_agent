@@ -94,9 +94,10 @@ Retrieval combines keyword and vector results, applies client/source filters, de
 2. SQLite migrations, client isolation, Agent/Session/Message repositories and APIs.
 3. React shell and WebSocket Mock Chat vertical slice.
 4. Obsidian import, Chinese hybrid RAG, citations, and Context Inspector.
-5. LangGraph runs, checkpoints, traces, and handoff.
-6. ACP compatibility spike, Codex/Claude adapters, direct CLI fallbacks where needed, cancellation, timeouts, and normalized events.
-7. Usage Dashboard, restricted demo mode, documentation, tests, and interview packaging.
+5. LangGraph runs, checkpoints, traces, and streamed manual/automatic handoff. This is the current priority.
+6. Connect the Web Shell to real Agent/Session CRUD, message history, WebSocket runs, cancellation, reconnect, handoff, and run inspection.
+7. Build Usage around the [CC Switch statistics hierarchy](https://cc-switch.dev/docs/local-routing/usage-statistics/): filter-driven request, normalized-token, cache-hit, estimated-cost, and success summaries, followed by trends and run details. Finish restricted demo mode, documentation, tests, and interview packaging.
+8. After the interview-ready workspace, resume real-Vault RAG tuning, full Context Inspector and asset previews, then optional ACP/Codex/Claude workers and multimodal retrieval.
 
 Each batch contains about 100 lines of core implementation, is tested independently, and pauses for review.
 
@@ -105,10 +106,10 @@ Each batch contains about 100 lines of core implementation, is tested independen
 - A clean environment starts from the README.
 - Agents and sessions survive restart.
 - WebSocket events and assistant text stream reliably.
-- Real Obsidian notes answer questions with citations.
+- The existing text RAG path does not block the first interview-ready workspace; real-Vault tuning follows that milestone.
 - The native Personal Agent retrieves, orchestrates, and answers without requiring Codex or Claude.
 - Tasks move between Agents in one visible conversation.
-- Codex and Claude complete controlled real-runtime checks.
+- Codex and Claude real-runtime checks do not block the native Personal Agent release.
 - Resource IDs cannot bypass client isolation.
 - One run exposes context, model, usage, cost status, and latency.
 - A repeatable two-minute demo is available, with project interview Q&A generated on request.
