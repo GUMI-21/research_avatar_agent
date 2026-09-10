@@ -184,6 +184,10 @@ class NativeAgentRuntimeTest(unittest.IsolatedAsyncioTestCase):
             if event.type is RuntimeEventType.HANDOFF_REQUESTED
         )
         self.assertEqual(requested.payload["to_agent_id"], "agent-reviewer")
+        self.assertNotIn(
+            RuntimeEventType.RUN_FINISHED,
+            [event.type for event in events],
+        )
         assert client.last_request is not None
         self.assertEqual(client.last_request.tools[0].name, "delegate_to_agent")
 

@@ -270,7 +270,8 @@ LangGraph 第四批开始建设自动 handoff：LLM 与 Runtime 已有 provider-
 工具调用和候选 Agent 契约。Native Runtime 仅接受白名单内、非当前 Agent、单次且任务摘要
 不超过 2,000 字符的 `delegate_to_agent` 请求。OpenAI Responses API 已能发送该工具并将流式
 函数调用还原为统一事件。生产执行服务会按 `client_id` 提供除当前 Agent 外的候选，并向
-Native Runtime 注入最近 12 条、最多 6,000 字符的会话上下文；图内连续执行尚未接入。
+Native Runtime 注入最近 12 条、最多 6,000 字符的会话上下文。LangGraph 收到自动 handoff
+后会携任务摘要切换目标 Runtime，最多连续转交两次并拒绝循环，最终回复归属实际响应 Agent。
 
 - 已完成 Agent、Session、Message、Run 和 RunEvent 数据基础与客户端隔离。
 - 已完成 Native Runtime、三家 LLM 流式输出、WebSocket 取消/重连，以及用量、成本、延迟的记录与查询。
@@ -325,7 +326,7 @@ Native Runtime 注入最近 12 条、最多 6,000 字符的会话上下文；图
 ### Batch 4：Agent 编排（当前最高优先级）
 
 - 用 LangGraph 管理 run state、节点推进、checkpoint 和可审计 trace。
-- 后端已支持按目标 ID 手动 handoff，并已建立自动 handoff 的结构化工具、校验契约、OpenAI Provider 适配和生产候选装配；图循环和前端 `@agent` 选择待实现。
+- 后端已支持按目标 ID 手动 handoff，以及最多两层、拒绝循环的自动 handoff 连续执行；前端 `@agent` 选择和事件呈现待实现。
 
 ### Batch 5：可用 Web Workspace
 

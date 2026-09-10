@@ -150,4 +150,5 @@ class NativeAgentRuntime:
                 "cost_status": "unavailable",
             },
         )
-        yield RuntimeEvent(type=RuntimeEventType.RUN_FINISHED)
+        if not emitted_action:
+            yield RuntimeEvent(type=RuntimeEventType.RUN_FINISHED)

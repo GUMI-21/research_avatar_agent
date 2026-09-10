@@ -74,6 +74,37 @@ class ContextRuntime:
         yield RuntimeEvent(type=RuntimeEventType.RUN_FINISHED)
 
 
+class AutomaticHandoffRuntime:
+    async def stream(
+        self, request: RuntimeRequest
+    ) -> AsyncIterator[RuntimeEvent]:
+        yield RuntimeEvent(type=RuntimeEventType.RUN_STARTED)
+        yield RuntimeEvent(
+            type=RuntimeEventType.HANDOFF_REQUESTED,
+            payload={
+                "from_agent_id": request.agent_id,
+                "to_agent_id": request.handoff_targets[0].agent_id,
+                "task_summary": "Finish the task",
+                "mode": "automatic",
+            },
+        )
+
+
+class HandoffTargetRuntime:
+    request: RuntimeRequest | None = None
+
+    async def stream(
+        self, request: RuntimeRequest
+    ) -> AsyncIterator[RuntimeEvent]:
+        type(self).request = request
+        yield RuntimeEvent(type=RuntimeEventType.RUN_STARTED)
+        yield RuntimeEvent(
+            type=RuntimeEventType.ASSISTANT_DELTA,
+            payload={"text": "done"},
+        )
+        yield RuntimeEvent(type=RuntimeEventType.RUN_FINISHED)
+
+
 class StubRetrieval:
     def __init__(self, hits_by_source: dict[str, list[KnowledgeChunkHit]]) -> None:
         self.hits_by_source = hits_by_source
@@ -464,6 +495,41 @@ class RunExecutionServiceTest(unittest.IsolatedAsyncioTestCase):
             [(target.agent_id, target.name) for target in request.handoff_targets],
             [(reviewer.id, "Reviewer")],
         )
+
+    async def test_automatic_handoff_runs_target_and_owns_reply(self) -> None:
+        HandoffTargetRuntime.request = None
+        async with self.database.session() as database_session:
+            agents = AgentRepository(database_session)
+            source = await agents.create(
+                "client-a", name="Source", system_prompt="Route.", runtime="source"
+            )
+            target = await agents.create(
+                "client-a", name="Target", system_prompt="Finish.", runtime="target"
+            )
+            conversation = await SessionRepository(database_session).create(
+                "client-a", source.id
+            )
+            await database_session.commit()
+            registry = RuntimeRegistry()
+            registry.register("source", AutomaticHandoffRuntime)
+            registry.register("target", HandoffTargetRuntime)
+
+            streamed = [
+                item async for item in RunExecutionService(
+                    database_session, registry
+                ).stream("client-a", conversation.id, "Start")
+            ]
+            messages = await MessageRepository(database_session).list_messages(
+                "client-a", conversation.id
+            )
+
+        request = HandoffTargetRuntime.request
+        self.assertIsNotNone(request)
+        assert request is not None
+        self.assertEqual(request.message, "Finish the task")
+        self.assertEqual(request.system_prompt, "Finish.")
+        self.assertEqual(messages[-1].agent_id, target.id)
+        self.assertEqual(streamed[-1].event.type, RuntimeEventType.RUN_FINISHED)
 
     async def test_retrieval_failure_marks_run_failed(self) -> None:
         ContextRuntime.request = None

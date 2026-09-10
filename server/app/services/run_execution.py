@@ -2,7 +2,7 @@
 
 import asyncio
 from collections.abc import AsyncIterator, Sequence
-from dataclasses import dataclass
+from dataclasses import dataclass, replace
 from hashlib import sha256
 from time import perf_counter
 
@@ -17,7 +17,7 @@ from app.adapters.agent import (
 )
 from app.adapters.knowledge import EmbeddingClient
 from app.models import MessageRecord
-from app.orchestration import LangGraphRunOrchestrator
+from app.orchestration import AgentRunTarget, LangGraphRunOrchestrator
 from app.repositories import AgentRepository, MessageRepository, SessionRepository
 from app.services.message import MessageService
 from app.services.knowledge_context import (
@@ -156,7 +156,12 @@ class RunExecutionService:
         recent_messages = await MessageRepository(self._session).list_messages(
             client_id, session_id, limit=RECENT_MESSAGE_LIMIT
         )
-        available_agents = await agent_repository.list_agents(client_id)
+        available_runtime_ids = set(self._registry.available())
+        available_agents = [
+            item
+            for item in await agent_repository.list_agents(client_id)
+            if item.runtime in available_runtime_ids
+        ]
         handoff_targets = tuple(
             HandoffTarget(item.id, item.name)
             for item in available_agents
@@ -275,26 +280,46 @@ class RunExecutionService:
                 yield failure
             raise
         # 获取异步迭代器；后续 anext() 才会逐步推进 Agent 执行
+        request = RuntimeRequest(
+            run_id=run.id,
+            client_id=client_id,
+            agent_id=agent.id,
+            session_id=session_id,
+            message=message,
+            # 身份、近期会话和 RAG 上下文保持独立边界。
+            system_prompt=agent.system_prompt,
+            conversation_context=_assemble_recent_context(recent_messages),
+            knowledge_context=knowledge_context,
+            handoff_targets=handoff_targets,
+        )
+        graph_targets = {
+            item.id: AgentRunTarget(
+                self._registry.create(item.runtime),
+                replace(
+                    request,
+                    agent_id=item.id,
+                    message="",
+                    system_prompt=item.system_prompt,
+                    knowledge_context="",
+                    handoff_targets=tuple(
+                        target for target in handoff_targets
+                        if target.agent_id != item.id
+                    ) + (HandoffTarget(agent.id, agent.name),),
+                ),
+            )
+            for item in available_agents
+            if item.id != agent.id
+        }
         orchestrator = LangGraphRunOrchestrator(
-            runtime, self._graph_checkpointer
+            runtime, self._graph_checkpointer, graph_targets
         )
         iterator = orchestrator.stream(
-            RuntimeRequest(
-                run_id=run.id,
-                client_id=client_id,
-                agent_id=agent.id,
-                session_id=session_id,
-                message=message,
-                # 身份、近期会话和 RAG 上下文保持独立边界。
-                system_prompt=agent.system_prompt,
-                conversation_context=_assemble_recent_context(recent_messages),
-                knowledge_context=knowledge_context,
-                handoff_targets=handoff_targets,
-            ),
+            request,
             entry_agent_id=entry_agent_id,
         )
         terminal_received = False
         assistant_parts: list[str] = []
+        assistant_agent_id = agent.id
         time_to_first_token_ms: int | None = None
 
         while True:
@@ -333,6 +358,10 @@ class RunExecutionService:
                 raise
 
             terminal_received = event.type in TERMINAL_EVENTS or terminal_received
+            if event.type is RuntimeEventType.HANDOFF_FINISHED:
+                target_id = event.payload.get("to_agent_id")
+                if isinstance(target_id, str):
+                    assistant_agent_id = target_id
             if event.type is RuntimeEventType.ASSISTANT_DELTA:
                 text = event.payload.get("text")
                 if isinstance(text, str):
@@ -357,7 +386,7 @@ class RunExecutionService:
                 _ = await self._messages.append(
                     client_id,
                     session_id,
-                    agent.id,
+                    assistant_agent_id,
                     role="assistant",
                     content="".join(assistant_parts),
                     run_id=run.id,
