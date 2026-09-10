@@ -17,6 +17,7 @@ from app.adapters.llm import (
     GeminiAdapter,
     LLMClientConfig,
     LLMRequest,
+    LLMToolDefinition,
     OpenAIAdapter,
 )
 from app.adapters.llm.errors import (
@@ -298,6 +299,63 @@ class ProviderAdapterTest(unittest.IsolatedAsyncioTestCase):
         self.assertEqual(usage.output_tokens, 3)
         self.assertEqual(usage.cache_read_tokens, 4)
         self.assertEqual(usage.cache_write_tokens, 1)
+
+    async def test_openai_stream_normalizes_function_call(self) -> None:
+        async def handler(request: httpx.Request) -> httpx.Response:
+            payload = json.loads(request.content)
+            tool = payload["tools"][0]
+            self.assertEqual(tool["type"], "function")
+            self.assertEqual(tool["name"], "delegate_to_agent")
+            self.assertTrue(tool["strict"])
+            self.assertFalse(payload["parallel_tool_calls"])
+            body = "\n\n".join(
+                [
+                    'data: {"type":"response.output_item.done","item":'
+                    '{"type":"function_call","name":"delegate_to_agent",'
+                    '"arguments":"{\\"target_agent_id\\":\\"agent-2\\",'
+                    '\\"task_summary\\":\\"Review\\"}"}}',
+                    'data: {"type":"response.completed","response":'
+                    '{"usage":{"input_tokens":9,"output_tokens":4}}}',
+                ]
+            )
+            return httpx.Response(
+                200, text=body, headers={"Content-Type": "text/event-stream"}
+            )
+
+        adapter = OpenAIAdapter(
+            make_client_config(
+                LLMProvider.OPENAI,
+                "https://api.openai.com/v1",
+                "gpt-5.6-luna",
+            ),
+            transport=httpx.MockTransport(handler),
+        )
+        request = make_request()
+        request = LLMRequest(
+            request_id=request.request_id,
+            session_id=request.session_id,
+            message=request.message,
+            instructions=request.instructions,
+            tools=(
+                LLMToolDefinition(
+                    "delegate_to_agent",
+                    "Delegate work",
+                    {"type": "object", "properties": {}},
+                ),
+            ),
+        )
+
+        chunks = [chunk async for chunk in adapter.stream(request)]
+
+        tool_call = chunks[0].tool_call
+        usage = chunks[-1].usage
+        self.assertIsNotNone(tool_call)
+        self.assertIsNotNone(usage)
+        assert tool_call is not None
+        assert usage is not None
+        self.assertEqual(tool_call.name, "delegate_to_agent")
+        self.assertEqual(tool_call.arguments["target_agent_id"], "agent-2")
+        self.assertEqual(usage.input_tokens, 9)
 
     async def test_gemini_generate_content_format(self) -> None:
         async def handler(request: httpx.Request) -> httpx.Response:
