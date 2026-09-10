@@ -2,13 +2,21 @@
 
 import unittest
 from collections.abc import AsyncIterator
+from dataclasses import replace
 
-from app.adapters.agent import NativeAgentRuntime, RuntimeEventType, RuntimeRequest
+from app.adapters.agent import (
+    HandoffTarget,
+    NativeAgentRuntime,
+    RuntimeEventType,
+    RuntimeRequest,
+)
+from app.adapters.agent.native import HandoffRequestRejectedError
 from app.adapters.llm import (
     LLMClient,
     LLMRequest,
     LLMResult,
     LLMStreamChunk,
+    LLMToolCall,
     LLMUsage,
 )
 from app.schemas.llm import LLMProvider
@@ -45,6 +53,29 @@ class ChunkedLLMClient(FakeLLMClient):
             provider=LLMProvider.MOCK,
             model="mock-stream",
             usage=LLMUsage(input_tokens=5, output_tokens=2),
+        )
+
+
+class ToolCallingLLMClient(FakeLLMClient):
+    def __init__(self, target_agent_id: str) -> None:
+        super().__init__()
+        self.target_agent_id = target_agent_id
+
+    async def stream(
+        self, request: LLMRequest
+    ) -> AsyncIterator[LLMStreamChunk]:
+        self.last_request = request
+        yield LLMStreamChunk(
+            text="",
+            provider=LLMProvider.MOCK,
+            model="mock-tools",
+            tool_call=LLMToolCall(
+                name="delegate_to_agent",
+                arguments={
+                    "target_agent_id": self.target_agent_id,
+                    "task_summary": "Review the implementation",
+                },
+            ),
         )
 
 
@@ -93,6 +124,7 @@ class NativeAgentRuntimeTest(unittest.IsolatedAsyncioTestCase):
             client.last_request.message,
             "<knowledge_context>Notes</knowledge_context>\n\n用户问题:\nHello",
         )
+        self.assertEqual(client.last_request.tools, ())
 
     async def test_stream_chunks_become_separate_assistant_deltas(self) -> None:
         runtime = NativeAgentRuntime(ChunkedLLMClient())
@@ -120,6 +152,37 @@ class NativeAgentRuntimeTest(unittest.IsolatedAsyncioTestCase):
 
         self.assertEqual(events[-1].type, RuntimeEventType.RUN_FAILED)
         self.assertEqual(events[-1].payload, {"error_type": "RuntimeError"})
+
+    async def test_allowed_delegate_tool_becomes_handoff_request(self) -> None:
+        client = ToolCallingLLMClient("agent-reviewer")
+        request = replace(
+            make_request(),
+            handoff_targets=(HandoffTarget("agent-reviewer", "Reviewer"),),
+        )
+
+        events = [event async for event in NativeAgentRuntime(client).stream(request)]
+
+        requested = next(
+            event for event in events
+            if event.type is RuntimeEventType.HANDOFF_REQUESTED
+        )
+        self.assertEqual(requested.payload["to_agent_id"], "agent-reviewer")
+        assert client.last_request is not None
+        self.assertEqual(client.last_request.tools[0].name, "delegate_to_agent")
+
+    async def test_delegate_tool_rejects_target_outside_allowlist(self) -> None:
+        client = ToolCallingLLMClient("agent-unknown")
+        request = replace(
+            make_request(),
+            handoff_targets=(HandoffTarget("agent-reviewer", "Reviewer"),),
+        )
+        events = []
+
+        with self.assertRaises(HandoffRequestRejectedError):
+            async for event in NativeAgentRuntime(client).stream(request):
+                events.append(event)
+
+        self.assertEqual(events[-1].type, RuntimeEventType.RUN_FAILED)
 
 
 if __name__ == "__main__":

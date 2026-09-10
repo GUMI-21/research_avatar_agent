@@ -1,6 +1,7 @@
 """HTTP and mock adapters for the supported LLM providers."""
 
 import json
+from abc import ABC
 from collections.abc import AsyncIterator
 from typing import Any
 from urllib.parse import quote
@@ -41,7 +42,7 @@ class MockLLMAdapter(LLMClient):
 
 
 # 中间类
-class _HTTPAdapter(LLMClient):
+class _HTTPAdapter(LLMClient, ABC):
     """Shared HTTP error handling for provider-specific request formats."""
 
     def __init__(

@@ -266,6 +266,10 @@ LangGraph 第二批已将生产 `RunExecutionService` 和 WebSocket 执行链路
 `prepare -> handoff -> agent`，并持久化可重放的 handoff 事件。checkpoint 不包含消息、
 Prompt 或 RAG 正文；持久化 checkpoint、前端 `@agent` 选择和受限自动 handoff 仍待后续批次。
 
+LangGraph 第四批开始建设自动 handoff：LLM 与 Runtime 已有 provider-neutral 的工具定义、
+工具调用和候选 Agent 契约。Native Runtime 仅接受白名单内、非当前 Agent、单次且任务摘要
+不超过 2,000 字符的 `delegate_to_agent` 请求。Provider 工具协议适配和图内连续执行尚未接入。
+
 - 已完成 Agent、Session、Message、Run 和 RunEvent 数据基础与客户端隔离。
 - 已完成 Native Runtime、三家 LLM 流式输出、WebSocket 取消/重连，以及用量、成本、延迟的记录与查询。
 - Web 前端确定为 React 19、TypeScript、Vite、TanStack Query、Zustand 和 Tailwind CSS。
@@ -319,7 +323,7 @@ Prompt 或 RAG 正文；持久化 checkpoint、前端 `@agent` 选择和受限�
 ### Batch 4：Agent 编排（当前最高优先级）
 
 - 用 LangGraph 管理 run state、节点推进、checkpoint 和可审计 trace。
-- 后端已支持同一会话按目标 ID 手动 handoff；前端 `@agent` 选择和受限自动 handoff 待实现。
+- 后端已支持按目标 ID 手动 handoff，并已建立自动 handoff 的结构化工具与校验契约；Provider 适配、图循环和前端 `@agent` 选择待实现。
 
 ### Batch 5：可用 Web Workspace
 

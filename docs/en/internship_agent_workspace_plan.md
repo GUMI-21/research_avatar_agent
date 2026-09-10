@@ -48,6 +48,12 @@ in-memory checkpointer stores metadata without messages, prompts, or RAG text.
 Durable checkpoints, the frontend `@agent` picker, and restricted automatic
 handoff remain subsequent slices.
 
+The fourth LangGraph slice introduces provider-neutral tool definitions, tool
+calls, and allowed handoff targets. Native Runtime accepts only one
+`delegate_to_agent` call to a non-active allowlisted Agent with a non-empty task
+summary of at most 2,000 characters. Provider wire formats and graph continuation
+remain subsequent work.
+
 FastAPI remains the service boundary. LangGraph coordinates state transitions within a run; it does not own APIs, repositories, file scanning, or subprocess lifecycle.
 
 ## Protocols

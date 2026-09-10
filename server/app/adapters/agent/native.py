@@ -3,11 +3,47 @@
 from collections.abc import AsyncIterator
 
 from app.adapters.agent.base import (
+    HandoffTarget,
     RuntimeEvent,
     RuntimeEventType,
     RuntimeRequest,
 )
-from app.adapters.llm import LLMClient, LLMRequest, LLMUsage
+from app.adapters.llm import (
+    LLMClient,
+    LLMRequest,
+    LLMToolDefinition,
+    LLMUsage,
+)
+
+
+class HandoffRequestRejectedError(ValueError):
+    pass
+
+
+def _handoff_tools(
+    targets: tuple[HandoffTarget, ...],
+) -> tuple[LLMToolDefinition, ...]:
+    if not targets:
+        return ()
+    names = ", ".join(f"{item.name} ({item.agent_id})" for item in targets)
+    return (
+        LLMToolDefinition(
+            name="delegate_to_agent",
+            description=f"Delegate a focused task to one allowed Agent: {names}",
+            input_schema={
+                "type": "object",
+                "properties": {
+                    "target_agent_id": {
+                        "type": "string",
+                        "enum": [item.agent_id for item in targets],
+                    },
+                    "task_summary": {"type": "string"},
+                },
+                "required": ["target_agent_id", "task_summary"],
+                "additionalProperties": False,
+            },
+        ),
+    )
 
 # 符合 AgentRuntimeAdapter 协议的具体实现
 class NativeAgentRuntime:
@@ -31,6 +67,7 @@ class NativeAgentRuntime:
         model: str | None = None
         usage: LLMUsage | None = None
         emitted_text = False
+        emitted_action = False
         instructions = request.system_prompt.strip() or None
         message = request.message
         if request.knowledge_context.strip():
@@ -45,18 +82,45 @@ class NativeAgentRuntime:
                     session_id=request.session_id,
                     message=message,
                     instructions=instructions,
+                    tools=_handoff_tools(request.handoff_targets),
                 )
             ):
                 provider = chunk.provider.value
                 model = chunk.model
                 usage = chunk.usage or usage
+                if chunk.tool_call is not None:
+                    arguments = chunk.tool_call.arguments
+                    target_id = arguments.get("target_agent_id")
+                    summary = arguments.get("task_summary")
+                    allowed_ids = {item.agent_id for item in request.handoff_targets}
+                    if (
+                        emitted_action
+                        or chunk.tool_call.name != "delegate_to_agent"
+                        or not isinstance(target_id, str)
+                        or target_id == request.agent_id
+                        or target_id not in allowed_ids
+                        or not isinstance(summary, str)
+                        or not summary.strip()
+                        or len(summary.strip()) > 2_000
+                    ):
+                        raise HandoffRequestRejectedError("Invalid handoff request")
+                    emitted_action = True
+                    yield RuntimeEvent(
+                        type=RuntimeEventType.HANDOFF_REQUESTED,
+                        payload={
+                            "from_agent_id": request.agent_id,
+                            "to_agent_id": target_id,
+                            "task_summary": summary.strip(),
+                            "mode": "automatic",
+                        },
+                    )
                 if chunk.text:
                     emitted_text = True
                     yield RuntimeEvent(
                         type=RuntimeEventType.ASSISTANT_DELTA,
                         payload={"text": chunk.text},
                     )
-            if not emitted_text:
+            if not emitted_text and not emitted_action:
                 raise RuntimeError("LLM stream ended without text")
         except Exception as error:
             yield RuntimeEvent(

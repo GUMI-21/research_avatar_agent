@@ -10,6 +10,12 @@ runtime 字段       → "native" / "codex"（选择哪种运行方式）
 Runtime Protocol   → 规定运行时必须提供什么方法
 Runtime 对象       → 实际执行任务的 Adapter 实例
 '''
+@dataclass(frozen=True)
+class HandoffTarget:
+    agent_id: str
+    name: str
+
+
 # 自动生成构造函数，frozen: 不可修改内部的值
 @dataclass(frozen=True)
 class RuntimeRequest:
@@ -20,6 +26,7 @@ class RuntimeRequest:
     message: str
     system_prompt: str = ""
     knowledge_context: str = ""
+    handoff_targets: tuple[HandoffTarget, ...] = ()
 
 # playload：事件执行的具体数据，根据type内容不同；dataclass：自动创建构造函数
 @dataclass(frozen=True)
@@ -47,6 +54,7 @@ class RuntimeEventType(StrEnum):
     # 转交任务
     HANDOFF_STARTED = "handoff_started"
     HANDOFF_FINISHED = "handoff_finished"
+    HANDOFF_REQUESTED = "handoff_requested"
     USAGE_UPDATED = "usage_updated"
     ASSISTANT_DELTA = "assistant_delta"
     APPROVAL_REQUIRED = "approval_required"
