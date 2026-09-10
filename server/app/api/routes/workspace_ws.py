@@ -149,6 +149,7 @@ async def workspace_socket(
                     client_id,
                     command.session_id,
                     command.content,
+                    command.target_agent_id,
                     active_run,
                 )
             )
@@ -195,6 +196,7 @@ async def _stream_run(
     client_id: str,
     session_id: str,
     content: str,
+    target_agent_id: str | None,
     active_run: ActiveRun,
 ) -> None:
     try:
@@ -203,7 +205,12 @@ async def _stream_run(
                 session, registry, embedding_client, graph_checkpointer
             )
             # 异步消费已经拆分好的 Agent 执行事件
-            async for item in service.stream(client_id, session_id, content):
+            async for item in service.stream(
+                client_id,
+                session_id,
+                content,
+                target_agent_id=target_agent_id,
+            ):
                 if active_run.run_id is None:
                     active_run.run_id = item.run_id
                 await _send_frame(

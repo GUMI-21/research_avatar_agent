@@ -261,15 +261,16 @@ Native Agent 聊天执行链已接入其绑定知识库的混合检索，并在 
 当前优先完成 LangGraph、handoff 和可正常使用的 Web Workspace。Windows 环境步骤见
 [Server README](../../server/README.md)。
 
-LangGraph 第二批已将生产 `RunExecutionService` 和 WebSocket 执行链路切换到
-`prepare -> agent` 状态图，并由应用共享的内存 checkpointer 按 `run_id` 保存运行元数据。
-checkpoint 不包含消息、Prompt 或 RAG 正文；持久化 checkpoint 和 handoff 仍待后续批次。
+LangGraph 第二批已将生产 `RunExecutionService` 和 WebSocket 执行链路切换到状态图。
+第三批为 `send_message` 增加显式 `target_agent_id`，不同于 Session 入口 Agent 时执行
+`prepare -> handoff -> agent`，并持久化可重放的 handoff 事件。checkpoint 不包含消息、
+Prompt 或 RAG 正文；持久化 checkpoint、前端 `@agent` 选择和受限自动 handoff 仍待后续批次。
 
 - 已完成 Agent、Session、Message、Run 和 RunEvent 数据基础与客户端隔离。
 - 已完成 Native Runtime、三家 LLM 流式输出、WebSocket 取消/重连，以及用量、成本、延迟的记录与查询。
 - Web 前端确定为 React 19、TypeScript、Vite、TanStack Query、Zustand 和 Tailwind CSS。
 - Workspace 采用 Agent/Session 侧栏、对话事件流和 Context/Run/Usage Inspector 三栏布局。
-- Web Shell 已完成静态骨架；LangGraph/handoff 后立即接入真实 Agent、Session 和 WebSocket。
+- Web Shell 已完成静态骨架；后端手动 handoff 协议完成后开始接入真实 Agent、Session 和 WebSocket。
 - Obsidian RAG 已开始建设 KnowledgeSource 与 KnowledgeDocument 数据基础。
 - KnowledgeSource 已具备客户端隔离的 Repository、事务服务和本地目录安全校验。
 - KnowledgeSource REST API 支持注册、列表和详情查询；目录扫描通过后续同步操作显式触发。
@@ -318,7 +319,7 @@ checkpoint 不包含消息、Prompt 或 RAG 正文；持久化 checkpoint 和 ha
 ### Batch 4：Agent 编排（当前最高优先级）
 
 - 用 LangGraph 管理 run state、节点推进、checkpoint 和可审计 trace。
-- 实现同一会话中的手动 `@agent` 与受限自动 handoff，并沿用现有 WebSocket 事件流。
+- 后端已支持同一会话按目标 ID 手动 handoff；前端 `@agent` 选择和受限自动 handoff 待实现。
 
 ### Batch 5：可用 Web Workspace
 

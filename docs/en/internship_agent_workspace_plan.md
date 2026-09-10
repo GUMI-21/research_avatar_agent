@@ -38,13 +38,15 @@ within a 6,000-character budget, with keyword fallback when no Embedding Client
 is available. Durable events record the strategy and distinguish candidate
 Chunks from the final budgeted selection without storing note text. Real-Vault
 validation and the Context Inspector remain planned. Production workspace runs
-now use LangGraph; durable checkpoints and handoff are subsequent slices. See the [Server README](../../server/README.md) for
+now use LangGraph; durable checkpoints and automatic handoff are subsequent slices. See the [Server README](../../server/README.md) for
 Windows environment setup.
 
-The second LangGraph slice routes the production RunExecutionService and
-WebSocket path through the `prepare -> agent` graph. An application-scoped
-in-memory checkpointer stores metadata by `run_id` without messages, prompts,
-or RAG text. Durable checkpoints and handoff remain subsequent slices.
+The second LangGraph slice routes production runs through the graph. The third
+adds an explicit `target_agent_id`; runs targeting another Agent follow
+`prepare -> handoff -> agent` and persist replayable handoff events. The shared
+in-memory checkpointer stores metadata without messages, prompts, or RAG text.
+Durable checkpoints, the frontend `@agent` picker, and restricted automatic
+handoff remain subsequent slices.
 
 FastAPI remains the service boundary. LangGraph coordinates state transitions within a run; it does not own APIs, repositories, file scanning, or subprocess lifecycle.
 

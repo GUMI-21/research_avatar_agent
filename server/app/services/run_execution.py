@@ -110,6 +110,8 @@ class RunExecutionService:
         client_id: str,
         session_id: str,
         message: str,
+        *,
+        target_agent_id: str | None = None,
     ) -> AsyncIterator[StreamedRunEvent]:
         # 对话框
         conversation = await SessionRepository(self._session).get(
@@ -118,8 +120,9 @@ class RunExecutionService:
         if conversation is None:
             raise RunExecutionParentNotFoundError("Session not found")
         # agent
+        entry_agent_id = conversation.agent_id
         agent = await AgentRepository(self._session).get(
-            client_id, conversation.agent_id
+            client_id, target_agent_id or entry_agent_id
         )
         if agent is None:
             raise RunExecutionParentNotFoundError("Agent not found")
@@ -249,7 +252,8 @@ class RunExecutionService:
                 # 默认身份prompt + rag附加上下文
                 system_prompt=agent.system_prompt,
                 knowledge_context=knowledge_context,
-            )
+            ),
+            entry_agent_id=entry_agent_id,
         )
         terminal_received = False
         assistant_parts: list[str] = []

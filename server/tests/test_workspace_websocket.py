@@ -116,6 +116,14 @@ class WorkspaceWebSocketTest(unittest.TestCase):
             await database_session.commit()
             return conversation.id
 
+    async def _create_target_agent(self) -> str:
+        async with self.database.session() as database_session:
+            agent = await AgentRepository(database_session).create(
+                "client-a", name="Target", system_prompt="Handle delegated work."
+            )
+            await database_session.commit()
+            return agent.id
+
     @patch("app.api.routes.workspace_ws.log")
     @patch("app.repositories.message.log")
     @patch("app.repositories.run.log")
@@ -171,6 +179,40 @@ class WorkspaceWebSocketTest(unittest.TestCase):
         self.assertFalse(replayed[-1]["has_more"])
         self.assertEqual(hidden["type"], "replay_complete")
         self.assertEqual(hidden["count"], 0)
+
+    @patch("app.api.routes.workspace_ws.log")
+    @patch("app.repositories.message.log")
+    @patch("app.repositories.run.log")
+    @patch("app.repositories.run_event.log")
+    @patch("app.services.message.log")
+    @patch("app.services.run.log")
+    @patch("app.services.run_event.log")
+    def test_send_message_can_handoff_to_target_agent(self, *_mocks) -> None:
+        target_agent_id = asyncio.run(self._create_target_agent())
+        with self.client.websocket_connect(
+            "/api/v1/ws?client_id=client-a"
+        ) as websocket:
+            websocket.send_json(
+                {
+                    "type": "send_message",
+                    "session_id": self.session_id,
+                    "content": "Delegate this",
+                    "target_agent_id": target_agent_id,
+                }
+            )
+            frames = [websocket.receive_json() for _ in range(5)]
+
+        self.assertEqual(
+            [frame["type"] for frame in frames],
+            [
+                "run_started",
+                "handoff_started",
+                "handoff_finished",
+                "assistant_delta",
+                "run_finished",
+            ],
+        )
+        self.assertEqual(frames[1]["payload"]["to_agent_id"], target_agent_id)
 
     @patch("app.api.routes.workspace_ws.log")
     def test_invalid_command_returns_safe_error(self, _mocked_log) -> None:

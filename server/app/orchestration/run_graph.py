@@ -1,7 +1,7 @@
 """Minimal LangGraph workflow around provider-neutral Agent runtimes."""
 
 from collections.abc import AsyncIterator
-from typing import TypedDict, cast
+from typing import Literal, TypedDict, cast
 
 from langchain_core.runnables import RunnableConfig
 from langgraph.checkpoint.base import BaseCheckpointSaver
@@ -24,6 +24,7 @@ class AgentRunState(TypedDict):
     client_id: str
     agent_id: str
     session_id: str
+    entry_agent_id: str
     active_agent_id: str
     phase: str
     terminal_event: str | None
@@ -48,9 +49,12 @@ class LangGraphRunOrchestrator:
         self._runtime = runtime
         builder = StateGraph(AgentRunState, context_schema=AgentRunContext)
         builder.add_node("prepare", self._prepare)
+        # 转交任务
+        builder.add_node("handoff", self._handoff)
         builder.add_node("agent", self._run_agent)
         builder.add_edge(START, "prepare")
-        builder.add_edge("prepare", "agent")
+        builder.add_conditional_edges("prepare", self._route)
+        builder.add_edge("handoff", "agent")
         builder.add_edge("agent", END)
         self._graph = builder.compile(
             checkpointer=checkpointer or InMemorySaver(),
@@ -59,7 +63,34 @@ class LangGraphRunOrchestrator:
 
     @staticmethod
     async def _prepare(state: AgentRunState) -> dict[str, str]:
-        return {"active_agent_id": state["agent_id"], "phase": "ready"}
+        return {"phase": "ready"}
+
+    @staticmethod
+    def _route(state: AgentRunState) -> Literal["handoff", "agent"]:
+        return (
+            "handoff"
+            if state["entry_agent_id"] != state["agent_id"]
+            else "agent"
+        )
+
+    # 转交任务
+    @staticmethod
+    async def _handoff(
+        state: AgentRunState,
+        runtime: GraphRuntime[AgentRunContext],
+    ) -> dict[str, str]:
+        payload = {
+            "from_agent_id": state["entry_agent_id"],
+            "to_agent_id": state["agent_id"],
+            "mode": "manual",
+        }
+        runtime.stream_writer(
+            RuntimeEvent(type=RuntimeEventType.HANDOFF_STARTED, payload=payload)
+        )
+        runtime.stream_writer(
+            RuntimeEvent(type=RuntimeEventType.HANDOFF_FINISHED, payload=payload)
+        )
+        return {"active_agent_id": state["agent_id"], "phase": "handed_off"}
 
     async def _run_agent(
         self,
@@ -83,13 +114,17 @@ class LangGraphRunOrchestrator:
     async def stream(
         self,
         request: RuntimeRequest,
+        *,
+        entry_agent_id: str | None = None,
     ) -> AsyncIterator[RuntimeEvent]:
+        entry_agent_id = entry_agent_id or request.agent_id
         initial: AgentRunState = {
             "run_id": request.run_id,
             "client_id": request.client_id,
             "agent_id": request.agent_id,
             "session_id": request.session_id,
-            "active_agent_id": request.agent_id,
+            "entry_agent_id": entry_agent_id,
+            "active_agent_id": entry_agent_id,
             "phase": "pending",
             "terminal_event": None,
         }

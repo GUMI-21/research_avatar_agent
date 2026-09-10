@@ -11,10 +11,21 @@ class SendMessageCommand(BaseModel):
     type: Literal["send_message"]
     session_id: str = Field(min_length=1, max_length=36)
     content: str = Field(min_length=1, max_length=20_000)
+    target_agent_id: str | None = Field(default=None, min_length=1, max_length=36)
 
     @field_validator("session_id", "content")
     @classmethod
     def strip_text(cls, value: str) -> str:
+        value = value.strip()
+        if not value:
+            raise ValueError("must not be blank")
+        return value
+
+    @field_validator("target_agent_id")
+    @classmethod
+    def strip_optional_text(cls, value: str | None) -> str | None:
+        if value is None:
+            return None
         value = value.strip()
         if not value:
             raise ValueError("must not be blank")

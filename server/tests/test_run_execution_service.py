@@ -232,6 +232,66 @@ class RunExecutionServiceTest(unittest.IsolatedAsyncioTestCase):
         self.assertEqual([item.content for item in messages], ["Hello", "Hello"])
         self.assertTrue(all(item.run_id == run.id for item in messages))
 
+    async def test_manual_handoff_executes_target_agent_and_is_auditable(self) -> None:
+        async with self.database.session() as database_session:
+            agents = AgentRepository(database_session)
+            entry = await agents.create(
+                "client-a", name="entry", system_prompt="route", runtime="native"
+            )
+            target = await agents.create(
+                "client-a", name="target", system_prompt="work", runtime="worker"
+            )
+            conversation = await SessionRepository(database_session).create(
+                "client-a", entry.id
+            )
+            await database_session.commit()
+            registry = RuntimeRegistry()
+            registry.register("worker", ContextRuntime)
+            service = RunExecutionService(database_session, registry)
+
+            with (
+                patch("app.repositories.run.log"),
+                patch("app.repositories.message.log"),
+                patch("app.repositories.run_event.log"),
+                patch("app.services.message.log"),
+                patch("app.services.run.log"),
+                patch("app.services.run_event.log"),
+            ):
+                streamed = [
+                    item
+                    async for item in service.stream(
+                        "client-a",
+                        conversation.id,
+                        "delegate",
+                        target_agent_id=target.id,
+                    )
+                ]
+
+            run = await RunRepository(database_session).get(
+                "client-a", streamed[0].run_id
+            )
+            records = await RunEventRepository(database_session).list_events(
+                "client-a", run.id
+            )
+            messages = await MessageRepository(database_session).list_messages(
+                "client-a", conversation.id
+            )
+
+        self.assertEqual(run.agent_id, target.id)
+        self.assertIsNotNone(ContextRuntime.request)
+        assert ContextRuntime.request is not None
+        self.assertEqual(ContextRuntime.request.agent_id, target.id)
+        self.assertEqual(
+            [record.event_type for record in records],
+            [
+                "run_started",
+                "handoff_started",
+                "handoff_finished",
+                "run_finished",
+            ],
+        )
+        self.assertTrue(all(message.agent_id == target.id for message in messages))
+
     async def test_runtime_error_marks_run_failed(self) -> None:
         async with self.database.session() as database_session:
             session_id = await self._create_session(database_session, "failing")

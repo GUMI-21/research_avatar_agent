@@ -59,6 +59,32 @@ class LangGraphRunOrchestratorTest(unittest.IsolatedAsyncioTestCase):
             isinstance(value, (str, type(None))) for value in state.values()
         ))
 
+    async def test_routes_manual_handoff_before_target_runtime(self) -> None:
+        request = RuntimeRequest(
+            run_id="run-2",
+            client_id="client-a",
+            agent_id="agent-target",
+            session_id="session-1",
+            message="delegate",
+        )
+        orchestrator = LangGraphRunOrchestrator(RecordingRuntime())
+
+        events = [
+            event
+            async for event in orchestrator.stream(
+                request, entry_agent_id="agent-entry"
+            )
+        ]
+        state = await orchestrator.get_state(request.run_id)
+
+        self.assertEqual(
+            [event.type for event in events[:2]],
+            [RuntimeEventType.HANDOFF_STARTED, RuntimeEventType.HANDOFF_FINISHED],
+        )
+        self.assertEqual(events[0].payload["from_agent_id"], "agent-entry")
+        self.assertEqual(events[0].payload["to_agent_id"], "agent-target")
+        self.assertEqual(state["active_agent_id"], "agent-target")
+
 
 if __name__ == "__main__":
     unittest.main()
