@@ -1,7 +1,7 @@
 """Coordinate one Agent Run from runtime selection to streamed events."""
 
 import asyncio
-from collections.abc import AsyncIterator
+from collections.abc import AsyncIterator, Sequence
 from dataclasses import dataclass
 from hashlib import sha256
 from time import perf_counter
@@ -9,10 +9,16 @@ from time import perf_counter
 from sqlalchemy.ext.asyncio import AsyncSession
 from langgraph.checkpoint.base import BaseCheckpointSaver
 
-from app.adapters.agent import RuntimeEvent, RuntimeEventType, RuntimeRequest
+from app.adapters.agent import (
+    HandoffTarget,
+    RuntimeEvent,
+    RuntimeEventType,
+    RuntimeRequest,
+)
 from app.adapters.knowledge import EmbeddingClient
+from app.models import MessageRecord
 from app.orchestration import LangGraphRunOrchestrator
-from app.repositories import AgentRepository, SessionRepository
+from app.repositories import AgentRepository, MessageRepository, SessionRepository
 from app.services.message import MessageService
 from app.services.knowledge_context import (
     KnowledgeContextResult,
@@ -37,6 +43,9 @@ TERMINAL_EVENTS = {
 }
 KNOWLEDGE_PER_SOURCE_LIMIT = 5
 KNOWLEDGE_CONTEXT_BUDGET_CHARS = 6000
+# 注入最近 12 条、最多 6000 字符的短期会话上下文；装配同客户端 handoff 候选。
+RECENT_MESSAGE_LIMIT = 12
+RECENT_CONTEXT_BUDGET_CHARS = 6000
 
 
 def _optional_string(value: object) -> str | None:
@@ -51,6 +60,23 @@ def _optional_token_count(value: object) -> int | None:
 
 def _elapsed_ms(started_at: float) -> int:
     return max(0, int((perf_counter() - started_at) * 1000))
+
+
+# 装配短期上下文
+def _assemble_recent_context(messages: Sequence[MessageRecord]) -> str:
+    selected: list[str] = []
+    remaining = RECENT_CONTEXT_BUDGET_CHARS
+    for item in reversed(messages):
+        prefix = f"{item.role}: "
+        content = item.content.strip()
+        if remaining <= len(prefix):
+            break
+        line = prefix + content[-(remaining - len(prefix)):]
+        selected.append(line)
+        remaining -= len(line) + 1
+        if len(line) < len(prefix) + len(content):
+            break
+    return "\n".join(reversed(selected))
 
 
 def _context_prepared_event(
@@ -121,11 +147,21 @@ class RunExecutionService:
             raise RunExecutionParentNotFoundError("Session not found")
         # agent
         entry_agent_id = conversation.agent_id
-        agent = await AgentRepository(self._session).get(
+        agent_repository = AgentRepository(self._session)
+        agent = await agent_repository.get(
             client_id, target_agent_id or entry_agent_id
         )
         if agent is None:
             raise RunExecutionParentNotFoundError("Agent not found")
+        recent_messages = await MessageRepository(self._session).list_messages(
+            client_id, session_id, limit=RECENT_MESSAGE_LIMIT
+        )
+        available_agents = await agent_repository.list_agents(client_id)
+        handoff_targets = tuple(
+            HandoffTarget(item.id, item.name)
+            for item in available_agents
+            if item.id != agent.id
+        )
         # 根据表中的 runtime 字段调用已注册的 Factory，创建对应 Runtime 实例
         runtime = self._registry.create(agent.runtime)
         # 创建 Agent 执行记录
@@ -249,9 +285,11 @@ class RunExecutionService:
                 agent_id=agent.id,
                 session_id=session_id,
                 message=message,
-                # 默认身份prompt + rag附加上下文
+                # 身份、近期会话和 RAG 上下文保持独立边界。
                 system_prompt=agent.system_prompt,
+                conversation_context=_assemble_recent_context(recent_messages),
                 knowledge_context=knowledge_context,
+                handoff_targets=handoff_targets,
             ),
             entry_agent_id=entry_agent_id,
         )

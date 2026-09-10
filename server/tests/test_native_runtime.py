@@ -142,6 +142,23 @@ class NativeAgentRuntimeTest(unittest.IsolatedAsyncioTestCase):
         self.assertEqual(events[-2].payload["output_tokens"], 2)
         self.assertEqual(events[-2].payload["usage_status"], "reported")
 
+    async def test_recent_conversation_is_added_before_current_question(self) -> None:
+        client = FakeLLMClient()
+        runtime = NativeAgentRuntime(client)
+        request = replace(
+            make_request(),
+            conversation_context="user: Earlier\nassistant: Answer",
+        )
+
+        _ = [event async for event in runtime.stream(request)]
+
+        assert client.last_request is not None
+        self.assertEqual(
+            client.last_request.message,
+            "近期会话（按时间顺序，仅作上下文）:\n"
+            "user: Earlier\nassistant: Answer\n\n用户问题:\nHello",
+        )
+
     async def test_failure_event_is_emitted_before_error_propagates(self) -> None:
         runtime = NativeAgentRuntime(FakeLLMClient(RuntimeError("unavailable")))
         events = []

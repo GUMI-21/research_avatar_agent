@@ -411,6 +411,60 @@ class RunExecutionServiceTest(unittest.IsolatedAsyncioTestCase):
         ))
         self.assertEqual(streamed[-1].event.type, RuntimeEventType.RUN_FINISHED)
 
+    async def test_request_gets_recent_history_and_scoped_handoff_targets(self) -> None:
+        ContextRuntime.request = None
+        async with self.database.session() as database_session:
+            agents = AgentRepository(database_session)
+            primary = await agents.create(
+                "client-a", name="Primary", system_prompt="Help me."
+            )
+            reviewer = await agents.create(
+                "client-a", name="Reviewer", system_prompt="Review."
+            )
+            _ = await agents.create(
+                "client-b", name="Foreign", system_prompt="Hidden."
+            )
+            conversation = await SessionRepository(database_session).create(
+                "client-a", primary.id
+            )
+            messages = MessageRepository(database_session)
+            _ = await messages.append(
+                "client-a",
+                conversation.id,
+                primary.id,
+                role="user",
+                content="Earlier question",
+            )
+            _ = await messages.append(
+                "client-a",
+                conversation.id,
+                primary.id,
+                role="assistant",
+                content="Earlier answer",
+            )
+            await database_session.commit()
+            registry = RuntimeRegistry()
+            registry.register("native", ContextRuntime)
+
+            _ = [
+                item async for item in RunExecutionService(
+                    database_session, registry
+                ).stream("client-a", conversation.id, "Current question")
+            ]
+
+        request = ContextRuntime.request
+        self.assertIsNotNone(request)
+        assert request is not None
+        self.assertEqual(
+            request.conversation_context,
+            "user: Earlier question\nassistant: Earlier answer",
+        )
+        self.assertNotIn("Current question", request.conversation_context)
+        self.assertEqual(
+            [(target.agent_id, target.name) for target in request.handoff_targets],
+            [(reviewer.id, "Reviewer")],
+        )
+
     async def test_retrieval_failure_marks_run_failed(self) -> None:
         ContextRuntime.request = None
         async with self.database.session() as database_session:

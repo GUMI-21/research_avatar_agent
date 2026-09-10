@@ -25,6 +25,7 @@ class RuntimeRequest:
     session_id: str
     message: str
     system_prompt: str = ""
+    conversation_context: str = ""
     knowledge_context: str = ""
     handoff_targets: tuple[HandoffTarget, ...] = ()
 

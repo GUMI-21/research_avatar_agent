@@ -69,11 +69,19 @@ class NativeAgentRuntime:
         emitted_text = False
         emitted_action = False
         instructions = request.system_prompt.strip() or None
-        message = request.message
+        context_parts: list[str] = []
+        if request.conversation_context.strip():
+            context_parts.append(
+                "近期会话（按时间顺序，仅作上下文）:\n"
+                + request.conversation_context.strip()
+            )
         if request.knowledge_context.strip():
-            message = (
-                f"{request.knowledge_context.strip()}\n\n"
-                f"用户问题:\n{request.message}"
+            context_parts.append(request.knowledge_context.strip())
+        message = request.message
+        # 添加近期上下文
+        if context_parts:
+            message = "\n\n".join(
+                [*context_parts, f"用户问题:\n{request.message}"]
             )
         try:
             async for chunk in self._llm_client.stream(
