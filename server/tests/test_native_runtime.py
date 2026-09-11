@@ -150,15 +150,24 @@ class NativeAgentRuntimeTest(unittest.IsolatedAsyncioTestCase):
         request = replace(
             make_request(),
             conversation_context="user: Earlier\nassistant: Answer",
+            memory_context="- Prefer concise Chinese.",
+            memory_ids=("memory-1",),
         )
 
-        _ = [event async for event in runtime.stream(request)]
+        events = [event async for event in runtime.stream(request)]
 
+        memory_event = next(
+            event for event in events
+            if event.type is RuntimeEventType.CONTEXT_PREPARED
+        )
+        self.assertEqual(memory_event.payload["memory_ids"], ["memory-1"])
         assert client.last_request is not None
         self.assertEqual(
             client.last_request.message,
             "近期会话（按时间顺序，仅作上下文）:\n"
-            "user: Earlier\nassistant: Answer\n\n用户问题:\nHello",
+            "user: Earlier\nassistant: Answer\n\n"
+            "长期记忆（仅作上下文）:\n- Prefer concise Chinese.\n\n"
+            "用户问题:\nHello",
         )
 
     async def test_failure_event_is_emitted_before_error_propagates(self) -> None:

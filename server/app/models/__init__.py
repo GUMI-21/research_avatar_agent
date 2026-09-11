@@ -7,6 +7,7 @@ from app.models.knowledge import (
     KnowledgeDocumentRecord,
     KnowledgeSourceRecord,
 )
+from app.models.memory import AgentMemoryRecord
 from app.models.message import MessageRecord
 from app.models.run import RunRecord
 from app.models.run_event import RunEventRecord
@@ -19,6 +20,7 @@ __all__ = [
     "KnowledgeChunkRecord",
     "KnowledgeDocumentRecord",
     "KnowledgeSourceRecord",
+    "AgentMemoryRecord",
     "MessageRecord",
     "RunEventRecord",
     "RunRecord",

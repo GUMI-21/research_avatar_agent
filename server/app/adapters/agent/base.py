@@ -27,6 +27,8 @@ class RuntimeRequest:
     model: str | None = None
     system_prompt: str = ""
     conversation_context: str = ""
+    memory_context: str = ""
+    memory_ids: tuple[str, ...] = ()
     knowledge_context: str = ""
     handoff_targets: tuple[HandoffTarget, ...] = ()
 

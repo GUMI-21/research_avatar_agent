@@ -18,7 +18,9 @@ from app.adapters.agent import (
 from app.adapters.knowledge import EmbeddingClient
 from app.models import MessageRecord
 from app.orchestration import AgentRunTarget, LangGraphRunOrchestrator
-from app.repositories import AgentRepository, MessageRepository, SessionRepository
+from app.repositories import (
+    AgentRepository, MemoryRepository, MessageRepository, SessionRepository,
+)
 from app.services.message import MessageService
 from app.services.knowledge_context import (
     KnowledgeContextResult,
@@ -43,6 +45,7 @@ TERMINAL_EVENTS = {
 }
 KNOWLEDGE_PER_SOURCE_LIMIT = 5
 KNOWLEDGE_CONTEXT_BUDGET_CHARS = 6000
+MEMORY_CONTEXT_BUDGET_CHARS = 4000
 # 注入最近 12 条、最多 6000 字符的短期会话上下文；装配同客户端 handoff 候选。
 RECENT_MESSAGE_LIMIT = 12
 RECENT_CONTEXT_BUDGET_CHARS = 6000
@@ -162,6 +165,19 @@ class RunExecutionService:
             for item in await agent_repository.list_agents(client_id)
             if item.runtime in available_runtime_ids
         ]
+        memory_repository = MemoryRepository(self._session)
+        memory_records = {
+            item.id: await memory_repository.list_for_agent(
+                client_id, item.id, enabled_only=True
+            )
+            for item in available_agents
+        }
+        memory_contexts = {
+            agent_id: "\n".join(f"- {record.content}" for record in records)[
+                :MEMORY_CONTEXT_BUDGET_CHARS
+            ]
+            for agent_id, records in memory_records.items()
+        }
         handoff_targets = tuple(
             HandoffTarget(item.id, item.name)
             for item in available_agents
@@ -290,6 +306,8 @@ class RunExecutionService:
             # 身份、近期会话和 RAG 上下文保持独立边界。
             system_prompt=agent.system_prompt,
             conversation_context=_assemble_recent_context(recent_messages),
+            memory_context=memory_contexts.get(agent.id, ""),
+            memory_ids=tuple(record.id for record in memory_records.get(agent.id, ())),
             knowledge_context=knowledge_context,
             handoff_targets=handoff_targets,
         )
@@ -302,6 +320,10 @@ class RunExecutionService:
                     message="",
                     model=item.model,
                     system_prompt=item.system_prompt,
+                    memory_context=memory_contexts.get(item.id, ""),
+                    memory_ids=tuple(
+                        record.id for record in memory_records.get(item.id, ())
+                    ),
                     knowledge_context="",
                     handoff_targets=tuple(
                         target for target in handoff_targets

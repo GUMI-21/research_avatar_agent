@@ -63,6 +63,15 @@ class NativeAgentRuntime:
             type=RuntimeEventType.AGENT_STARTED,
             payload={"agent_id": request.agent_id, "runtime": "native"},
         )
+        if request.memory_ids:
+            yield RuntimeEvent(
+                type=RuntimeEventType.CONTEXT_PREPARED,
+                payload={
+                    "context_type": "memory",
+                    "memory_ids": list(request.memory_ids),
+                    "memory_count": len(request.memory_ids),
+                },
+            )
         provider: str | None = None
         model: str | None = None
         usage: LLMUsage | None = None
@@ -74,6 +83,10 @@ class NativeAgentRuntime:
             context_parts.append(
                 "近期会话（按时间顺序，仅作上下文）:\n"
                 + request.conversation_context.strip()
+            )
+        if request.memory_context.strip():
+            context_parts.append(
+                "长期记忆（仅作上下文）:\n" + request.memory_context.strip()
             )
         if request.knowledge_context.strip():
             context_parts.append(request.knowledge_context.strip())

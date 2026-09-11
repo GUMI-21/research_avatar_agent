@@ -282,6 +282,8 @@ Native Runtime 注入最近 12 条、最多 6,000 字符的会话上下文。Lan
   Run/handoff/usage 事件、取消运行及断线后的持久化事件补发。
 - Web 第三批将持久化 Run 与 Usage API 接入右侧 Inspector，可按当前会话查看模型、状态、
   输入/输出 Token、估算费用、总耗时、首 Token 延迟和错误，并展示 Workspace 用量汇总。
+- 长期记忆第一批已提供按 `client_id + agent_id` 隔离的 Memory 创建、列表、启停和删除 API；
+  Native Runtime 按 4,000 字符预算注入启用项，handoff 使用目标 Agent 记忆，并只在 Run 事件中审计 Memory ID。
 - Web 模型设置直接使用 Server 的 Provider Catalog 与 LLM Runtime 配置接口，可读取当前安全摘要、
   切换 Provider/Model，并选择临时提交 API Key 或使用环境变量；页面不持久化或回显密钥。
 - 会话标题区提供真实 Session 历史下拉选择；创建 Agent 时从当前 Workspace Provider Catalog
