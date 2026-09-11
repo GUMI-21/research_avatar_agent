@@ -6,13 +6,14 @@ import {
   LoaderCircle,
   MessageSquareText,
   Plus,
+  RotateCcw,
   Send,
   Settings,
   Square,
   Sparkles,
   X,
 } from "lucide-react";
-import { FormEvent, KeyboardEvent, ReactNode, useEffect, useMemo, useState } from "react";
+import { FormEvent, KeyboardEvent, ReactNode, useEffect, useMemo, useRef, useState } from "react";
 
 import { WorkspaceInspector } from "../features/inspector/WorkspaceInspector";
 import { LiveRun, useRunStream } from "../features/runs/useRunStream";
@@ -114,6 +115,8 @@ export function App() {
   const [dialog, setDialog] = useState<CreateDialog>(null);
   const [draft, setDraft] = useState("");
   const [targetAgentId, setTargetAgentId] = useState("");
+  const sessionsInitialized = useRef(false);
+  const messagesEndRef = useRef<HTMLDivElement>(null);
 
   const agentsQuery = useQuery({
     queryKey: ["agents"],
@@ -149,11 +152,14 @@ export function App() {
   }, [agents, selectedAgentId]);
 
   useEffect(() => {
-    if (!selectedSessionId && sessions[0]) {
-      setSelectedSessionId(sessions[0].id);
-      setSelectedAgentId(sessions[0].agent_id);
+    if (!sessionsInitialized.current && sessionsQuery.isSuccess) {
+      sessionsInitialized.current = true;
+      if (sessions[0]) {
+        setSelectedSessionId(sessions[0].id);
+        setSelectedAgentId(sessions[0].agent_id);
+      }
     }
-  }, [sessions, selectedSessionId]);
+  }, [sessions, sessionsQuery.isSuccess]);
 
   const selectedAgent = useMemo(
     () => agents.find((agent) => agent.id === selectedAgentId),
@@ -175,10 +181,26 @@ export function App() {
   )?.payload.to_agent_id;
   const liveAgent = agentById.get(String(liveAgentId || sessionAgent?.id || ""));
 
+  useEffect(() => {
+    messagesEndRef.current?.scrollIntoView?.({ block: "end" });
+  }, [selectedSessionId, visibleMessages?.length, stream.run.assistantText, stream.run.events.length]);
+
   function selectSession(session: WorkspaceSession) {
     setSelectedSessionId(session.id);
     setSelectedAgentId(session.agent_id);
     setTargetAgentId("");
+  }
+
+  function selectAgent(agent: Agent) {
+    const recentSession = sessions.find((session) => session.agent_id === agent.id);
+    setSelectedAgentId(agent.id);
+    setTargetAgentId("");
+    if (recentSession) selectSession(recentSession);
+    else setSelectedSessionId("");
+  }
+
+  function retryResources() {
+    void queryClient.refetchQueries({ type: "active" });
   }
 
   function submitMessage(event?: FormEvent<HTMLFormElement> | KeyboardEvent<HTMLTextAreaElement>) {
@@ -221,7 +243,7 @@ export function App() {
             <button
               className={`agent ${agent.id === selectedAgentId ? "active" : ""}`}
               key={agent.id}
-              onClick={() => setSelectedAgentId(agent.id)}
+              onClick={() => selectAgent(agent)}
             >
               <span className="avatar">{agentInitial(agent.name)}</span>
               <span>
@@ -270,14 +292,17 @@ export function App() {
                   if (next) selectSession(next);
                 }}
               >
+                {!selectedSession && <option value="">选择聊天记录</option>}
                 {sessions.map((item) => <option key={item.id} value={item.id}>{item.title}</option>)}
               </select>
             </div>
             <p>
               <span className="status-dot" />
-              {selectedAgent
-                ? `${selectedAgent.name} · ${selectedAgent.runtime}`
-                : "选择或创建一个 Agent"}
+              {sessionAgent
+                ? `${sessionAgent.name} · ${sessionAgent.runtime}`
+                : selectedAgent
+                  ? `${selectedAgent.name} · 尚未创建会话`
+                  : "选择或创建一个 Agent"}
             </p>
           </div>
           <span className={`connection-badge ${queryError || stream.connection === "closed" ? "error" : ""}`}>
@@ -288,8 +313,15 @@ export function App() {
           </span>
         </header>
 
-        <div className="messages">
-          {queryError && <div className="error-banner">{queryError.message}</div>}
+        <div className="messages" aria-live="polite">
+          {queryError && (
+            <div className="error-banner error-with-action">
+              <span>{queryError.message}</span>
+              <button type="button" onClick={retryResources}>
+                <RotateCcw size={13} />重试
+              </button>
+            </div>
+          )}
           {messagesQuery.isLoading && <LoaderCircle className="spinner center" />}
           {visibleMessages?.map((message) => {
             const owner = agentById.get(message.agent_id);
@@ -335,6 +367,7 @@ export function App() {
               <span>每个会话都会保留消息、运行事件和用量记录。</span>
             </EmptyState>
           )}
+          <div className="messages-end" ref={messagesEndRef} aria-hidden="true" />
         </div>
 
         <form className="composer" onSubmit={submitMessage}>

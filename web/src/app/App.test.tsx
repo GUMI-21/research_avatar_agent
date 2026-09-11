@@ -32,6 +32,12 @@ const session = {
   updated_at: now,
 };
 
+const reviewerSession = {
+  ...session,
+  id: "session-review",
+  agent_id: reviewer.id,
+  title: "代码审查",
+};
 const run = {
   id: "run-1",
   session_id: session.id,
@@ -153,8 +159,10 @@ describe("Agent workspace resources", () => {
       if (path === "/api/v1/sessions" && init?.method === "POST") {
         return jsonResponse({ ...session, id: "session-2", title: "新会话" });
       }
-      if (path === "/api/v1/sessions") return jsonResponse({ sessions: [session] });
-      if (path.includes("session-2/messages")) return jsonResponse({ messages: [] });
+      if (path === "/api/v1/sessions") return jsonResponse({ sessions: [session, reviewerSession] });
+      if (path.includes("session-2/messages") || path.includes("session-review/messages")) {
+        return jsonResponse({ messages: [] });
+      }
       if (path.includes("/messages")) {
         return jsonResponse({
           messages: [{
@@ -187,6 +195,43 @@ describe("Agent workspace resources", () => {
         headers: expect.objectContaining({ "X-Client-ID": "local-demo" }),
       }),
     );
+  });
+
+  it("opens the selected Agent's most recent session", async () => {
+    renderApp();
+    expect(await screen.findByRole("heading", { name: "项目计划" })).toBeInTheDocument();
+
+    fireEvent.click(screen.getByRole("button", { name: /Reviewer/ }));
+
+    expect(await screen.findByRole("heading", { name: "代码审查" })).toBeInTheDocument();
+    expect(screen.getByRole("combobox", { name: "聊天记录" })).toHaveValue(reviewerSession.id);
+    expect(screen.getByText("Reviewer · native")).toBeInTheDocument();
+  });
+
+  it("retries active resource requests after a server error", async () => {
+    const mockedFetch = vi.mocked(fetch);
+    const fallback = mockedFetch.getMockImplementation()!;
+    let failed = false;
+    mockedFetch.mockImplementation((input: RequestInfo | URL, init?: RequestInit) => {
+      if (!failed && String(input) === "/api/v1/agents") {
+        failed = true;
+        return Promise.resolve({
+          ok: false,
+          status: 503,
+          json: async () => ({ detail: "Agent 列表暂时不可用" }),
+        } as Response);
+      }
+      return fallback(input, init);
+    });
+
+    renderApp();
+    expect(await screen.findByText("Agent 列表暂时不可用")).toBeInTheDocument();
+    fireEvent.click(screen.getByRole("button", { name: "重试" }));
+
+    await waitFor(() => {
+      expect(screen.queryByText("Agent 列表暂时不可用")).not.toBeInTheDocument();
+    });
+    expect(await screen.findByRole("button", { name: /Personal/ })).toBeInTheDocument();
   });
 
   it("creates a session for the selected agent", async () => {

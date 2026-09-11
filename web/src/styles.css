@@ -73,6 +73,9 @@ button:disabled { cursor: not-allowed; opacity: .45; }
 .empty-state b { color: #554a41; font-size: 14px; }
 .empty-state span { max-width: 340px; font-size: 11px; line-height: 1.6; }
 .error-banner { border: 1px solid #c88e86; background: #f4dfdb; color: #a34d46; border-radius: 8px; padding: 10px 12px; font-size: 12px; }
+.error-with-action { display: flex; align-items: center; justify-content: space-between; gap: 12px; }
+.error-with-action button { display: flex; align-items: center; gap: 5px; border: 0; background: transparent; color: inherit; font-weight: 650; cursor: pointer; }
+.messages-end { height: 1px; }
 .spinner { display: block; margin: 12px auto; color: #b76d51; animation: spin 1s linear infinite; }
 .spinner.center { margin-top: 20vh; }
 @keyframes spin { to { transform: rotate(360deg); } }

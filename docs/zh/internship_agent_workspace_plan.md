@@ -285,6 +285,7 @@ Native Runtime 注入最近 12 条、最多 6,000 字符的会话上下文。Lan
 - 长期记忆第一批已提供按 `client_id + agent_id` 隔离的 Memory 创建、列表、启停和删除 API；
   Native Runtime 按 4,000 字符预算注入启用项，handoff 使用目标 Agent 记忆，并只在 Run 事件中审计 Memory ID。
 - Web Memory Inspector 已直接接入上述 API，支持查看、新增、启停和删除当前 Agent 的长期记忆。
+- Web 首版交互已统一 Agent 与最近会话选择，流式消息自动滚动到底部，并为资源请求错误提供原位重试。
 - Web 模型设置直接使用 Server 的 Provider Catalog 与 LLM Runtime 配置接口，可读取当前安全摘要、
   切换 Provider/Model，并选择临时提交 API Key 或使用环境变量；页面不持久化或回显密钥。
 - 会话标题区提供真实 Session 历史下拉选择；创建 Agent 时从当前 Workspace Provider Catalog
