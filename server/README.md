@@ -6,8 +6,11 @@ emotion-aware avatar assistant.
 FastAPI currently owns REST/WebSocket routes, native Agent runs, usage recording,
 and Markdown retrieval backed by SQLite. Services, repositories, and runtime
 adapters remain separate. Workspace runs now pass through LangGraph with a shared
-in-memory checkpointer and explicit target-Agent handoff. Durable checkpoints and
-automatic handoff remain planned. See
+in-memory checkpointer. Manual handoff and OpenAI tool-driven automatic handoff
+share the same streamed event protocol; automatic routing is client-scoped,
+rejects cycles, and allows at most two delegations. Native runs also receive the
+latest 12 conversation messages within a 6,000-character budget. Durable
+checkpoints, multi-Agent usage aggregation, and long-term memory remain planned. See
 the [active workspace roadmap](../docs/zh/internship_agent_workspace_plan.md).
 
 ## Directory Layout
@@ -23,7 +26,7 @@ server/
     main.py           FastAPI application entrypoint
     api/              FastAPI route layer
     core/             settings, dependency wiring, shared runtime config
-    graph/            LangGraph state, graph builder, nodes, and edges
+    orchestration/    LangGraph run state, routing nodes, and handoff loop
     schemas/          request/response and internal data contracts
     services/         application services used by routes and graph nodes
     repositories/     persistence boundaries for memory, context, and runs
@@ -114,6 +117,12 @@ ordinary unit tests use substitutes and do not validate model download or qualit
 The real symlink-escape test skips on Windows error 1314 when the current user
 lacks symlink privileges; run it with Developer Mode or appropriate privileges
 to cover that filesystem case.
+
+The current backend baseline is 112 tests passing with one optional Windows
+symlink test skipped. OpenAI Responses supports the structured
+`delegate_to_agent` tool. Gemini and DeepSeek continue to support normal streamed
+chat, while their automatic handoff wire formats are deferred until after the
+first usable workspace.
 
 ### macOS / Linux
 

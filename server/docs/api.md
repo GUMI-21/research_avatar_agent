@@ -31,6 +31,44 @@ for the Runtime; it does not claim that a downstream model received or used it.
 An empty result is recorded with no included Chunk IDs and zero used characters.
 All events and replay queries remain scoped by `client_id`.
 
+### Workspace resources
+
+The first web client slice uses these client-scoped REST resources. Every request
+must include `X-Client-ID`; this header currently selects a local data scope and
+is not authentication.
+
+```text
+GET  /api/v1/agents
+POST /api/v1/agents
+GET  /api/v1/sessions
+POST /api/v1/sessions
+GET  /api/v1/sessions/{session_id}/messages?limit=50
+```
+
+Creating a Session requires an Agent from the same client scope. Message history
+is returned in ascending sequence order with `next_cursor` and `has_more` for
+older-page loading.
+
+### Handoff commands and events
+
+`send_message` may include `target_agent_id` for a manual handoff:
+
+```json
+{
+  "type": "send_message",
+  "session_id": "session-id",
+  "content": "Review this implementation",
+  "target_agent_id": "agent-id"
+}
+```
+
+Automatic handoff is initiated by the Native Runtime's restricted
+`delegate_to_agent` tool. The stream emits `handoff_requested`,
+`handoff_started`, and `handoff_finished`, then continues execution with the
+target Agent and task summary. The graph rejects cycles and a third automatic
+delegation. Final Assistant messages retain the ID of the Agent that produced
+the response.
+
 ## Health Check
 
 ```http

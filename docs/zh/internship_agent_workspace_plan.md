@@ -252,7 +252,7 @@ Provider/Model 聚合属于后续增强，不阻塞可用 Workspace。
 
 ## 开发批次
 
-### 当前实现状态（2026-09-09）
+### 当前实现状态（2026-09-11）
 
 Native Agent 聊天执行链已接入其绑定知识库的混合检索，并在 6000 字符预算内注入带
 引用上下文；缺少 Embedding Client 的轻量执行仍可回退到关键词检索。运行事件会记录
@@ -264,7 +264,7 @@ Native Agent 聊天执行链已接入其绑定知识库的混合检索，并在 
 LangGraph 第二批已将生产 `RunExecutionService` 和 WebSocket 执行链路切换到状态图。
 第三批为 `send_message` 增加显式 `target_agent_id`，不同于 Session 入口 Agent 时执行
 `prepare -> handoff -> agent`，并持久化可重放的 handoff 事件。checkpoint 不包含消息、
-Prompt 或 RAG 正文；持久化 checkpoint、前端 `@agent` 选择和受限自动 handoff 仍待后续批次。
+Prompt 或 RAG 正文；持久化 checkpoint 仍待后续阶段。
 
 LangGraph 第四批开始建设自动 handoff：LLM 与 Runtime 已有 provider-neutral 的工具定义、
 工具调用和候选 Agent 契约。Native Runtime 仅接受白名单内、非当前 Agent、单次且任务摘要
@@ -277,7 +277,8 @@ Native Runtime 注入最近 12 条、最多 6,000 字符的会话上下文。Lan
 - 已完成 Native Runtime、三家 LLM 流式输出、WebSocket 取消/重连，以及用量、成本、延迟的记录与查询。
 - Web 前端确定为 React 19、TypeScript、Vite、TanStack Query、Zustand 和 Tailwind CSS。
 - Workspace 采用 Agent/Session 侧栏、对话事件流和 Context/Run/Usage Inspector 三栏布局。
-- Web Shell 已完成静态骨架；后端手动 handoff 协议完成后开始接入真实 Agent、Session 和 WebSocket。
+- Web 第一批已接入真实 Agent、Session 和 Message REST API，支持创建 Agent、创建会话、
+  读取历史消息及资源加载/错误/空状态；WebSocket 流式执行是下一批重点。
 - Obsidian RAG 已开始建设 KnowledgeSource 与 KnowledgeDocument 数据基础。
 - KnowledgeSource 已具备客户端隔离的 Repository、事务服务和本地目录安全校验。
 - KnowledgeSource REST API 支持注册、列表和详情查询；目录扫描通过后续同步操作显式触发。

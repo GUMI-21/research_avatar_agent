@@ -44,6 +44,7 @@ server/data/models/
 # Environment and local secrets
 .env
 .env.*
+!web/.env.example
 server/config/debug.yaml
 server/config/prod.yaml
 
