@@ -117,6 +117,7 @@ class NativeAgentRuntimeTest(unittest.IsolatedAsyncioTestCase):
         self.assertIn("用户问题:\nHello", events[2].payload["text"])
         self.assertEqual(events[3].payload["cost_status"], "unavailable")
         assert client.last_request is not None
+        self.assertEqual(client.last_request.client_id, "client-a")
         self.assertEqual(client.last_request.model, "agent-default-model")
         self.assertEqual(
             client.last_request.instructions,

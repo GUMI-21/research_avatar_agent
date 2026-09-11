@@ -287,7 +287,8 @@ Native Runtime 注入最近 12 条、最多 6,000 字符的会话上下文。Lan
 - Web Memory Inspector 已直接接入上述 API，支持查看、新增、启停和删除当前 Agent 的长期记忆。
 - Web 首版交互已统一 Agent 与最近会话选择，流式消息自动滚动到底部，并为资源请求错误提供原位重试。
 - Web 模型设置直接使用 Server 的 Provider Catalog 与 LLM Runtime 配置接口，可读取当前安全摘要、
-  切换 Provider/Model，并选择临时提交 API Key 或使用环境变量；页面不持久化或回显密钥。
+  切换 Provider/Model，并选择临时提交 API Key 或使用环境变量；配置与 Key 在服务进程内按
+  `client_id` 隔离，页面不持久化或回显密钥。
 - 会话标题区提供真实 Session 历史下拉选择；创建 Agent 时从当前 Workspace Provider Catalog
   选择默认模型。Agent 模型会随 RuntimeRequest 进入实际 LLM 调用，handoff 后改用目标 Agent 模型。
 - Obsidian RAG 已开始建设 KnowledgeSource 与 KnowledgeDocument 数据基础。

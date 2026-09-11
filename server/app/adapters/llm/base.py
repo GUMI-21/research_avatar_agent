@@ -29,6 +29,7 @@ class LLMRequest:
     request_id: str
     session_id: str
     message: str
+    client_id: str | None = None
     model: str | None = None
     instructions: str | None = None
     tools: tuple[LLMToolDefinition, ...] = ()

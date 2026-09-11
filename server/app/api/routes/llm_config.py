@@ -1,9 +1,9 @@
-"""Shared runtime LLM configuration endpoint."""
+"""Client-scoped runtime LLM configuration endpoint."""
 
 from fastapi import APIRouter, Depends, status
 
 from app.adapters.llm.errors import LLMConfigurationError
-from app.api.dependencies import get_llm_runtime
+from app.api.dependencies import ClientID, get_llm_runtime
 from app.api.errors import llm_http_exception
 from app.core.llm_catalog import LLM_PROVIDER_CATALOG
 from app.schemas.llm import (
@@ -24,10 +24,11 @@ async def list_llm_providers() -> LLMProvidersResponse:
 
 @router.get("/llm/config", response_model=LLMConfigResponse)
 async def get_llm_config(
+    client_id: ClientID,
     llm_runtime: LLMRuntime = Depends(get_llm_runtime),
 ) -> LLMConfigResponse:
     """Return the active runtime selection without exposing its API key."""
-    return llm_runtime.current_config()
+    return llm_runtime.current_config(client_id)
 
 @router.post(
     "/llm/config",
@@ -36,10 +37,11 @@ async def get_llm_config(
 )
 async def configure_llm(
     config_request: LLMConfigRequest,
+    client_id: ClientID,
     llm_runtime: LLMRuntime = Depends(get_llm_runtime),
 ) -> LLMConfigResponse:
     """Select a provider without persisting or returning its API key."""
     try:
-        return llm_runtime.configure(config_request)
+        return llm_runtime.configure(config_request, client_id)
     except LLMConfigurationError as error:
         raise llm_http_exception(error) from error

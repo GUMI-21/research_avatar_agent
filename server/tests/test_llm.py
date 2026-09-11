@@ -175,11 +175,15 @@ class RuntimeAPIIntegrationTest(unittest.IsolatedAsyncioTestCase):
             provider_response = await client.post(
                 "/api/v1/llm/config",
                 json={"provider": "deepseek", "api_key": "test-key"},
+                headers={"X-Client-ID": "client-a"},
             )
-            current_response = await client.get("/api/v1/llm/config")
+            current_response = await client.get(
+                "/api/v1/llm/config", headers={"X-Client-ID": "client-a"}
+            )
             mock_response = await client.post(
                 "/api/v1/llm/config",
                 json={"provider": "mock"},
+                headers={"X-Client-ID": "client-a"},
             )
             chat_response = await client.post(
                 "/api/v1/unity/chat",
@@ -193,6 +197,33 @@ class RuntimeAPIIntegrationTest(unittest.IsolatedAsyncioTestCase):
         self.assertEqual(mock_response.json()["provider"], "mock")
         self.assertEqual(chat_response.status_code, status.HTTP_200_OK)
         self.assertEqual(chat_response.json()["reply"], "Echo: Hello")
+
+    async def test_runtime_config_is_isolated_by_client_id(self) -> None:
+        app = FastAPI()
+        app.state.llm_runtime = LLMRuntime(make_llm_settings())
+        app.include_router(api_router)
+        transport = httpx.ASGITransport(app=app)
+
+        async with httpx.AsyncClient(
+            transport=transport, base_url="http://testserver"
+        ) as client:
+            await client.post(
+                "/api/v1/llm/config",
+                json={"provider": "deepseek", "api_key": "client-a-secret"},
+                headers={"X-Client-ID": "client-a"},
+            )
+            client_a = await client.get(
+                "/api/v1/llm/config", headers={"X-Client-ID": "client-a"}
+            )
+            client_b = await client.get(
+                "/api/v1/llm/config", headers={"X-Client-ID": "client-b"}
+            )
+
+        self.assertEqual(client_a.json()["provider"], "deepseek")
+        self.assertTrue(client_a.json()["api_key_configured"])
+        self.assertEqual(client_b.json()["provider"], "mock")
+        self.assertFalse(client_b.json()["api_key_configured"])
+        self.assertNotIn("client-a-secret", client_a.text + client_b.text)
 
     async def test_provider_presets_are_valid_config_requests(self) -> None:
         app = FastAPI()

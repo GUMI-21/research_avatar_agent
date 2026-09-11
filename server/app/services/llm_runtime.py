@@ -1,4 +1,4 @@
-"""In-memory LLM provider selection shared by API clients."""
+"""In-memory LLM provider selections scoped by client ID."""
 
 import os
 from dataclasses import replace
@@ -35,6 +35,7 @@ class LLMRuntime(LLMClient):
 
     def __init__(self, settings: LLMSettings) -> None:
         self._settings = settings
+        self._client_configs: dict[str, tuple[LLMClientConfig, str]] = {}
         self._config = LLMClientConfig(
             provider=LLMProvider.MOCK,
             model="mock-echo",
@@ -47,10 +48,12 @@ class LLMRuntime(LLMClient):
         if settings.default_provider is not LLMProvider.MOCK:
             self.configure(LLMConfigRequest(provider=settings.default_provider))
 
-    def configure(self, request: LLMConfigRequest) -> LLMConfigResponse:
+    def configure(
+        self, request: LLMConfigRequest, client_id: str | None = None
+    ) -> LLMConfigResponse:
         """Atomically replace the active in-memory provider configuration."""
         if request.provider is LLMProvider.MOCK:
-            self._config = LLMClientConfig(
+            config = LLMClientConfig(
                 provider=LLMProvider.MOCK,
                 model="mock-echo",
                 base_url="mock://local",
@@ -58,8 +61,7 @@ class LLMRuntime(LLMClient):
                 timeout_seconds=self._settings.timeout_seconds,
                 max_output_tokens=self._settings.max_output_tokens,
             )
-            self._api_key_source = "not_required"
-            return self.current_config()
+            return self._store_config(client_id, config, "not_required")
 
         defaults = getattr(self._settings, request.provider.value)
         api_key, api_key_source = self._resolve_api_key(request)
@@ -71,7 +73,7 @@ class LLMRuntime(LLMClient):
             )
         model = request.model.strip() if request.model else defaults.model
 
-        self._config = LLMClientConfig(
+        config = LLMClientConfig(
             provider=request.provider,
             model=model,
             base_url=base_url,
@@ -79,7 +81,6 @@ class LLMRuntime(LLMClient):
             timeout_seconds=self._settings.timeout_seconds,
             max_output_tokens=self._settings.max_output_tokens,
         )
-        self._api_key_source = api_key_source
         log.info(
             "LLM configured provider={} model={} base_url={} api_key_source={}",
             request.provider.value,
@@ -87,21 +88,46 @@ class LLMRuntime(LLMClient):
             base_url,
             api_key_source,
         )
-        return self.current_config()
+        return self._store_config(client_id, config, api_key_source)
 
-    def current_config(self) -> LLMConfigResponse:
-        """Return a safe summary without exposing the active secret."""
-        return LLMConfigResponse(
-            provider=self._config.provider,
-            model=self._config.model,
-            base_url=self._config.base_url,
-            api_key_configured=self._config.api_key is not None,
-            api_key_source=self._api_key_source,
+    def current_config(self, client_id: str | None = None) -> LLMConfigResponse:
+        """Return one client's safe summary without exposing its API key."""
+        config, source = (
+            self._client_configs.get(client_id, (self._config, self._api_key_source))
+            if client_id is not None
+            else (self._config, self._api_key_source)
         )
+        return LLMConfigResponse(
+            provider=config.provider,
+            model=config.model,
+            base_url=config.base_url,
+            api_key_configured=config.api_key is not None,
+            api_key_source=source,
+        )
+
+    def _store_config(
+        self, client_id: str | None, config: LLMClientConfig, source: str
+    ) -> LLMConfigResponse:
+        if client_id is None:
+            self._config, self._api_key_source = config, source
+        else:
+            self._client_configs[client_id] = (config, source)
+        return self.current_config(client_id)
+
+    def _config_for(self, client_id: str | None) -> LLMClientConfig:
+        if client_id is None:
+            return self._config
+        return self._client_configs.get(
+            client_id, (self._config, self._api_key_source)
+        )[0]
 
     async def generate(self, request: LLMRequest) -> LLMResult:
         """Generate text with the provider active at the start of this call."""
-        config = replace(self._config, model=request.model) if request.model else self._config
+        base_config = self._config_for(request.client_id)
+        config = (
+            replace(base_config, model=request.model)
+            if request.model else base_config
+        )
         adapter = self._build_adapter(config)
         started_at = perf_counter()
         try:
@@ -133,7 +159,11 @@ class LLMRuntime(LLMClient):
         self, request: LLMRequest
     ) -> AsyncIterator[LLMStreamChunk]:
         """Stream with the provider active at the start of this call."""
-        config = replace(self._config, model=request.model) if request.model else self._config
+        base_config = self._config_for(request.client_id)
+        config = (
+            replace(base_config, model=request.model)
+            if request.model else base_config
+        )
         adapter = self._build_adapter(config)
         started_at = perf_counter()
         try:
