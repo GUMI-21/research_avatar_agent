@@ -60,8 +60,18 @@ const eventLabels: Record<string, string> = {
   run_cancelled: "运行取消",
 };
 
-function eventDetail(type: string, payload: Record<string, unknown>) {
-  if (type.startsWith("handoff_")) return String(payload.task_summary || payload.to_agent_id || "Agent 已切换");
+function eventDetail(type: string, payload: Record<string, unknown>, agents: Agent[]) {
+  if (type.startsWith("handoff_")) {
+    const agentName = (id: unknown) =>
+      agents.find((agent) => agent.id === String(id || ""))?.name;
+    const from = agentName(payload.from_agent_id);
+    const to = agentName(payload.to_agent_id);
+    const route = from && to ? `${from} → ${to}` : to || "Agent 已切换";
+    const mode = payload.mode === "automatic" ? "自动转交" : "手动转交";
+    return payload.task_summary
+      ? `${route} · ${mode} · ${String(payload.task_summary)}`
+      : `${route} · ${mode}`;
+  }
   if (type === "usage_updated") {
     return `${payload.provider || "provider"} · ${payload.model || "model"} · ${payload.input_tokens ?? "?"}/${payload.output_tokens ?? "?"} tokens`;
   }
@@ -72,7 +82,7 @@ function eventDetail(type: string, payload: Record<string, unknown>) {
   return String(payload.message || payload.status || "事件已记录");
 }
 
-function RunCard({ run }: { run: LiveRun }) {
+function RunCard({ run, agents }: { run: LiveRun; agents: Agent[] }) {
   const statusLabel = {
     idle: "等待",
     running: "运行中",
@@ -89,7 +99,7 @@ function RunCard({ run }: { run: LiveRun }) {
         <div className="run-event" key={`${event.type}-${event.sequence ?? index}`}>
           <span className="event-dot" />
           <b>{eventLabels[event.type] || event.type}</b>
-          <span>{eventDetail(event.type, event.payload)}</span>
+          <span>{eventDetail(event.type, event.payload, agents)}</span>
           <time>{event.sequence == null ? "live" : `#${event.sequence}`}</time>
         </div>
       ))}
@@ -177,6 +187,7 @@ export function App() {
     if (!selectedSession || !content || stream.run.status === "running") return;
     stream.send(selectedSession.id, content, targetAgentId || undefined);
     setDraft("");
+    setTargetAgentId("");
   }
 
   const queryError = agentsQuery.error || sessionsQuery.error || messagesQuery.error
@@ -302,7 +313,7 @@ export function App() {
               <p>{stream.run.userText}</p><time>刚刚</time>
             </article>
           )}
-          {liveHere && stream.run.events.length > 0 && <RunCard run={stream.run} />}
+          {liveHere && stream.run.events.length > 0 && <RunCard run={stream.run} agents={agents} />}
           {liveHere && stream.run.assistantText && (
             <article className="message assistant-message live-message">
               <div className="message-author"><Sparkles size={14} />{liveAgent?.name || "Agent"}</div>
@@ -337,18 +348,25 @@ export function App() {
             }}
             placeholder={selectedSession ? `向 ${sessionAgent?.name || "Agent"} 发送消息…` : "先选择一个会话"}
           />
-          <div>
-            <select
-              aria-label="转交给 Agent"
-              disabled={!selectedSession || stream.run.status === "running"}
-              value={targetAgentId}
-              onChange={(event) => setTargetAgentId(event.target.value)}
-            >
-              <option value="">由 {sessionAgent?.name || "会话 Agent"} 执行</option>
-              {agents.filter((agent) => agent.id !== selectedSession?.agent_id).map((agent) => (
-                <option key={agent.id} value={agent.id}>转交给 {agent.name}</option>
-              ))}
-            </select>
+          <div className="composer-actions">
+            <div className="handoff-control">
+              <select
+                aria-label="转交给 Agent"
+                disabled={!selectedSession || stream.run.status === "running"}
+                value={targetAgentId}
+                onChange={(event) => setTargetAgentId(event.target.value)}
+              >
+                <option value="">由 {sessionAgent?.name || "会话 Agent"} 执行</option>
+                {agents.filter((agent) => agent.id !== selectedSession?.agent_id).map((agent) => (
+                  <option key={agent.id} value={agent.id}>转交给 {agent.name}</option>
+                ))}
+              </select>
+              {targetAgentId && (
+                <span className="handoff-preview">
+                  {sessionAgent?.name} → {agentById.get(targetAgentId)?.name}
+                </span>
+              )}
+            </div>
             {stream.run.status === "running" ? (
               <button type="button" aria-label="停止运行" disabled={!stream.run.runId} onClick={stream.cancel}>
                 <Square size={15} />

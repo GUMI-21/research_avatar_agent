@@ -16,6 +16,13 @@ const agent = {
   created_at: now,
   updated_at: now,
 };
+const reviewer = {
+  ...agent,
+  id: "agent-2",
+  name: "Reviewer",
+  system_prompt: "审查实现并指出风险。",
+  model: "gpt-5.6-reviewer",
+};
 const session = {
   id: "session-1",
   client_id: "local-demo",
@@ -43,6 +50,14 @@ const run = {
   time_to_first_token_ms: 120,
   error_type: null,
   created_at: now,
+};
+const memory = {
+  id: "memory-1",
+  agent_id: agent.id,
+  content: "回答时优先使用简洁中文",
+  enabled: true,
+  created_at: now,
+  updated_at: now,
 };
 class FakeWebSocket {
   static OPEN = 1;
@@ -91,6 +106,16 @@ describe("Agent workspace resources", () => {
     vi.stubGlobal("WebSocket", FakeWebSocket);
     vi.stubGlobal("fetch", vi.fn((input: RequestInfo | URL, init?: RequestInit) => {
       const path = String(input);
+      if (path.endsWith(`/api/v1/agents/${agent.id}/memories`) && init?.method === "POST") {
+        return jsonResponse({ ...memory, content: JSON.parse(String(init.body)).content });
+      }
+      if (path.endsWith(`/api/v1/agents/${agent.id}/memories`)) {
+        return jsonResponse({ memories: [memory] });
+      }
+      if (path.endsWith(`/api/v1/agents/${agent.id}/memories/${memory.id}`)) {
+        if (init?.method === "DELETE") return Promise.resolve({ ok: true, status: 204 } as Response);
+        return jsonResponse({ ...memory, enabled: JSON.parse(String(init?.body)).enabled });
+      }
       if (path === "/api/v1/llm/providers") {
         return jsonResponse({ providers: [
           { provider: "mock", display_name: "Mock", default_model: "mock-echo", allow_custom_model: false,
@@ -124,7 +149,7 @@ describe("Agent workspace resources", () => {
       if (path === "/api/v1/agents" && init?.method === "POST") {
         return jsonResponse({ ...agent, id: "agent-2", ...JSON.parse(String(init.body)) });
       }
-      if (path === "/api/v1/agents") return jsonResponse({ agents: [agent] });
+      if (path === "/api/v1/agents") return jsonResponse({ agents: [agent, reviewer] });
       if (path === "/api/v1/sessions" && init?.method === "POST") {
         return jsonResponse({ ...session, id: "session-2", title: "新会话" });
       }
@@ -209,6 +234,51 @@ describe("Agent workspace resources", () => {
     expect(screen.getByText("这是流式回答")).toBeInTheDocument();
     expect(screen.getAllByText("运行完成")).toHaveLength(2);
   });
+  it("manually hands the next message to another Agent", async () => {
+    renderApp();
+    const composer = screen.getByLabelText("消息");
+    await waitFor(() => expect(composer).toBeEnabled());
+
+    fireEvent.change(screen.getByRole("combobox", { name: "转交给 Agent" }), {
+      target: { value: reviewer.id },
+    });
+    expect(screen.getByText("Personal → Reviewer")).toBeInTheDocument();
+    fireEvent.change(composer, { target: { value: "请审查这段实现" } });
+    fireEvent.click(screen.getByRole("button", { name: "发送" }));
+
+    const socket = FakeWebSocket.instances[0];
+    expect(JSON.parse(socket.sent[0])).toEqual({
+      type: "send_message",
+      session_id: session.id,
+      content: "请审查这段实现",
+      target_agent_id: reviewer.id,
+    });
+    expect(screen.getByRole("combobox", { name: "转交给 Agent" })).toHaveValue("");
+
+    act(() => {
+      socket.emit({
+        type: "handoff_started",
+        run_id: "run-handoff",
+        sequence: 1,
+        payload: { from_agent_id: agent.id, to_agent_id: reviewer.id, mode: "manual" },
+      });
+      socket.emit({
+        type: "handoff_finished",
+        run_id: "run-handoff",
+        sequence: 2,
+        payload: { from_agent_id: agent.id, to_agent_id: reviewer.id, mode: "manual" },
+      });
+      socket.emit({
+        type: "assistant_delta",
+        run_id: "run-handoff",
+        sequence: null,
+        payload: { text: "审查完成" },
+      });
+    });
+    expect(screen.getAllByText("Personal → Reviewer · 手动转交")).toHaveLength(2);
+    expect(screen.getByText("审查完成").closest("article")).toHaveTextContent("Reviewer");
+  });
+
   it("shows persisted run and usage details", async () => {
     renderApp();
     await screen.findByRole("heading", { name: "项目计划" });
@@ -223,6 +293,31 @@ describe("Agent workspace resources", () => {
     expect(screen.getAllByText("$0.001230")).toHaveLength(2);
   });
 
+
+  it("manages Agent memory through the API", async () => {
+    renderApp();
+    fireEvent.click(screen.getByRole("button", { name: "Memory" }));
+    expect(await screen.findByText(memory.content)).toBeInTheDocument();
+
+    fireEvent.click(screen.getByLabelText("禁用记忆"));
+    await waitFor(() => expect(fetch).toHaveBeenCalledWith(
+      `/api/v1/agents/${agent.id}/memories/${memory.id}`,
+      expect.objectContaining({ method: "PATCH", body: JSON.stringify({ enabled: false }) }),
+    ));
+
+    fireEvent.change(screen.getByLabelText("新增长期记忆"), { target: { value: "记住项目目标" } });
+    fireEvent.click(screen.getByRole("button", { name: "添加记忆" }));
+    await waitFor(() => expect(fetch).toHaveBeenCalledWith(
+      `/api/v1/agents/${agent.id}/memories`,
+      expect.objectContaining({ method: "POST", body: JSON.stringify({ content: "记住项目目标" }) }),
+    ));
+
+    fireEvent.click(screen.getByRole("button", { name: "删除记忆" }));
+    await waitFor(() => expect(fetch).toHaveBeenCalledWith(
+      `/api/v1/agents/${agent.id}/memories/${memory.id}`,
+      expect.objectContaining({ method: "DELETE" }),
+    ));
+  });
   it("creates an Agent with the selected default model", async () => {
     renderApp();
     fireEvent.click(screen.getByRole("button", { name: "创建 Agent" }));

@@ -276,7 +276,7 @@ Native Runtime 注入最近 12 条、最多 6,000 字符的会话上下文。Lan
 - 已完成 Agent、Session、Message、Run 和 RunEvent 数据基础与客户端隔离。
 - 已完成 Native Runtime、三家 LLM 流式输出、WebSocket 取消/重连，以及用量、成本、延迟的记录与查询。
 - Web 前端确定为 React 19、TypeScript、Vite、TanStack Query、Zustand 和 Tailwind CSS。
-- Workspace 采用 Agent/Session 侧栏、对话事件流和 Context/Run/Usage Inspector 三栏布局。
+- Workspace 采用 Agent/Session 侧栏、对话事件流和 Agent/Memory/Run/Usage Inspector 三栏布局。
 - Web 第一批已接入真实 Agent、Session 和 Message REST API，支持创建 Agent、创建会话、
   读取历史消息及资源加载/错误/空状态。第二批已接入 WebSocket 消息发送、流式回复、
   Run/handoff/usage 事件、取消运行及断线后的持久化事件补发。
@@ -284,6 +284,7 @@ Native Runtime 注入最近 12 条、最多 6,000 字符的会话上下文。Lan
   输入/输出 Token、估算费用、总耗时、首 Token 延迟和错误，并展示 Workspace 用量汇总。
 - 长期记忆第一批已提供按 `client_id + agent_id` 隔离的 Memory 创建、列表、启停和删除 API；
   Native Runtime 按 4,000 字符预算注入启用项，handoff 使用目标 Agent 记忆，并只在 Run 事件中审计 Memory ID。
+- Web Memory Inspector 已直接接入上述 API，支持查看、新增、启停和删除当前 Agent 的长期记忆。
 - Web 模型设置直接使用 Server 的 Provider Catalog 与 LLM Runtime 配置接口，可读取当前安全摘要、
   切换 Provider/Model，并选择临时提交 API Key 或使用环境变量；页面不持久化或回显密钥。
 - 会话标题区提供真实 Session 历史下拉选择；创建 Agent 时从当前 Workspace Provider Catalog
@@ -336,7 +337,7 @@ Native Runtime 注入最近 12 条、最多 6,000 字符的会话上下文。Lan
 ### Batch 4：Agent 编排（当前最高优先级）
 
 - 用 LangGraph 管理 run state、节点推进、checkpoint 和可审计 trace。
-- 后端已支持按目标 ID 手动 handoff，以及最多两层、拒绝循环的自动 handoff 连续执行；前端 `@agent` 选择和事件呈现待实现。
+- 后端已支持按目标 ID 手动 handoff，以及最多两层、拒绝循环的自动 handoff 连续执行；前端发送区可为单次请求选择目标 Agent，并以 Agent 名称展示手动或自动转交事件。
 
 ### Batch 5：可用 Web Workspace
 

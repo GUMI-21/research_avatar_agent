@@ -63,6 +63,15 @@ export type UsageSummary = {
   average_duration_ms: number | null;
 };
 
+
+export type AgentMemory = {
+  id: string;
+  agent_id: string;
+  content: string;
+  enabled: boolean;
+  created_at: string;
+  updated_at: string;
+};
 export type LLMModelOption = {
   model: string;
   display_name: string;
@@ -101,6 +110,7 @@ async function request<T>(path: string, init?: RequestInit): Promise<T> {
       | null;
     throw new Error(body?.detail || `请求失败（${response.status}）`);
   }
+  if (response.status === 204) return undefined as T;
   return response.json() as Promise<T>;
 }
 
@@ -126,6 +136,25 @@ export const workspaceApi = {
         `/api/v1/sessions/${encodeURIComponent(sessionId)}/messages?limit=50`,
       )
     ).messages,
+  listMemories: async (agentId: string) =>
+    (await request<{ memories: AgentMemory[] }>(
+      `/api/v1/agents/${encodeURIComponent(agentId)}/memories`,
+    )).memories,
+  createMemory: (agentId: string, content: string) =>
+    request<AgentMemory>(`/api/v1/agents/${encodeURIComponent(agentId)}/memories`, {
+      method: "POST",
+      body: JSON.stringify({ content }),
+    }),
+  updateMemory: (agentId: string, memoryId: string, enabled: boolean) =>
+    request<AgentMemory>(
+      `/api/v1/agents/${encodeURIComponent(agentId)}/memories/${encodeURIComponent(memoryId)}`,
+      { method: "PATCH", body: JSON.stringify({ enabled }) },
+    ),
+  deleteMemory: (agentId: string, memoryId: string) =>
+    request<void>(
+      `/api/v1/agents/${encodeURIComponent(agentId)}/memories/${encodeURIComponent(memoryId)}`,
+      { method: "DELETE" },
+    ),
   listLLMProviders: async () =>
     (await request<{ providers: LLMProviderOption[] }>("/api/v1/llm/providers")).providers,
   getLLMConfig: () => request<LLMConfigResponse>("/api/v1/llm/config"),

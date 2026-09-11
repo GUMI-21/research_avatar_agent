@@ -10,6 +10,8 @@ import {
 } from "lucide-react";
 import { useMemo, useState } from "react";
 
+import { MemoryPanel } from "../memory/MemoryPanel";
+
 import {
   Agent,
   RunUsage,
@@ -17,7 +19,7 @@ import {
   WorkspaceSession,
 } from "../../shared/api/workspace";
 
-type InspectorTab = "agent" | "run" | "usage";
+type InspectorTab = "agent" | "memory" | "run" | "usage";
 
 type Props = {
   agent?: Agent;
@@ -74,9 +76,9 @@ export function WorkspaceInspector({
   return (
     <aside className="inspector">
       <div className="inspector-tabs">
-        {(["agent", "run", "usage"] as const).map((name) => (
+        {(["agent", "memory", "run", "usage"] as const).map((name) => (
           <button className={tab === name ? "active" : ""} key={name} onClick={() => setTab(name)}>
-            {name === "agent" ? "Agent" : name === "run" ? "Run" : "Usage"}
+            {{ agent: "Agent", memory: "Memory", run: "Run", usage: "Usage" }[name]}
           </button>
         ))}
       </div>
@@ -104,6 +106,10 @@ export function WorkspaceInspector({
           </section>
         </>
       ) : <InspectorEmpty text="选择 Agent 查看配置" />)}
+
+      {tab === "memory" && (
+        agent ? <MemoryPanel agentId={agent.id} /> : <InspectorEmpty text="选择 Agent 管理记忆" />
+      )}
 
       {tab === "run" && (
         <section>
