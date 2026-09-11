@@ -12,6 +12,7 @@ from app.api.routes import (
     sessions,
     unity,
     usage,
+    workspaces,
     workspace_ws,
 )
 
@@ -24,6 +25,7 @@ api_router.include_router(sessions.router, prefix="/api/v1", tags=["sessions"])
 api_router.include_router(memories.router, prefix="/api/v1", tags=["memories"])
 api_router.include_router(messages.router, prefix="/api/v1", tags=["messages"])
 api_router.include_router(usage.router, prefix="/api/v1", tags=["usage"])
+api_router.include_router(workspaces.router, prefix="/api/v1", tags=["workspaces"])
 api_router.include_router(workspace_ws.router, prefix="/api/v1", tags=["runs"])
 api_router.include_router(
     llm_config.router,

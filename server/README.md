@@ -109,8 +109,9 @@ $env:APP_ENV = "debug"
 ```
 
 In another terminal, run `Invoke-RestMethod http://127.0.0.1:8000/ping`.
-API documentation is at `http://127.0.0.1:8000/docs`. Workspace REST requests
-currently require `X-Client-ID` for local client scoping; this is not authentication.
+API documentation is at `http://127.0.0.1:8000/docs`. Register a lowercase local
+username through `/api/v1/workspaces`, then send it as `X-Client-ID`; this is
+workspace scoping rather than authentication.
 Run commands from `server/` because the database path is relative to that directory.
 The first server startup downloads the embedding model into `data/models/fastembed`;
 ordinary unit tests use substitutes and do not validate model download or quality.
@@ -118,7 +119,7 @@ The real symlink-escape test skips on Windows error 1314 when the current user
 lacks symlink privileges; run it with Developer Mode or appropriate privileges
 to cover that filesystem case.
 
-The current backend baseline is 112 tests passing with one optional Windows
+The current backend baseline is 116 tests passing with one optional Windows
 symlink test skipped. OpenAI Responses supports the structured
 `delegate_to_agent` tool. Gemini and DeepSeek continue to support normal streamed
 chat, while their automatic handoff wire formats are deferred until after the

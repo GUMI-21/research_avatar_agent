@@ -274,6 +274,7 @@ Native Runtime 注入最近 12 条、最多 6,000 字符的会话上下文。Lan
 后会携任务摘要切换目标 Runtime，最多连续转交两次并拒绝循环，最终回复归属实际响应 Agent。
 
 - 已完成 Agent、Session、Message、Run 和 RunEvent 数据基础与客户端隔离。
+- 已增加唯一用户名 Workspace 注册与查询 API；用户名规范化后继续作为现有 `client_id` 数据隔离键。
 - 已完成 Native Runtime、三家 LLM 流式输出、WebSocket 取消/重连，以及用量、成本、延迟的记录与查询。
 - Web 前端确定为 React 19、TypeScript、Vite、TanStack Query、Zustand 和 Tailwind CSS。
 - Workspace 采用 Agent/Session 侧栏、对话事件流和 Agent/Memory/Run/Usage Inspector 三栏布局。

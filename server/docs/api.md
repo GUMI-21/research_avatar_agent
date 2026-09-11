@@ -33,9 +33,16 @@ All events and replay queries remain scoped by `client_id`.
 
 ### Workspace resources
 
-The first web client slice uses these client-scoped REST resources. Every request
-must include `X-Client-ID`; this header currently selects a local data scope and
-is not authentication.
+Register or resolve the local username before loading client-scoped resources:
+
+```text
+POST /api/v1/workspaces
+GET  /api/v1/workspaces/{username}
+```
+
+Usernames are normalized to lowercase and accept letters, numbers, `.`, `_`, and
+`-`. The username becomes the `X-Client-ID` value for subsequent requests. It
+selects a local data scope and is not authentication.
 
 ```text
 GET  /api/v1/agents
