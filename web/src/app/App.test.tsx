@@ -1,5 +1,5 @@
 import { QueryClient, QueryClientProvider } from "@tanstack/react-query";
-import { fireEvent, render, screen, waitFor } from "@testing-library/react";
+import { act, fireEvent, render, screen, waitFor } from "@testing-library/react";
 import { beforeEach, describe, expect, it, vi } from "vitest";
 
 import { App } from "./App";
@@ -25,6 +25,28 @@ const session = {
   updated_at: now,
 };
 
+class FakeWebSocket {
+  static OPEN = 1;
+  static instances: FakeWebSocket[] = [];
+  readyState = 0;
+  sent: string[] = [];
+  onopen: (() => void) | null = null;
+  onmessage: ((event: { data: string }) => void) | null = null;
+  onclose: (() => void) | null = null;
+
+  constructor(readonly url: string) {
+    FakeWebSocket.instances.push(this);
+    queueMicrotask(() => {
+      this.readyState = FakeWebSocket.OPEN;
+      this.onopen?.();
+    });
+  }
+
+  send(data: string) { this.sent.push(data); }
+  close() { this.readyState = 3; this.onclose?.(); }
+  emit(frame: object) { this.onmessage?.({ data: JSON.stringify(frame) }); }
+}
+
 function jsonResponse(body: unknown) {
   return Promise.resolve({
     ok: true,
@@ -46,6 +68,8 @@ function renderApp() {
 
 describe("Agent workspace resources", () => {
   beforeEach(() => {
+    FakeWebSocket.instances = [];
+    vi.stubGlobal("WebSocket", FakeWebSocket);
     vi.stubGlobal("fetch", vi.fn((input: RequestInfo | URL, init?: RequestInit) => {
       const path = String(input);
       if (path === "/api/v1/agents") return jsonResponse({ agents: [agent] });
@@ -107,5 +131,29 @@ describe("Agent workspace resources", () => {
       );
     });
     expect(await screen.findByRole("heading", { name: "新会话" })).toBeInTheDocument();
+  });
+
+  it("sends a message and renders streamed run events", async () => {
+    renderApp();
+    const composer = screen.getByLabelText("消息");
+    await waitFor(() => expect(composer).toBeEnabled());
+    fireEvent.change(composer, { target: { value: "解释状态图" } });
+    fireEvent.click(screen.getByRole("button", { name: "发送" }));
+
+    const socket = FakeWebSocket.instances[0];
+    expect(JSON.parse(socket.sent[0])).toEqual({
+      type: "send_message",
+      session_id: session.id,
+      content: "解释状态图",
+    });
+    act(() => {
+      socket.emit({ type: "run_started", run_id: "run-2", sequence: 1, payload: {} });
+      socket.emit({ type: "assistant_delta", run_id: "run-2", sequence: null, payload: { text: "这是流式回答" } });
+      socket.emit({ type: "run_finished", run_id: "run-2", sequence: 2, payload: { duration_ms: 120 } });
+    });
+
+    expect(screen.getByText("解释状态图")).toBeInTheDocument();
+    expect(screen.getByText("这是流式回答")).toBeInTheDocument();
+    expect(screen.getAllByText("运行完成")).toHaveLength(2);
   });
 });

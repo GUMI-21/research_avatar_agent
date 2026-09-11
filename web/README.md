@@ -5,7 +5,7 @@
 - React 19 and TypeScript for a typed, component-based workspace UI.
 - Vite 8 for local HMR and production bundling.
 - TanStack Query for REST server state, cache invalidation, loading, and errors.
-- Native WebSocket in the next slice for streamed Run events and cancellation.
+- Native WebSocket for streamed Run events, cancellation, reconnect, and replay.
 - Zustand is reserved for cross-page UI/run state; the current resource slice
   uses component state because Agent and Session data belongs in Query cache.
 - Tailwind CSS is available for tokens and utilities; shared workspace styling

@@ -31,7 +31,7 @@ export type Message = {
   created_at: string;
 };
 
-const clientId = import.meta.env.VITE_CLIENT_ID?.trim() || "local-demo";
+export const clientId = import.meta.env.VITE_CLIENT_ID?.trim() || "local-demo";
 
 async function request<T>(path: string, init?: RequestInit): Promise<T> {
   const response = await fetch(path, {

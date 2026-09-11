@@ -10,11 +10,13 @@ import {
   Plus,
   Send,
   Settings,
+  Square,
   Sparkles,
   X,
 } from "lucide-react";
-import { FormEvent, ReactNode, useEffect, useMemo, useState } from "react";
+import { FormEvent, KeyboardEvent, ReactNode, useEffect, useMemo, useState } from "react";
 
+import { LiveRun, useRunStream } from "../features/runs/useRunStream";
 import {
   Agent,
   workspaceApi,
@@ -40,11 +42,68 @@ function EmptyState({ children }: { children: ReactNode }) {
   return <div className="empty-state">{children}</div>;
 }
 
+const eventLabels: Record<string, string> = {
+  run_started: "运行开始",
+  agent_started: "Agent 启动",
+  agent_status: "Agent 状态",
+  retrieval_started: "检索知识库",
+  retrieval_result: "检索完成",
+  context_prepared: "上下文已组装",
+  tool_started: "工具调用",
+  tool_finished: "工具完成",
+  handoff_requested: "请求转交",
+  handoff_started: "开始转交",
+  handoff_finished: "转交完成",
+  usage_updated: "用量更新",
+  run_finished: "运行完成",
+  run_failed: "运行失败",
+  run_cancelled: "运行取消",
+};
+
+function eventDetail(type: string, payload: Record<string, unknown>) {
+  if (type.startsWith("handoff_")) return String(payload.task_summary || payload.to_agent_id || "Agent 已切换");
+  if (type === "usage_updated") {
+    return `${payload.provider || "provider"} · ${payload.model || "model"} · ${payload.input_tokens ?? "?"}/${payload.output_tokens ?? "?"} tokens`;
+  }
+  if (type === "run_finished" || type === "run_failed" || type === "run_cancelled") {
+    return payload.duration_ms == null ? "终态已持久化" : `${payload.duration_ms} ms`;
+  }
+  if (type === "retrieval_result") return "候选与命中片段已记录";
+  return String(payload.message || payload.status || "事件已记录");
+}
+
+function RunCard({ run }: { run: LiveRun }) {
+  const statusLabel = {
+    idle: "等待",
+    running: "运行中",
+    completed: "运行完成",
+    failed: "运行失败",
+    cancelled: "已取消",
+  }[run.status];
+  return (
+    <article className="run-card">
+      <div className="run-card-title">
+        <Sparkles size={16} /><b>LangGraph Run</b><span className={run.status}>{statusLabel}</span>
+      </div>
+      {run.events.map((event, index) => (
+        <div className="run-event" key={`${event.type}-${event.sequence ?? index}`}>
+          <span className="event-dot" />
+          <b>{eventLabels[event.type] || event.type}</b>
+          <span>{eventDetail(event.type, event.payload)}</span>
+          <time>{event.sequence == null ? "live" : `#${event.sequence}`}</time>
+        </div>
+      ))}
+    </article>
+  );
+}
+
 export function App() {
   const queryClient = useQueryClient();
   const [selectedAgentId, setSelectedAgentId] = useState("");
   const [selectedSessionId, setSelectedSessionId] = useState("");
   const [dialog, setDialog] = useState<CreateDialog>(null);
+  const [draft, setDraft] = useState("");
+  const [targetAgentId, setTargetAgentId] = useState("");
 
   const agentsQuery = useQuery({
     queryKey: ["agents"],
@@ -61,6 +120,11 @@ export function App() {
   });
   const agents = agentsQuery.data ?? [];
   const sessions = sessionsQuery.data ?? [];
+  const stream = useRunStream((runId, sessionId) => {
+    void queryClient.invalidateQueries({ queryKey: ["messages", sessionId] });
+    void queryClient.invalidateQueries({ queryKey: ["usage"] });
+    if (runId) void queryClient.invalidateQueries({ queryKey: ["runs"] });
+  });
 
   useEffect(() => {
     if (!selectedAgentId && agents[0]) setSelectedAgentId(agents[0].id);
@@ -81,10 +145,30 @@ export function App() {
     (session) => session.id === selectedSessionId,
   );
   const agentById = new Map(agents.map((agent) => [agent.id, agent]));
+  const sessionAgent = selectedSession
+    ? agentById.get(selectedSession.agent_id)
+    : selectedAgent;
+  const liveHere = stream.run.sessionId === selectedSessionId;
+  const visibleMessages = messagesQuery.data?.filter(
+    (message) => !liveHere || !stream.run.runId || message.run_id !== stream.run.runId,
+  );
+  const liveAgentId = [...stream.run.events].reverse().find(
+    (event) => event.type === "handoff_finished",
+  )?.payload.to_agent_id;
+  const liveAgent = agentById.get(String(liveAgentId || sessionAgent?.id || ""));
 
   function selectSession(session: WorkspaceSession) {
     setSelectedSessionId(session.id);
     setSelectedAgentId(session.agent_id);
+    setTargetAgentId("");
+  }
+
+  function submitMessage(event?: FormEvent<HTMLFormElement> | KeyboardEvent<HTMLTextAreaElement>) {
+    event?.preventDefault();
+    const content = draft.trim();
+    if (!selectedSession || !content || stream.run.status === "running") return;
+    stream.send(selectedSession.id, content, targetAgentId || undefined);
+    setDraft("");
   }
 
   const queryError =
@@ -164,15 +248,18 @@ export function App() {
                 : "选择或创建一个 Agent"}
             </p>
           </div>
-          <span className={`connection-badge ${queryError ? "error" : ""}`}>
-            {queryError ? "REST 请求失败" : resourcesLoading ? "REST 连接中" : "REST 已连接"}
+          <span className={`connection-badge ${queryError || stream.connection === "closed" ? "error" : ""}`}>
+            {queryError ? "资源请求失败"
+              : resourcesLoading ? "资源加载中"
+              : stream.connection === "open" ? "实时已连接"
+              : stream.connection === "connecting" ? "实时连接中" : "实时连接断开"}
           </span>
         </header>
 
         <div className="messages">
           {queryError && <div className="error-banner">{queryError.message}</div>}
           {messagesQuery.isLoading && <LoaderCircle className="spinner center" />}
-          {messagesQuery.data?.map((message) => {
+          {visibleMessages?.map((message) => {
             const owner = agentById.get(message.agent_id);
             return (
               <article
@@ -189,11 +276,24 @@ export function App() {
               </article>
             );
           })}
-          {selectedSession && !messagesQuery.isLoading && !messagesQuery.data?.length && (
+          {liveHere && stream.run.userText && (
+            <article className="message user-message live-message">
+              <p>{stream.run.userText}</p><time>刚刚</time>
+            </article>
+          )}
+          {liveHere && stream.run.events.length > 0 && <RunCard run={stream.run} />}
+          {liveHere && stream.run.assistantText && (
+            <article className="message assistant-message live-message">
+              <div className="message-author"><Sparkles size={14} />{liveAgent?.name || "Agent"}</div>
+              <p>{stream.run.assistantText}<span className="stream-cursor" /></p>
+            </article>
+          )}
+          {liveHere && stream.run.error && <div className="error-banner">{stream.run.error}</div>}
+          {selectedSession && !messagesQuery.isLoading && !messagesQuery.data?.length && !liveHere && (
             <EmptyState>
               <MessageSquareText size={28} />
               <b>开始这段对话</b>
-              <span>下一批将接入 WebSocket 流式运行。</span>
+              <span>消息、Agent 转交和运行状态会实时显示在这里。</span>
             </EmptyState>
           )}
           {!selectedSession && !sessionsQuery.isLoading && (
@@ -205,15 +305,38 @@ export function App() {
           )}
         </div>
 
-        <form className="composer">
+        <form className="composer" onSubmit={submitMessage}>
           <textarea
             aria-label="消息"
-            disabled
-            placeholder="WebSocket 流式消息将在下一批接入…"
+            disabled={!selectedSession || stream.connection !== "open" || stream.run.status === "running"}
+            value={draft}
+            onChange={(event) => setDraft(event.target.value)}
+            onKeyDown={(event) => {
+              if (event.key === "Enter" && !event.shiftKey) submitMessage(event);
+            }}
+            placeholder={selectedSession ? `向 ${sessionAgent?.name || "Agent"} 发送消息…` : "先选择一个会话"}
           />
           <div>
-            <span>当前批次已接入历史消息</span>
-            <button type="button" aria-label="发送" disabled><Send size={17} /></button>
+            <select
+              aria-label="转交给 Agent"
+              disabled={!selectedSession || stream.run.status === "running"}
+              value={targetAgentId}
+              onChange={(event) => setTargetAgentId(event.target.value)}
+            >
+              <option value="">由 {sessionAgent?.name || "会话 Agent"} 执行</option>
+              {agents.filter((agent) => agent.id !== selectedSession?.agent_id).map((agent) => (
+                <option key={agent.id} value={agent.id}>转交给 {agent.name}</option>
+              ))}
+            </select>
+            {stream.run.status === "running" ? (
+              <button type="button" aria-label="停止运行" disabled={!stream.run.runId} onClick={stream.cancel}>
+                <Square size={15} />
+              </button>
+            ) : (
+              <button type="submit" aria-label="发送" disabled={!draft.trim() || stream.connection !== "open"}>
+                <Send size={17} />
+              </button>
+            )}
           </div>
         </form>
       </section>

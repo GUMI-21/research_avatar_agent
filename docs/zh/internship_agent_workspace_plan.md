@@ -278,7 +278,8 @@ Native Runtime 注入最近 12 条、最多 6,000 字符的会话上下文。Lan
 - Web 前端确定为 React 19、TypeScript、Vite、TanStack Query、Zustand 和 Tailwind CSS。
 - Workspace 采用 Agent/Session 侧栏、对话事件流和 Context/Run/Usage Inspector 三栏布局。
 - Web 第一批已接入真实 Agent、Session 和 Message REST API，支持创建 Agent、创建会话、
-  读取历史消息及资源加载/错误/空状态；WebSocket 流式执行是下一批重点。
+  读取历史消息及资源加载/错误/空状态。第二批已接入 WebSocket 消息发送、流式回复、
+  Run/handoff/usage 事件、取消运行及断线后的持久化事件补发。
 - Obsidian RAG 已开始建设 KnowledgeSource 与 KnowledgeDocument 数据基础。
 - KnowledgeSource 已具备客户端隔离的 Repository、事务服务和本地目录安全校验。
 - KnowledgeSource REST API 支持注册、列表和详情查询；目录扫描通过后续同步操作显式触发。
