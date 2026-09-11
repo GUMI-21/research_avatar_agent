@@ -176,6 +176,7 @@ class RuntimeAPIIntegrationTest(unittest.IsolatedAsyncioTestCase):
                 "/api/v1/llm/config",
                 json={"provider": "deepseek", "api_key": "test-key"},
             )
+            current_response = await client.get("/api/v1/llm/config")
             mock_response = await client.post(
                 "/api/v1/llm/config",
                 json={"provider": "mock"},
@@ -187,6 +188,8 @@ class RuntimeAPIIntegrationTest(unittest.IsolatedAsyncioTestCase):
 
         self.assertEqual(provider_response.status_code, status.HTTP_200_OK)
         self.assertNotIn("api_key", provider_response.json())
+        self.assertEqual(current_response.json()["provider"], "deepseek")
+        self.assertNotIn("api_key", current_response.json())
         self.assertEqual(mock_response.json()["provider"], "mock")
         self.assertEqual(chat_response.status_code, status.HTTP_200_OK)
         self.assertEqual(chat_response.json()["reply"], "Echo: Hello")

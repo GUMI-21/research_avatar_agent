@@ -89,6 +89,7 @@ class NativeAgentRuntime:
                     request_id=request.run_id,
                     session_id=request.session_id,
                     message=message,
+                    model=request.model,
                     instructions=instructions,
                     tools=_handoff_tools(request.handoff_targets),
                 )

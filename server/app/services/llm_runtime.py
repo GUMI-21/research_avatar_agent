@@ -1,6 +1,7 @@
 """In-memory LLM provider selection shared by API clients."""
 
 import os
+from dataclasses import replace
 from collections.abc import AsyncIterator
 from time import perf_counter
 
@@ -100,7 +101,7 @@ class LLMRuntime(LLMClient):
 
     async def generate(self, request: LLMRequest) -> LLMResult:
         """Generate text with the provider active at the start of this call."""
-        config = self._config
+        config = replace(self._config, model=request.model) if request.model else self._config
         adapter = self._build_adapter(config)
         started_at = perf_counter()
         try:
@@ -132,7 +133,7 @@ class LLMRuntime(LLMClient):
         self, request: LLMRequest
     ) -> AsyncIterator[LLMStreamChunk]:
         """Stream with the provider active at the start of this call."""
-        config = self._config
+        config = replace(self._config, model=request.model) if request.model else self._config
         adapter = self._build_adapter(config)
         started_at = perf_counter()
         try:

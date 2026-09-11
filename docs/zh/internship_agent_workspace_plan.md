@@ -280,6 +280,12 @@ Native Runtime 注入最近 12 条、最多 6,000 字符的会话上下文。Lan
 - Web 第一批已接入真实 Agent、Session 和 Message REST API，支持创建 Agent、创建会话、
   读取历史消息及资源加载/错误/空状态。第二批已接入 WebSocket 消息发送、流式回复、
   Run/handoff/usage 事件、取消运行及断线后的持久化事件补发。
+- Web 第三批将持久化 Run 与 Usage API 接入右侧 Inspector，可按当前会话查看模型、状态、
+  输入/输出 Token、估算费用、总耗时、首 Token 延迟和错误，并展示 Workspace 用量汇总。
+- Web 模型设置直接使用 Server 的 Provider Catalog 与 LLM Runtime 配置接口，可读取当前安全摘要、
+  切换 Provider/Model，并选择临时提交 API Key 或使用环境变量；页面不持久化或回显密钥。
+- 会话标题区提供真实 Session 历史下拉选择；创建 Agent 时从当前 Workspace Provider Catalog
+  选择默认模型。Agent 模型会随 RuntimeRequest 进入实际 LLM 调用，handoff 后改用目标 Agent 模型。
 - Obsidian RAG 已开始建设 KnowledgeSource 与 KnowledgeDocument 数据基础。
 - KnowledgeSource 已具备客户端隔离的 Repository、事务服务和本地目录安全校验。
 - KnowledgeSource REST API 支持注册、列表和详情查询；目录扫描通过后续同步操作显式触发。

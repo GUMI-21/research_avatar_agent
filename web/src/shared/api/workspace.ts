@@ -31,6 +31,59 @@ export type Message = {
   created_at: string;
 };
 
+export type RunUsage = {
+  id: string;
+  session_id: string;
+  agent_id: string;
+  runtime: string;
+  provider: string | null;
+  model: string | null;
+  status: "pending" | "running" | "completed" | "failed" | "cancelled";
+  input_tokens: number | null;
+  output_tokens: number | null;
+  cache_read_tokens: number | null;
+  cache_write_tokens: number | null;
+  cost_usd: string | null;
+  cost_status: string;
+  duration_ms: number | null;
+  time_to_first_token_ms: number | null;
+  error_type: string | null;
+  created_at: string;
+};
+
+export type UsageSummary = {
+  run_count: number;
+  failed_count: number;
+  unavailable_cost_count: number;
+  input_tokens: number;
+  output_tokens: number;
+  cache_read_tokens: number;
+  cache_write_tokens: number;
+  cost_usd: string;
+  average_duration_ms: number | null;
+};
+
+export type LLMModelOption = {
+  model: string;
+  display_name: string;
+  config: { provider: string; model: string };
+};
+
+export type LLMProviderOption = {
+  provider: string;
+  display_name: string;
+  default_model: string;
+  allow_custom_model: boolean;
+  models: LLMModelOption[];
+};
+
+export type LLMConfigResponse = {
+  provider: string;
+  model: string;
+  base_url: string;
+  api_key_configured: boolean;
+  api_key_source: "request" | "environment" | "not_required";
+};
 export const clientId = import.meta.env.VITE_CLIENT_ID?.trim() || "local-demo";
 
 async function request<T>(path: string, init?: RequestInit): Promise<T> {
@@ -54,7 +107,7 @@ async function request<T>(path: string, init?: RequestInit): Promise<T> {
 export const workspaceApi = {
   listAgents: async () =>
     (await request<{ agents: Agent[] }>("/api/v1/agents")).agents,
-  createAgent: (input: { name: string; system_prompt: string }) =>
+  createAgent: (input: { name: string; system_prompt: string; runtime?: string; model?: string }) =>
     request<Agent>("/api/v1/agents", {
       method: "POST",
       body: JSON.stringify(input),
@@ -73,4 +126,15 @@ export const workspaceApi = {
         `/api/v1/sessions/${encodeURIComponent(sessionId)}/messages?limit=50`,
       )
     ).messages,
+  listLLMProviders: async () =>
+    (await request<{ providers: LLMProviderOption[] }>("/api/v1/llm/providers")).providers,
+  getLLMConfig: () => request<LLMConfigResponse>("/api/v1/llm/config"),
+  configureLLM: (input: { provider: string; model: string; api_key?: string }) =>
+    request<LLMConfigResponse>("/api/v1/llm/config", {
+      method: "POST",
+      body: JSON.stringify(input),
+    }),
+  listRuns: async () =>
+    (await request<{ runs: RunUsage[] }>("/api/v1/usage/runs?limit=100")).runs,
+  getUsageSummary: () => request<UsageSummary>("/api/v1/usage/summary"),
 };

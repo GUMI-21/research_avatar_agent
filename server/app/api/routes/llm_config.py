@@ -22,6 +22,13 @@ async def list_llm_providers() -> LLMProvidersResponse:
     return LLM_PROVIDER_CATALOG
 
 
+@router.get("/llm/config", response_model=LLMConfigResponse)
+async def get_llm_config(
+    llm_runtime: LLMRuntime = Depends(get_llm_runtime),
+) -> LLMConfigResponse:
+    """Return the active runtime selection without exposing its API key."""
+    return llm_runtime.current_config()
+
 @router.post(
     "/llm/config",
     response_model=LLMConfigResponse,

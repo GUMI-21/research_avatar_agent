@@ -24,6 +24,7 @@ class RuntimeRequest:
     agent_id: str
     session_id: str
     message: str
+    model: str | None = None
     system_prompt: str = ""
     conversation_context: str = ""
     knowledge_context: str = ""

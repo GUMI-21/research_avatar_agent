@@ -1,9 +1,7 @@
 import { useMutation, useQuery, useQueryClient } from "@tanstack/react-query";
 import {
-  Bot,
   BrainCircuit,
   CirclePlus,
-  Database,
   FileText,
   LoaderCircle,
   MessageSquareText,
@@ -16,14 +14,16 @@ import {
 } from "lucide-react";
 import { FormEvent, KeyboardEvent, ReactNode, useEffect, useMemo, useState } from "react";
 
+import { WorkspaceInspector } from "../features/inspector/WorkspaceInspector";
 import { LiveRun, useRunStream } from "../features/runs/useRunStream";
+import { WorkspaceSettings } from "../features/settings/WorkspaceSettings";
 import {
   Agent,
   workspaceApi,
   WorkspaceSession,
 } from "../shared/api/workspace";
 
-type CreateDialog = "agent" | "session" | null;
+type CreateDialog = "agent" | "session" | "settings" | null;
 
 function agentInitial(name: string) {
   return name.trim().charAt(0).toUpperCase() || "A";
@@ -118,6 +118,14 @@ export function App() {
     queryFn: () => workspaceApi.listMessages(selectedSessionId),
     enabled: Boolean(selectedSessionId),
   });
+  const runsQuery = useQuery({
+    queryKey: ["runs"],
+    queryFn: workspaceApi.listRuns,
+  });
+  const usageQuery = useQuery({
+    queryKey: ["usage"],
+    queryFn: workspaceApi.getUsageSummary,
+  });
   const agents = agentsQuery.data ?? [];
   const sessions = sessionsQuery.data ?? [];
   const stream = useRunStream((runId, sessionId) => {
@@ -171,8 +179,8 @@ export function App() {
     setDraft("");
   }
 
-  const queryError =
-    agentsQuery.error || sessionsQuery.error || messagesQuery.error;
+  const queryError = agentsQuery.error || sessionsQuery.error || messagesQuery.error
+    || runsQuery.error || usageQuery.error;
   const resourcesLoading = agentsQuery.isLoading || sessionsQuery.isLoading;
 
   return (
@@ -234,13 +242,26 @@ export function App() {
             <small className="muted-copy">还没有对话</small>
           )}
         </nav>
-        <button className="settings"><Settings size={15} />设置</button>
+        <button className="settings" onClick={() => setDialog("settings")}><Settings size={15} />设置</button>
       </aside>
 
       <section className="conversation">
         <header className="conversation-header">
           <div>
-            <h1>{selectedSession?.title || "个人 Agent 工作台"}</h1>
+            <div className="conversation-title-row">
+              <h1>{selectedSession?.title || "个人 Agent 工作台"}</h1>
+              <select
+                aria-label="聊天记录"
+                disabled={!sessions.length}
+                value={selectedSessionId}
+                onChange={(event) => {
+                  const next = sessions.find((item) => item.id === event.target.value);
+                  if (next) selectSession(next);
+                }}
+              >
+                {sessions.map((item) => <option key={item.id} value={item.id}>{item.title}</option>)}
+              </select>
+            </div>
             <p>
               <span className="status-dot" />
               {selectedAgent
@@ -341,37 +362,17 @@ export function App() {
         </form>
       </section>
 
-      <aside className="inspector">
-        <div className="inspector-tabs">
-          <button className="active">Agent</button><button>Run</button><button>Usage</button>
-        </div>
-        {selectedAgent ? (
-          <>
-            <section>
-              <h2><Bot size={15} />当前 Agent</h2>
-              <div className="profile-card">
-                <span className="avatar large">{agentInitial(selectedAgent.name)}</span>
-                <div><b>{selectedAgent.name}</b><small>{selectedAgent.runtime}</small></div>
-              </div>
-            </section>
-            <section>
-              <h2><Sparkles size={15} />System Prompt</h2>
-              <p className="reason">{selectedAgent.system_prompt}</p>
-            </section>
-            <section>
-              <h2><Database size={15} />工作区数据</h2>
-              <dl className="metrics">
-                <div><dt>会话</dt><dd>{sessions.filter((item) => item.agent_id === selectedAgent.id).length}</dd></div>
-                <div><dt>知识库</dt><dd>{selectedAgent.knowledge_source_ids.length}</dd></div>
-                <div><dt>当前消息</dt><dd>{messagesQuery.data?.length ?? 0}</dd></div>
-              </dl>
-            </section>
-          </>
-        ) : (
-          <EmptyState><Bot size={28} /><span>选择 Agent 查看配置</span></EmptyState>
-        )}
-      </aside>
+      <WorkspaceInspector
+        agent={selectedAgent}
+        session={selectedSession}
+        sessions={sessions}
+        messageCount={messagesQuery.data?.length ?? 0}
+        runs={runsQuery.data ?? []}
+        summary={usageQuery.data}
+        loading={runsQuery.isLoading}
+      />
 
+      {dialog === "settings" && <WorkspaceSettings onClose={() => setDialog(null)} />}
       {dialog === "agent" && (
         <AgentDialog
           onClose={() => setDialog(null)}
@@ -401,6 +402,13 @@ function AgentDialog({ onClose, onCreated }: {
   onClose: () => void;
   onCreated: (agent: Agent) => void;
 }) {
+  const providersQuery = useQuery({ queryKey: ["llm-providers"], queryFn: workspaceApi.listLLMProviders });
+  const configQuery = useQuery({ queryKey: ["llm-config"], queryFn: workspaceApi.getLLMConfig });
+  const [model, setModel] = useState("");
+  const provider = providersQuery.data?.find((item) => item.provider === configQuery.data?.provider);
+  useEffect(() => {
+    if (configQuery.data) setModel(configQuery.data.model);
+  }, [configQuery.data]);
   const mutation = useMutation({ mutationFn: workspaceApi.createAgent, onSuccess: onCreated });
   function submit(event: FormEvent<HTMLFormElement>) {
     event.preventDefault();
@@ -408,6 +416,8 @@ function AgentDialog({ onClose, onCreated }: {
     mutation.mutate({
       name: String(data.get("name")),
       system_prompt: String(data.get("system_prompt")),
+      runtime: "native",
+      model,
     });
   }
   return (
@@ -419,10 +429,19 @@ function AgentDialog({ onClose, onCreated }: {
         </div>
         <label>名称<input name="name" required maxLength={80} placeholder="例如：Personal" /></label>
         <label>系统提示词<textarea name="system_prompt" required maxLength={50000} placeholder="说明 Agent 的职责和行为边界" /></label>
+        <label>
+          默认模型
+          <select aria-label="Agent 默认模型" required value={model} onChange={(event) => setModel(event.target.value)}>
+            {provider?.models.map((item) => (
+              <option key={item.model} value={item.model}>{item.display_name}</option>
+            ))}
+          </select>
+          <small className="field-hint">Provider：{configQuery.data?.provider || "读取中"}，可在设置中切换。</small>
+        </label>
         {mutation.error && <p className="form-error">{mutation.error.message}</p>}
         <div className="modal-actions">
           <button type="button" onClick={onClose}>取消</button>
-          <button className="primary" disabled={mutation.isPending}>{mutation.isPending ? "创建中…" : "创建"}</button>
+          <button className="primary" disabled={!model || mutation.isPending}>{mutation.isPending ? "创建中…" : "创建"}</button>
         </div>
       </form>
     </div>

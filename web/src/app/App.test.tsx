@@ -25,6 +25,25 @@ const session = {
   updated_at: now,
 };
 
+const run = {
+  id: "run-1",
+  session_id: session.id,
+  agent_id: agent.id,
+  runtime: "native",
+  provider: "openai",
+  model: "gpt-5.6-luna",
+  status: "completed",
+  input_tokens: 120,
+  output_tokens: 45,
+  cache_read_tokens: 10,
+  cache_write_tokens: 0,
+  cost_usd: "0.001230",
+  cost_status: "estimated",
+  duration_ms: 680,
+  time_to_first_token_ms: 120,
+  error_type: null,
+  created_at: now,
+};
 class FakeWebSocket {
   static OPEN = 1;
   static instances: FakeWebSocket[] = [];
@@ -72,6 +91,39 @@ describe("Agent workspace resources", () => {
     vi.stubGlobal("WebSocket", FakeWebSocket);
     vi.stubGlobal("fetch", vi.fn((input: RequestInfo | URL, init?: RequestInit) => {
       const path = String(input);
+      if (path === "/api/v1/llm/providers") {
+        return jsonResponse({ providers: [
+          { provider: "mock", display_name: "Mock", default_model: "mock-echo", allow_custom_model: false,
+            models: [{ model: "mock-echo", display_name: "Mock Echo", config: { provider: "mock", model: "mock-echo" } }] },
+          { provider: "openai", display_name: "OpenAI", default_model: "gpt-5.6-luna", allow_custom_model: true,
+            models: [{ model: "gpt-5.6-luna", display_name: "GPT-5.6 Luna", config: { provider: "openai", model: "gpt-5.6-luna" } }] },
+        ] });
+      }
+      if (path === "/api/v1/llm/config" && !init?.method) {
+        return jsonResponse({ provider: "mock", model: "mock-echo", base_url: "mock://local",
+          api_key_configured: false, api_key_source: "not_required" });
+      }
+      if (path === "/api/v1/llm/config" && init?.method === "POST") {
+        return jsonResponse({ provider: "openai", model: "gpt-5.6-luna", base_url: "https://api.openai.com/v1",
+          api_key_configured: true, api_key_source: "request" });
+      }
+      if (path === "/api/v1/usage/runs?limit=100") return jsonResponse({ runs: [run] });
+      if (path === "/api/v1/usage/summary") {
+        return jsonResponse({
+          run_count: 1,
+          failed_count: 0,
+          unavailable_cost_count: 0,
+          input_tokens: 120,
+          output_tokens: 45,
+          cache_read_tokens: 10,
+          cache_write_tokens: 0,
+          cost_usd: "0.001230",
+          average_duration_ms: 680,
+        });
+      }
+      if (path === "/api/v1/agents" && init?.method === "POST") {
+        return jsonResponse({ ...agent, id: "agent-2", ...JSON.parse(String(init.body)) });
+      }
       if (path === "/api/v1/agents") return jsonResponse({ agents: [agent] });
       if (path === "/api/v1/sessions" && init?.method === "POST") {
         return jsonResponse({ ...session, id: "session-2", title: "新会话" });
@@ -100,8 +152,9 @@ describe("Agent workspace resources", () => {
   it("loads agents, sessions, and message history", async () => {
     renderApp();
 
-    expect(await screen.findByText("项目计划")).toBeInTheDocument();
+    expect(await screen.findByRole("heading", { name: "项目计划" })).toBeInTheDocument();
     expect(await screen.findByText("历史回答")).toBeInTheDocument();
+    expect(screen.getByRole("combobox", { name: "聊天记录" })).toHaveValue(session.id);
     expect(screen.getByText("帮助我整理项目。")).toBeInTheDocument();
     expect(fetch).toHaveBeenCalledWith(
       "/api/v1/agents",
@@ -155,5 +208,56 @@ describe("Agent workspace resources", () => {
     expect(screen.getByText("解释状态图")).toBeInTheDocument();
     expect(screen.getByText("这是流式回答")).toBeInTheDocument();
     expect(screen.getAllByText("运行完成")).toHaveLength(2);
+  });
+  it("shows persisted run and usage details", async () => {
+    renderApp();
+    await screen.findByRole("heading", { name: "项目计划" });
+
+    fireEvent.click(screen.getByRole("button", { name: "Run" }));
+    expect(await screen.findByText("gpt-5.6-luna")).toBeInTheDocument();
+    expect(screen.getByText("680 ms / 120 ms")).toBeInTheDocument();
+
+    fireEvent.click(screen.getByRole("button", { name: "Usage" }));
+    expect(screen.getByText("Workspace 总计")).toBeInTheDocument();
+    expect(screen.getAllByText("120")).toHaveLength(2);
+    expect(screen.getAllByText("$0.001230")).toHaveLength(2);
+  });
+
+  it("creates an Agent with the selected default model", async () => {
+    renderApp();
+    fireEvent.click(screen.getByRole("button", { name: "创建 Agent" }));
+    await screen.findByText(/Provider：mock/);
+    fireEvent.change(screen.getByPlaceholderText("例如：Personal"), { target: { value: "Reviewer" } });
+    fireEvent.change(screen.getByPlaceholderText("说明 Agent 的职责和行为边界"), { target: { value: "Review code." } });
+    fireEvent.click(screen.getByRole("button", { name: "创建" }));
+
+    await waitFor(() => expect(fetch).toHaveBeenCalledWith(
+      "/api/v1/agents",
+      expect.objectContaining({
+        method: "POST",
+        body: JSON.stringify({ name: "Reviewer", system_prompt: "Review code.", runtime: "native", model: "mock-echo" }),
+      }),
+    ));
+  });
+  it("configures the real server runtime from settings", async () => {
+    renderApp();
+    fireEvent.click(screen.getByRole("button", { name: "设置" }));
+
+    const provider = await screen.findByLabelText("Provider");
+    await screen.findByText(/当前配置：mock \/ mock-echo/);
+    fireEvent.change(provider, { target: { value: "openai" } });
+    fireEvent.change(screen.getByLabelText("API Key（留空则使用 Server 环境变量）"), {
+      target: { value: "test-key" },
+    });
+    fireEvent.click(screen.getByRole("button", { name: "应用配置" }));
+
+    await waitFor(() => expect(fetch).toHaveBeenCalledWith(
+      "/api/v1/llm/config",
+      expect.objectContaining({
+        method: "POST",
+        body: JSON.stringify({ provider: "openai", model: "gpt-5.6-luna", api_key: "test-key" }),
+      }),
+    ));
+    expect(await screen.findByText(/当前配置：openai \/ gpt-5.6-luna/)).toBeInTheDocument();
   });
 });
