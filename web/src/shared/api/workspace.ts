@@ -1,3 +1,10 @@
+import { getClientId } from "../clientIdentity";
+
+export type WorkspaceIdentity = {
+  username: string;
+  created_at: string;
+};
+
 export type Agent = {
   id: string;
   client_id: string;
@@ -93,14 +100,18 @@ export type LLMConfigResponse = {
   api_key_configured: boolean;
   api_key_source: "request" | "environment" | "not_required";
 };
-export const clientId = import.meta.env.VITE_CLIENT_ID?.trim() || "local-demo";
+class APIRequestError extends Error {
+  constructor(readonly status: number, message: string) {
+    super(message);
+  }
+}
 
-async function request<T>(path: string, init?: RequestInit): Promise<T> {
+async function request<T>(path: string, init?: RequestInit, scoped = true): Promise<T> {
   const response = await fetch(path, {
     ...init,
     headers: {
       "Content-Type": "application/json",
-      "X-Client-ID": clientId,
+      ...(scoped ? { "X-Client-ID": getClientId() } : {}),
       ...init?.headers,
     },
   });
@@ -108,13 +119,30 @@ async function request<T>(path: string, init?: RequestInit): Promise<T> {
     const body = (await response.json().catch(() => null)) as
       | { detail?: string }
       | null;
-    throw new Error(body?.detail || `请求失败（${response.status}）`);
+    throw new APIRequestError(
+      response.status,
+      body?.detail || `请求失败（${response.status}）`,
+    );
   }
   if (response.status === 204) return undefined as T;
   return response.json() as Promise<T>;
 }
 
 export const workspaceApi = {
+  ensureWorkspace: async (username: string) => {
+    const normalized = username.trim().toLowerCase();
+    try {
+      return await request<WorkspaceIdentity>(
+        `/api/v1/workspaces/${encodeURIComponent(normalized)}`, undefined, false,
+      );
+    } catch (error) {
+      if (!(error instanceof APIRequestError) || error.status !== 404) throw error;
+      return request<WorkspaceIdentity>("/api/v1/workspaces", {
+        method: "POST",
+        body: JSON.stringify({ username: normalized }),
+      }, false);
+    }
+  },
   listAgents: async () =>
     (await request<{ agents: Agent[] }>("/api/v1/agents")).agents,
   createAgent: (input: { name: string; system_prompt: string; runtime?: string; model?: string }) =>

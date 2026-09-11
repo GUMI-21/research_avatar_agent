@@ -28,9 +28,10 @@ afterEach(() => {
 describe("WorkspaceRunSocket", () => {
   it("sends cancellation for the active run id", () => {
     vi.stubGlobal("WebSocket", FakeWebSocket);
-    const client = new WorkspaceRunSocket(() => undefined, () => undefined);
+    const client = new WorkspaceRunSocket("client-a", () => undefined, () => undefined);
     client.connect();
     const socket = FakeWebSocket.instances[0];
+    expect(socket.url).toContain("client_id=client-a");
     socket.open();
     client.cancel("run-9");
 
@@ -43,6 +44,7 @@ describe("WorkspaceRunSocket", () => {
     vi.stubGlobal("WebSocket", FakeWebSocket);
     const frames: string[] = [];
     const client = new WorkspaceRunSocket(
+      "client-a",
       (frame) => frames.push(frame.type),
       () => undefined,
     );

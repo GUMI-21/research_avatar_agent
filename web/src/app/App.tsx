@@ -18,6 +18,7 @@ import { FormEvent, KeyboardEvent, ReactNode, useEffect, useMemo, useRef, useSta
 import { WorkspaceInspector } from "../features/inspector/WorkspaceInspector";
 import { LiveRun, useRunStream } from "../features/runs/useRunStream";
 import { WorkspaceSettings } from "../features/settings/WorkspaceSettings";
+import { getClientId, saveClientId } from "../shared/clientIdentity";
 import {
   Agent,
   workspaceApi,
@@ -110,6 +111,7 @@ function RunCard({ run, agents }: { run: LiveRun; agents: Agent[] }) {
 
 export function App() {
   const queryClient = useQueryClient();
+  const [clientId, setClientId] = useState(getClientId);
   const [selectedAgentId, setSelectedAgentId] = useState("");
   const [selectedSessionId, setSelectedSessionId] = useState("");
   const [dialog, setDialog] = useState<CreateDialog>(null);
@@ -118,6 +120,10 @@ export function App() {
   const sessionsInitialized = useRef(false);
   const messagesEndRef = useRef<HTMLDivElement>(null);
 
+  const workspaceQuery = useQuery({
+    queryKey: ["workspace", clientId],
+    queryFn: () => workspaceApi.ensureWorkspace(clientId),
+  });
   const agentsQuery = useQuery({
     queryKey: ["agents"],
     queryFn: workspaceApi.listAgents,
@@ -141,7 +147,7 @@ export function App() {
   });
   const agents = agentsQuery.data ?? [];
   const sessions = sessionsQuery.data ?? [];
-  const stream = useRunStream((runId, sessionId) => {
+  const stream = useRunStream(clientId, (runId, sessionId) => {
     void queryClient.invalidateQueries({ queryKey: ["messages", sessionId] });
     void queryClient.invalidateQueries({ queryKey: ["usage"] });
     if (runId) void queryClient.invalidateQueries({ queryKey: ["runs"] });
@@ -203,6 +209,19 @@ export function App() {
     void queryClient.refetchQueries({ type: "active" });
   }
 
+  async function changeWorkspace(nextClientId: string) {
+    await queryClient.cancelQueries();
+    queryClient.clear();
+    saveClientId(nextClientId);
+    sessionsInitialized.current = false;
+    setSelectedAgentId("");
+    setSelectedSessionId("");
+    setTargetAgentId("");
+    setDraft("");
+    setClientId(nextClientId);
+    setDialog(null);
+  }
+
   function submitMessage(event?: FormEvent<HTMLFormElement> | KeyboardEvent<HTMLTextAreaElement>) {
     event?.preventDefault();
     const content = draft.trim();
@@ -212,9 +231,10 @@ export function App() {
     setTargetAgentId("");
   }
 
-  const queryError = agentsQuery.error || sessionsQuery.error || messagesQuery.error
-    || runsQuery.error || usageQuery.error;
-  const resourcesLoading = agentsQuery.isLoading || sessionsQuery.isLoading;
+  const queryError = workspaceQuery.error || agentsQuery.error || sessionsQuery.error
+    || messagesQuery.error || runsQuery.error || usageQuery.error;
+  const resourcesLoading = workspaceQuery.isLoading || agentsQuery.isLoading
+    || sessionsQuery.isLoading;
 
   return (
     <main className="workspace-shell">
@@ -423,7 +443,13 @@ export function App() {
         loading={runsQuery.isLoading}
       />
 
-      {dialog === "settings" && <WorkspaceSettings onClose={() => setDialog(null)} />}
+      {dialog === "settings" && (
+        <WorkspaceSettings
+          clientId={clientId}
+          onClose={() => setDialog(null)}
+          onWorkspaceChange={changeWorkspace}
+        />
+      )}
       {dialog === "agent" && (
         <AgentDialog
           onClose={() => setDialog(null)}

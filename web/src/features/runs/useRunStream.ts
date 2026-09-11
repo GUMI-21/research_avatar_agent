@@ -29,7 +29,10 @@ const emptyRun: LiveRun = {
   error: null,
 };
 
-export function useRunStream(onTerminal: (runId: string, sessionId: string) => void) {
+export function useRunStream(
+  clientId: string,
+  onTerminal: (runId: string, sessionId: string) => void,
+) {
   const [connection, setConnection] = useState<SocketState>("connecting");
   const [run, setRun] = useState<LiveRun>(emptyRun);
   const clientRef = useRef<WorkspaceRunSocket | null>(null);
@@ -38,13 +41,15 @@ export function useRunStream(onTerminal: (runId: string, sessionId: string) => v
   terminalRef.current = onTerminal;
 
   useEffect(() => {
-    const client = new WorkspaceRunSocket((frame) => {
+    setRun(emptyRun);
+    activeSessionRef.current = "";
+    const client = new WorkspaceRunSocket(clientId, (frame) => {
       handleFrame(frame, setRun, terminalRef.current, activeSessionRef.current);
     }, setConnection);
     clientRef.current = client;
     client.connect();
     return () => client.close();
-  }, []);
+  }, [clientId]);
 
   const send = useCallback((sessionId: string, content: string, targetAgentId?: string) => {
     activeSessionRef.current = sessionId;

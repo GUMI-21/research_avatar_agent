@@ -36,6 +36,10 @@ remain same-origin during development.
 VITE_CLIENT_ID=local-demo
 ```
 
+`VITE_CLIENT_ID` is only the initial local username. The Workspace settings dialog
+can open or create another user ID; the browser stores it locally and uses it for
+all REST and WebSocket requests.
+
 `X-Client-ID` is a development scope header and is not authentication.
 
 ## Validation and delivery

@@ -108,10 +108,28 @@ function renderApp() {
 
 describe("Agent workspace resources", () => {
   beforeEach(() => {
+    window.localStorage.clear();
     FakeWebSocket.instances = [];
+    const registeredWorkspaces = new Set(["local-demo"]);
     vi.stubGlobal("WebSocket", FakeWebSocket);
     vi.stubGlobal("fetch", vi.fn((input: RequestInfo | URL, init?: RequestInit) => {
       const path = String(input);
+      const workspaceMatch = path.match(/^\/api\/v1\/workspaces\/([^/]+)$/);
+      if (workspaceMatch && !init?.method) {
+        const username = decodeURIComponent(workspaceMatch[1]);
+        return registeredWorkspaces.has(username)
+          ? jsonResponse({ username, created_at: now })
+          : Promise.resolve({
+              ok: false,
+              status: 404,
+              json: async () => ({ detail: "Workspace not found" }),
+            } as Response);
+      }
+      if (path === "/api/v1/workspaces" && init?.method === "POST") {
+        const username = JSON.parse(String(init.body)).username;
+        registeredWorkspaces.add(username);
+        return jsonResponse({ username, created_at: now });
+      }
       if (path.endsWith(`/api/v1/agents/${agent.id}/memories`) && init?.method === "POST") {
         return jsonResponse({ ...memory, content: JSON.parse(String(init.body)).content });
       }
@@ -379,6 +397,35 @@ describe("Agent workspace resources", () => {
       }),
     ));
   });
+  it("switches the REST and WebSocket workspace to a custom user ID", async () => {
+    renderApp();
+    await screen.findByRole("heading", { name: "项目计划" });
+    fireEvent.click(screen.getByRole("button", { name: "设置" }));
+
+    const input = await screen.findByLabelText("用户 ID");
+    fireEvent.change(input, { target: { value: "New_User" } });
+    fireEvent.click(screen.getByRole("button", { name: "打开或创建用户" }));
+
+    await waitFor(() => {
+      expect(window.localStorage.getItem("personal-agent-workspace-id")).toBe("new_user");
+    });
+    expect(fetch).toHaveBeenCalledWith(
+      "/api/v1/workspaces",
+      expect.objectContaining({
+        method: "POST",
+        body: JSON.stringify({ username: "new_user" }),
+      }),
+    );
+    await waitFor(() => expect(fetch).toHaveBeenCalledWith(
+      "/api/v1/agents",
+      expect.objectContaining({
+        headers: expect.objectContaining({ "X-Client-ID": "new_user" }),
+      }),
+    ));
+    expect(FakeWebSocket.instances.at(-1)?.url).toContain("client_id=new_user");
+    expect(screen.queryByRole("heading", { name: "工作区设置" })).not.toBeInTheDocument();
+  });
+
   it("configures the real server runtime from settings", async () => {
     renderApp();
     fireEvent.click(screen.getByRole("button", { name: "设置" }));

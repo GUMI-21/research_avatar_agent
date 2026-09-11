@@ -1,5 +1,3 @@
-import { clientId } from "./workspace";
-
 export type SocketState = "connecting" | "open" | "closed";
 
 export type RunEventType =
@@ -39,6 +37,7 @@ export class WorkspaceRunSocket {
   private lastSequence = 0;
 
   constructor(
+    private readonly clientId: string,
     private readonly onFrame: (frame: WorkspaceFrame) => void,
     private readonly onState: (state: SocketState) => void,
   ) {}
@@ -48,7 +47,7 @@ export class WorkspaceRunSocket {
     this.onState("connecting");
     const protocol = window.location.protocol === "https:" ? "wss:" : "ws:";
     this.socket = new WebSocket(
-      `${protocol}//${window.location.host}/api/v1/ws?client_id=${encodeURIComponent(clientId)}`,
+      `${protocol}//${window.location.host}/api/v1/ws?client_id=${encodeURIComponent(this.clientId)}`,
     );
     this.socket.onopen = () => {
       this.onState("open");
