@@ -6,11 +6,11 @@ from contextlib import asynccontextmanager
 from fastapi import FastAPI
 from langgraph.checkpoint.memory import InMemorySaver
 
-from app.adapters.agent import NativeAgentRuntime
+from app.adapters.agent import CodexAgentRuntime, NativeAgentRuntime
 from app.adapters.knowledge import FastEmbedAdapter
 from app.api.router import api_router
 from app.core.database import Database
-from app.core.settings import Settings, get_settings
+from app.core.settings import SERVER_ROOT, Settings, get_settings
 from app.services.llm_credentials import LLMCredentialStore
 from app.services.llm_runtime import LLMRuntime
 from app.services.runtime_registry import RuntimeRegistry
@@ -58,6 +58,9 @@ def create_app(settings: Settings) -> FastAPI:
     runtime_registry = RuntimeRegistry()
     # 注册创建 NativeAgentRuntime 的匿名工厂函数
     runtime_registry.register("native", lambda: NativeAgentRuntime(llm_runtime))
+    runtime_registry.register(
+        "codex", lambda: CodexAgentRuntime(SERVER_ROOT.parent)
+    )
     app.state.llm_runtime = llm_runtime
     app.state.runtime_registry = runtime_registry
     app.include_router(api_router)

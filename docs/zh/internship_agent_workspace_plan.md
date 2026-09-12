@@ -254,6 +254,8 @@ Provider/Model 聚合属于后续增强，不阻塞可用 Workspace。
 
 ### 当前实现状态（2026-09-11）
 
+Codex CLI Adapter 第一批已接入 `codex exec --json`：固定仓库工作目录和 `workspace-write` 沙箱，默认继承本机 Codex/CC Switch 模型配置，并将回复及 Token 用量归一化为现有 `RuntimeEvent`。当前仍使用临时 Codex 会话；工具事件映射、会话恢复、项目目录配置和前端 Runtime 选择待后续批次。
+
 Native Agent 聊天执行链已接入其绑定知识库的混合检索，并在 6000 字符预算内注入带
 引用上下文；缺少 Embedding Client 的轻量执行仍可回退到关键词检索。运行事件会记录
 检索策略、每个知识库的候选 Chunk 与预算后实际选中的 Chunk，但不持久化笔记正文。

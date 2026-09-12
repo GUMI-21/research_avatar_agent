@@ -8,11 +8,13 @@ from app.adapters.agent.base import (
     RuntimeEventType,
     RuntimeRequest,
 )
+from app.adapters.agent.codex import CodexAgentRuntime
 from app.adapters.agent.native import NativeAgentRuntime
 
 # 外部引用当前包使用*时对外暴露的类
 __all__ = [
     "AgentRuntimeAdapter",
+    "CodexAgentRuntime",
     "HandoffTarget",
     "NativeAgentRuntime",
     "RuntimeEvent",
