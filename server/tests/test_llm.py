@@ -11,6 +11,7 @@ import httpx
 import yaml
 from fastapi import FastAPI, status
 from pydantic import SecretStr
+from sqlalchemy import select
 
 from app.adapters.llm import (
     DeepSeekAdapter,
@@ -27,6 +28,7 @@ from app.adapters.llm.errors import (
 )
 from app.api.errors import llm_http_exception
 from app.api.router import api_router
+from app.core.database import Base, Database
 from app.core.llm_catalog import LLM_PROVIDER_CATALOG
 from app.core.settings import (
     LLMProviderSettings,
@@ -34,7 +36,9 @@ from app.core.settings import (
     Settings,
     load_settings,
 )
+from app.models import LLMCredentialRecord
 from app.schemas.llm import LLMConfigRequest, LLMProvider
+from app.services.llm_credentials import LLMCredentialStore
 from app.services.llm_runtime import LLMRuntime
 from logs import log
 
@@ -246,6 +250,46 @@ class RuntimeAPIIntegrationTest(unittest.IsolatedAsyncioTestCase):
         self.assertEqual(client_b.json()["provider"], "mock")
         self.assertFalse(client_b.json()["api_key_configured"])
         self.assertNotIn("client-a-secret", client_a.text + client_b.text)
+
+    async def test_api_key_is_encrypted_and_restored_by_client_id(self) -> None:
+        database = Database("sqlite+aiosqlite:///:memory:")
+        async with database.engine.begin() as connection:
+            await connection.run_sync(Base.metadata.create_all)
+        key_path = Path(self._testMethodName + ".key")
+        try:
+            store = LLMCredentialStore(database, key_path)
+            app = FastAPI()
+            app.state.llm_runtime = LLMRuntime(make_llm_settings())
+            app.state.llm_credentials = store
+            app.include_router(api_router)
+            transport = httpx.ASGITransport(app=app)
+            async with httpx.AsyncClient(
+                transport=transport, base_url="http://testserver"
+            ) as client:
+                response = await client.post(
+                    "/api/v1/llm/config",
+                    json={"provider": "deepseek", "api_key": "persisted-secret"},
+                    headers={"X-Client-ID": "client-a"},
+                )
+
+            async with database.session() as session:
+                record = (
+                    await session.execute(select(LLMCredentialRecord))
+                ).scalar_one()
+            restored = LLMRuntime(make_llm_settings())
+            await store.restore(restored)
+
+            self.assertEqual(response.status_code, status.HTTP_200_OK)
+            self.assertNotIn("persisted-secret", record.api_key_ciphertext)
+            self.assertEqual(
+                restored.current_config("client-a").provider.value, "deepseek"
+            )
+            self.assertEqual(
+                restored.current_config("client-b").provider.value, "mock"
+            )
+        finally:
+            await database.dispose()
+            key_path.unlink(missing_ok=True)
 
     async def test_provider_presets_are_valid_config_requests(self) -> None:
         app = FastAPI()

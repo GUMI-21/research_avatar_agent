@@ -163,7 +163,7 @@ Invalid or missing fields return HTTP 422:
 
 ## Runtime LLM Configuration
 
-Unity and web clients share one process-wide runtime configuration endpoint:
+Unity and web clients share client-scoped runtime configuration endpoints:
 
 ### Provider catalog
 
@@ -208,8 +208,9 @@ POST /api/v1/llm/config
 Content-Type: application/json
 ```
 
-The last successful request becomes active for all clients. The configuration
-is kept only in memory and is reset when the server restarts.
+The last successful request becomes active for the supplied `X-Client-ID`.
+Provider configurations are isolated by `client_id + provider` and restored
+after restart.
 
 Supported providers and defaults:
 
@@ -267,9 +268,10 @@ Response:
 The response summarizes the active runtime configuration without exposing the
 credential itself.
 
-API keys are never returned, persisted, or logged. To prevent a server
-environment key from being forwarded to an arbitrary host, a custom `base_url`
-is accepted only when `api_key` is supplied in the same request.
+API keys are never returned or logged. Submitted keys are encrypted with the
+local Fernet master key before SQLite persistence; environment keys remain in
+the server environment. To prevent an environment key from being forwarded to
+an arbitrary host, a custom `base_url` requires a client-submitted key.
 
 This unauthenticated configuration endpoint is intended only for the local
 demo server bound to `127.0.0.1`. Add authentication and TLS before exposing

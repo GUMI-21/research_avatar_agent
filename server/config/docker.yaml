@@ -26,6 +26,7 @@ embedding:
   cache_dir: /app/runtime/data/models/fastembed
 
 llm:
+  credential_key_path: /app/runtime/credential.key
   default_provider: mock
   timeout_seconds: 30
   max_output_tokens: 1024

@@ -74,6 +74,7 @@ class LLMProviderSettings(StrictSettingsModel):
 class LLMSettings(StrictSettingsModel):
     """Provider-independent defaults for runtime LLM selection."""
 
+    credential_key_path: Path = SERVER_ROOT / "runtime" / "credential.key"
     default_provider: LLMProvider
     timeout_seconds: float = Field(gt=0.0, le=300.0)
     max_output_tokens: int = Field(ge=1, le=131_072)

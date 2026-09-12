@@ -186,9 +186,13 @@ curl -X POST http://127.0.0.1:8000/api/v1/llm/config \
   -d '{"provider":"openai"}'
 ```
 
-Unity and web clients use this shared endpoint to update the same in-memory
-runtime configuration. See the [API design](docs/api.md) for explicit-key
-examples and security constraints.
+Unity and web clients use this shared endpoint. Submitted provider keys are
+scoped by `client_id + provider`, encrypted before SQLite persistence, and
+never returned by the API. The local Fernet master key is generated at
+`runtime/credential.key`; keep that ignored runtime file when retaining the
+database, because losing it makes stored provider keys unreadable. Environment
+variable keys remain outside the database. See the [API design](docs/api.md)
+for explicit-key examples and security constraints.
 
 Run the backend tests from the `server/` directory:
 

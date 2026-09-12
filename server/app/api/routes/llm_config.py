@@ -1,6 +1,6 @@
 """Client-scoped runtime LLM configuration endpoint."""
 
-from fastapi import APIRouter, Depends, status
+from fastapi import APIRouter, Depends, Request, status
 
 from app.adapters.llm.errors import LLMConfigurationError
 from app.api.dependencies import ClientID, get_llm_runtime
@@ -38,10 +38,15 @@ async def get_llm_config(
 async def configure_llm(
     config_request: LLMConfigRequest,
     client_id: ClientID,
+    http_request: Request,
     llm_runtime: LLMRuntime = Depends(get_llm_runtime),
 ) -> LLMConfigResponse:
-    """Select a provider without persisting or returning its API key."""
+    """Select and persist a provider without returning its API key."""
     try:
-        return llm_runtime.configure(config_request, client_id)
+        response = llm_runtime.configure(config_request, client_id)
+        credentials = getattr(http_request.app.state, "llm_credentials", None)
+        if credentials is not None:
+            await credentials.save(client_id, config_request, response)
+        return response
     except LLMConfigurationError as error:
         raise llm_http_exception(error) from error

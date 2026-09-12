@@ -11,6 +11,7 @@ from app.adapters.knowledge import FastEmbedAdapter
 from app.api.router import api_router
 from app.core.database import Database
 from app.core.settings import Settings, get_settings
+from app.services.llm_credentials import LLMCredentialStore
 from app.services.llm_runtime import LLMRuntime
 from app.services.runtime_registry import RuntimeRegistry
 from logs import configure_logging, log
@@ -19,6 +20,7 @@ from logs import configure_logging, log
 @asynccontextmanager # 异步协程，由“异步生成器”实现的生命周期上下文。
 async def lifespan(app: FastAPI) -> AsyncIterator[None]:
     """Record the server process lifecycle."""
+    await app.state.llm_credentials.restore(app.state.llm_runtime)
     log.info(
         "Starting {} version {} environment={}",
         app.title,
@@ -50,6 +52,9 @@ def create_app(settings: Settings) -> FastAPI:
         cache_dir=settings.embedding.cache_dir,
     )
     llm_runtime = LLMRuntime(settings.llm)
+    app.state.llm_credentials = LLMCredentialStore(
+        app.state.database, settings.llm.credential_key_path
+    )
     runtime_registry = RuntimeRegistry()
     # 注册创建 NativeAgentRuntime 的匿名工厂函数
     runtime_registry.register("native", lambda: NativeAgentRuntime(llm_runtime))

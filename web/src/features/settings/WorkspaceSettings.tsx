@@ -138,6 +138,7 @@ export function WorkspaceSettings({ clientId, onClose, onWorkspaceChange }: Prop
                 当前配置：{configured.provider} / {configured.model} · Key 来源：{configured.api_key_source}
               </p>
             )}
+            <p className="inspector-muted">API Key 按用户与厂商加密保存在本地 Server，不会回显。</p>
             <button className="section-action" disabled={!selected || configMutation.isPending}>
               {configMutation.isPending ? "应用中…" : "应用配置"}
             </button>

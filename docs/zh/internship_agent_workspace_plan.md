@@ -290,11 +290,13 @@ Native Runtime 注入最近 12 条、最多 6,000 字符的会话上下文。Lan
 - Web Memory Inspector 已直接接入上述 API，支持查看、新增、启停和删除当前 Agent 的长期记忆。
 - Web 首版交互已统一 Agent 与最近会话选择，流式消息自动滚动到底部，并为资源请求错误提供原位重试。
 - Web 模型设置直接使用 Server 的 Provider Catalog 与 LLM Runtime 配置接口，可读取当前安全摘要、
-  切换 Provider/Model，并选择临时提交 API Key 或使用环境变量；配置与 Key 在服务进程内按
-  `client_id` 隔离，页面不持久化或回显密钥。
+  切换 Provider/Model，并提交 API Key 或使用环境变量；Key 按 `client_id + provider` 使用本地
+  Fernet 主密钥加密入库，页面和 API 均不持久化或回显明文。
 - 会话标题区提供真实 Session 历史下拉选择；Agent 创建与编辑均使用 Provider Catalog 联动选择
-  厂商和模型。LLM Runtime 按 `client_id + provider` 保留进程内凭据，Agent 的厂商和模型会随
+  厂商和模型。LLM Runtime 按 `client_id + provider` 恢复持久凭据，Agent 的厂商和模型会随
   RuntimeRequest 进入实际调用，handoff 后改用目标 Agent 配置。
+- 对话输入框支持 `@Agent` 候选，将提及解析为现有 `target_agent_id` handoff 并在发送前移除
+  提及文本；输入区左下角可切换当前实际执行 Agent 的持久模型配置。
 - Obsidian RAG 已开始建设 KnowledgeSource 与 KnowledgeDocument 数据基础。
 - KnowledgeSource 已具备客户端隔离的 Repository、事务服务和本地目录安全校验。
 - KnowledgeSource REST API 支持注册、列表和详情查询；目录扫描通过后续同步操作显式触发。
