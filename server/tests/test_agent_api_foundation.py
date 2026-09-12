@@ -22,6 +22,7 @@ class AgentSchemaTest(unittest.TestCase):
         )
 
         self.assertEqual(data.name, "Personal")
+        self.assertEqual(data.avatar_emoji, "🤖")
         self.assertEqual(data.model, "demo-model")
         self.assertEqual(data.runtime, "native")
 
@@ -43,6 +44,7 @@ class AgentSchemaTest(unittest.TestCase):
             id="agent-1",
             client_id="client-a",
             name="Personal",
+            avatar_emoji="🤖",
             system_prompt="Help.",
             runtime="native",
             created_at="2026-08-24T00:00:00Z",

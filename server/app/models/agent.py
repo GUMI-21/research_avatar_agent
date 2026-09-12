@@ -38,6 +38,7 @@ class AgentRecord(Base):
     id: Mapped[str] = mapped_column(String(36), primary_key=True, default=new_id)
     client_id: Mapped[str] = mapped_column(String(64), index=True)  # 数据隔离作用域
     name: Mapped[str] = mapped_column(String(80))  # 同一客户端内唯一的展示名称
+    avatar_emoji: Mapped[str] = mapped_column(String(16), default="🤖", server_default="🤖")
     system_prompt: Mapped[str] = mapped_column(Text)  # Agent 的身份和行为指令
     runtime: Mapped[str] = mapped_column(
         String(32), default="native", server_default="native"

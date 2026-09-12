@@ -54,6 +54,7 @@ class AgentModelTest(unittest.IsolatedAsyncioTestCase):
                 await session.commit()
 
                 self.assertEqual(agent.runtime, "native")
+                self.assertEqual(agent.avatar_emoji, "🤖")
                 self.assertEqual(agent.knowledge_source_ids, [])
                 self.assertIsNotNone(agent.id)
                 self.assertIsNotNone(agent.created_at)

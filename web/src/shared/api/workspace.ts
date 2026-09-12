@@ -9,6 +9,7 @@ export type Agent = {
   id: string;
   client_id: string;
   name: string;
+  avatar_emoji: string;
   system_prompt: string;
   runtime: string;
   provider: string | null;
@@ -146,12 +147,12 @@ export const workspaceApi = {
   },
   listAgents: async () =>
     (await request<{ agents: Agent[] }>("/api/v1/agents")).agents,
-  createAgent: (input: { name: string; system_prompt: string; runtime?: string; provider: string; model: string }) =>
+  createAgent: (input: { name: string; avatar_emoji: string; system_prompt: string; runtime?: string; provider: string; model: string }) =>
     request<Agent>("/api/v1/agents", {
       method: "POST",
       body: JSON.stringify(input),
     }),
-  updateAgent: (agentId: string, input: Partial<Pick<Agent, "name" | "system_prompt" | "provider" | "model">>) =>
+  updateAgent: (agentId: string, input: Partial<Pick<Agent, "name" | "avatar_emoji" | "system_prompt" | "provider" | "model">>) =>
     request<Agent>(`/api/v1/agents/${encodeURIComponent(agentId)}`, {
       method: "PATCH",
       body: JSON.stringify(input),

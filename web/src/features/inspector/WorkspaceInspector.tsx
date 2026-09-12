@@ -88,7 +88,7 @@ export function WorkspaceInspector({
           <section>
             <h2><Bot size={15} />当前 Agent</h2>
             <div className="profile-card">
-              <span className="avatar large">{agent.name.trim().charAt(0).toUpperCase()}</span>
+              <span className="avatar large">{agent.avatar_emoji || agent.name.trim().charAt(0).toUpperCase()}</span>
               <div><b>{agent.name}</b><small>{agent.runtime} · {agent.model || "默认模型"}</small></div>
             </div>
           </section>

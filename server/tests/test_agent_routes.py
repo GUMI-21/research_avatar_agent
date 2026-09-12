@@ -31,6 +31,7 @@ class AgentRoutesTest(unittest.IsolatedAsyncioTestCase):
     async def test_create_and_list_agents_are_scoped_by_client(self) -> None:
         payload = {
             "name": "Personal",
+            "avatar_emoji": "🧠",
             "system_prompt": "Help with my work.",
         }
         created = await self.client.post(
@@ -58,6 +59,7 @@ class AgentRoutesTest(unittest.IsolatedAsyncioTestCase):
 
         self.assertEqual(created.status_code, 201)
         self.assertEqual(created.json()["client_id"], "client-a")
+        self.assertEqual(created.json()["avatar_emoji"], "🧠")
         self.assertEqual(len(visible.json()["agents"]), 1)
         self.assertEqual(hidden.json(), {"agents": []})
         self.assertEqual(detail.json()["id"], agent_id)
@@ -81,6 +83,7 @@ class AgentRoutesTest(unittest.IsolatedAsyncioTestCase):
             headers={"X-Client-ID": "client-a"},
             json={
                 "system_prompt": "Use the selected provider.",
+                "avatar_emoji": "💻",
                 "provider": "openai",
                 "model": "gpt-5.6-sol",
             },
@@ -93,6 +96,7 @@ class AgentRoutesTest(unittest.IsolatedAsyncioTestCase):
 
         self.assertEqual(updated.status_code, 200)
         self.assertEqual(updated.json()["provider"], "openai")
+        self.assertEqual(updated.json()["avatar_emoji"], "💻")
         self.assertEqual(updated.json()["model"], "gpt-5.6-sol")
         self.assertEqual(updated.json()["system_prompt"], "Use the selected provider.")
         self.assertEqual(concealed.status_code, 404)

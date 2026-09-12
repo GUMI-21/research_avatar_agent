@@ -25,12 +25,15 @@ import {
   workspaceApi,
   WorkspaceSession,
 } from "../shared/api/workspace";
+import { MarkdownContent } from "../shared/ui/MarkdownContent";
 
 type CreateDialog = "agent" | "session" | "settings" | null;
 
-function agentInitial(name: string) {
-  return name.trim().charAt(0).toUpperCase() || "A";
+function agentAvatar(agent?: Agent) {
+  return agent?.avatar_emoji || agent?.name.trim().charAt(0).toUpperCase() || "🤖";
 }
+
+const AGENT_EMOJIS = ["🤖", "🧠", "🔎", "💻", "🧪", "✍️", "🛠️", "📚", "🎯", "🐙"];
 
 function agentMentionPattern(name: string) {
   const escaped = name.replace(/[.*+?^${}()|[\]\\]/g, "\\$&");
@@ -300,7 +303,7 @@ export function App() {
               key={agent.id}
               onClick={() => selectAgent(agent)}
             >
-              <span className="avatar">{agentInitial(agent.name)}</span>
+              <span className="avatar">{agentAvatar(agent)}</span>
               <span>
                 <b>{agent.name}</b>
                 <small>{agent.provider || "默认厂商"} · {agent.model || "默认模型"}</small>
@@ -398,10 +401,12 @@ export function App() {
               >
                 {message.role !== "user" && (
                   <div className="message-author">
-                    <Sparkles size={14} />{owner?.name || "Agent"}
+                    <span className="avatar message-avatar">{agentAvatar(owner)}</span>{owner?.name || "Agent"}
                   </div>
                 )}
-                <p>{message.content}</p>
+                {message.role === "user"
+                  ? <p>{message.content}</p>
+                  : <div className="markdown-content"><MarkdownContent>{message.content}</MarkdownContent></div>}
                 <time>{formatDate(message.created_at)}</time>
               </article>
             );
@@ -414,8 +419,8 @@ export function App() {
           {liveHere && stream.run.events.length > 0 && <RunCard run={stream.run} agents={agents} />}
           {liveHere && stream.run.assistantText && (
             <article className="message assistant-message live-message">
-              <div className="message-author"><Sparkles size={14} />{liveAgent?.name || "Agent"}</div>
-              <p>{stream.run.assistantText}<span className="stream-cursor" /></p>
+              <div className="message-author"><span className="avatar message-avatar">{agentAvatar(liveAgent)}</span>{liveAgent?.name || "Agent"}</div>
+              <div className="markdown-content streaming"><MarkdownContent>{stream.run.assistantText}</MarkdownContent><span className="stream-cursor" /></div>
             </article>
           )}
           {liveHere && stream.run.error && <div className="error-banner">{stream.run.error}</div>}
@@ -454,7 +459,7 @@ export function App() {
             <div className="mention-menu" role="listbox" aria-label="Agent 候选">
               {mentionCandidates.map((item) => (
                 <button type="button" role="option" key={item.id} onMouseDown={(event) => event.preventDefault()} onClick={() => selectMention(item)}>
-                  <span className="avatar">{agentInitial(item.name)}</span>
+                  <span className="avatar">{agentAvatar(item)}</span>
                   <span><b>@{item.name}</b><small>{item.provider || "默认厂商"} · {item.model || "默认模型"}</small></span>
                 </button>
               ))}
@@ -540,6 +545,7 @@ function AgentDialog({ agent, onClose, onSaved }: {
   const configQuery = useQuery({ queryKey: ["llm-config"], queryFn: workspaceApi.getLLMConfig });
   const [providerId, setProviderId] = useState("");
   const [model, setModel] = useState("");
+  const [avatarEmoji, setAvatarEmoji] = useState(agent?.avatar_emoji || "🤖");
   const initialized = useRef(false);
   const providers = providersQuery.data ?? [];
   const provider = providers.find((item) => item.provider === providerId);
@@ -558,7 +564,7 @@ function AgentDialog({ agent, onClose, onSaved }: {
         model,
         ...(input.apiKey ? { api_key: input.apiKey } : {}),
       });
-      const agentInput = { name: input.name, system_prompt: input.system_prompt, provider: providerId, model };
+      const agentInput = { name: input.name, avatar_emoji: avatarEmoji, system_prompt: input.system_prompt, provider: providerId, model };
       return agent
         ? workspaceApi.updateAgent(agent.id, agentInput)
         : workspaceApi.createAgent({ ...agentInput, runtime: "native" });
@@ -582,6 +588,12 @@ function AgentDialog({ agent, onClose, onSaved }: {
           <button type="button" aria-label="关闭" onClick={onClose}><X size={18} /></button>
         </div>
         <label>名称<input name="name" required maxLength={80} defaultValue={agent?.name} placeholder="例如：Personal" /></label>
+        <label>
+          头像 Emoji
+          <select aria-label="Agent 头像 Emoji" value={avatarEmoji} onChange={(event) => setAvatarEmoji(event.target.value)}>
+            {AGENT_EMOJIS.map((emoji) => <option key={emoji} value={emoji}>{emoji}</option>)}
+          </select>
+        </label>
         <label>系统提示词<textarea name="system_prompt" required maxLength={50000} defaultValue={agent?.system_prompt} placeholder="说明 Agent 的职责和行为边界" /></label>
         <label>
           厂商

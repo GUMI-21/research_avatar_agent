@@ -292,6 +292,7 @@ Native Runtime 注入最近 12 条、最多 6,000 字符的会话上下文。Lan
 - Web 模型设置直接使用 Server 的 Provider Catalog 与 LLM Runtime 配置接口，可读取当前安全摘要、
   切换 Provider/Model，并提交 API Key 或使用环境变量；Key 按 `client_id + provider` 使用本地
   Fernet 主密钥加密入库，页面和 API 均不持久化或回显明文。
+- Agent 支持持久化 Emoji 头像，创建、编辑、侧栏、Inspector 与对话回复使用同一展示身份。
 - 会话标题区提供真实 Session 历史下拉选择；Agent 创建与编辑均使用 Provider Catalog 联动选择
   厂商和模型。LLM Runtime 按 `client_id + provider` 恢复持久凭据，Agent 的厂商和模型会随
   RuntimeRequest 进入实际调用，handoff 后改用目标 Agent 配置。

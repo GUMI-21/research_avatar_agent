@@ -9,6 +9,7 @@ const agent = {
   id: "agent-1",
   client_id: "local-demo",
   name: "Personal",
+  avatar_emoji: "🧠",
   system_prompt: "帮助我整理项目。",
   runtime: "native",
   provider: "openai",
@@ -21,6 +22,7 @@ const reviewer = {
   ...agent,
   id: "agent-2",
   name: "Reviewer",
+  avatar_emoji: "🔎",
   system_prompt: "审查实现并指出风险。",
   provider: "mock",
   model: "mock-echo",
@@ -200,7 +202,7 @@ describe("Agent workspace resources", () => {
             agent_id: agent.id,
             run_id: "run-1",
             role: "assistant",
-            content: "历史回答",
+            content: "**历史回答 **\n\n1. 第一项",
             sequence: 1,
             created_at: now,
           }],
@@ -214,7 +216,8 @@ describe("Agent workspace resources", () => {
     renderApp();
 
     expect(await screen.findByRole("heading", { name: "项目计划" })).toBeInTheDocument();
-    expect(await screen.findByText("历史回答")).toBeInTheDocument();
+    expect((await screen.findByText("历史回答")).tagName).toBe("STRONG");
+    expect(screen.getByText("第一项").closest("li")).not.toBeNull();
     expect(screen.getByRole("combobox", { name: "聊天记录" })).toHaveValue(session.id);
     expect(screen.getByText("帮助我整理项目。")).toBeInTheDocument();
     expect(fetch).toHaveBeenCalledWith(
@@ -299,12 +302,13 @@ describe("Agent workspace resources", () => {
     });
     act(() => {
       socket.emit({ type: "run_started", run_id: "run-2", sequence: 1, payload: {} });
-      socket.emit({ type: "assistant_delta", run_id: "run-2", sequence: null, payload: { text: "这是流式回答" } });
+      socket.emit({ type: "assistant_delta", run_id: "run-2", sequence: null, payload: { text: "**这是流式回答**" } });
       socket.emit({ type: "run_finished", run_id: "run-2", sequence: 2, payload: { duration_ms: 120 } });
     });
 
     expect(screen.getByText("解释状态图")).toBeInTheDocument();
-    expect(screen.getByText("这是流式回答")).toBeInTheDocument();
+    expect(screen.getByText("这是流式回答").tagName).toBe("STRONG");
+    expect(screen.getByText("这是流式回答").closest("article")).toHaveTextContent("🧠");
     expect(screen.getAllByText("运行完成")).toHaveLength(2);
   });
   it("hands a message to an @mentioned Agent", async () => {
@@ -343,6 +347,7 @@ describe("Agent workspace resources", () => {
     });
     expect(screen.getAllByText("Personal → Reviewer · 手动转交")).toHaveLength(2);
     expect(screen.getByText("审查完成").closest("article")).toHaveTextContent("Reviewer");
+    expect(screen.getByText("审查完成").closest("article")).toHaveTextContent("🔎");
   });
 
   it("switches the current Agent model from the composer", async () => {
@@ -402,13 +407,14 @@ describe("Agent workspace resources", () => {
     await waitFor(() => expect(screen.getByRole("button", { name: "保存" })).toBeEnabled());
     fireEvent.change(screen.getByPlaceholderText("例如：Personal"), { target: { value: "Reviewer" } });
     fireEvent.change(screen.getByPlaceholderText("说明 Agent 的职责和行为边界"), { target: { value: "Review code." } });
+    fireEvent.change(screen.getByRole("combobox", { name: "Agent 头像 Emoji" }), { target: { value: "💻" } });
     fireEvent.click(screen.getByRole("button", { name: "保存" }));
 
     await waitFor(() => expect(fetch).toHaveBeenCalledWith(
       "/api/v1/agents",
       expect.objectContaining({
         method: "POST",
-        body: JSON.stringify({ name: "Reviewer", system_prompt: "Review code.", provider: "mock", model: "mock-echo", runtime: "native" }),
+        body: JSON.stringify({ name: "Reviewer", avatar_emoji: "💻", system_prompt: "Review code.", provider: "mock", model: "mock-echo", runtime: "native" }),
       }),
     ));
   });
@@ -419,6 +425,9 @@ describe("Agent workspace resources", () => {
     await screen.findByRole("option", { name: "OpenAI" });
     fireEvent.change(screen.getByRole("combobox", { name: "Agent 厂商" }), {
       target: { value: "openai" },
+    });
+    fireEvent.change(screen.getByRole("combobox", { name: "Agent 头像 Emoji" }), {
+      target: { value: "🐙" },
     });
     fireEvent.change(screen.getByLabelText("API Key（首次使用该厂商时填写）"), {
       target: { value: "agent-key" },
@@ -431,7 +440,7 @@ describe("Agent workspace resources", () => {
       expect.objectContaining({
         method: "PATCH",
         body: JSON.stringify({
-          name: "Personal", system_prompt: "帮助我整理项目。",
+          name: "Personal", avatar_emoji: "🐙", system_prompt: "帮助我整理项目。",
           provider: "openai", model: "gpt-5.6-luna",
         }),
       }),

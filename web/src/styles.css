@@ -42,8 +42,26 @@ button:disabled { cursor: not-allowed; opacity: .45; }
 .messages { min-height: 0; overflow: auto; padding: 30px max(30px, 8vw); }
 .message { max-width: 720px; margin-bottom: 24px; line-height: 1.7; font-size: 14px; }
 .message p { margin: 0; white-space: pre-wrap; }
+.markdown-content { line-height: 1.75; overflow-wrap: anywhere; }
+.markdown-content p { margin: 0 0 10px; white-space: normal; }
+.markdown-content > :last-child { margin-bottom: 0; }
+.markdown-content h1, .markdown-content h2, .markdown-content h3 { margin: 18px 0 8px; color: #433830; line-height: 1.35; }
+.markdown-content h1 { font-size: 20px; }
+.markdown-content h2 { font-size: 17px; }
+.markdown-content h3 { font-size: 15px; }
+.markdown-content ul, .markdown-content ol { margin: 8px 0 12px; padding-left: 24px; }
+.markdown-content li { margin: 4px 0; }
+.markdown-content blockquote { margin: 12px 0; padding: 3px 12px; border-left: 3px solid #c48668; color: #79695d; background: #f6eadf; }
+.markdown-content code { border-radius: 4px; background: #eadfd2; padding: 2px 5px; font: 12px/1.5 ui-monospace, SFMono-Regular, Consolas, monospace; }
+.markdown-content pre { overflow-x: auto; border: 1px solid #d6c5b5; border-radius: 8px; background: #332e2a; color: #f8eee4; padding: 12px; }
+.markdown-content pre code { background: transparent; padding: 0; color: inherit; }
+.markdown-content table { display: block; max-width: 100%; overflow-x: auto; border-collapse: collapse; margin: 12px 0; }
+.markdown-content th, .markdown-content td { border: 1px solid #d8c7b7; padding: 6px 9px; text-align: left; }
+.markdown-content th { background: #eee1d3; }
+.markdown-content a { color: #a5563c; text-decoration: underline; text-underline-offset: 2px; }
 .message time { display: block; margin-top: 5px; color: #9a8c7e; font-size: 9px; }
 .message-author { display: flex; align-items: center; gap: 6px; margin-bottom: 7px; color: #9b5b43; font-size: 11px; font-weight: 650; }
+.message-avatar { width: 26px; height: 26px; border-radius: 8px; font-size: 15px; }
 .user-message { margin-left: auto; width: fit-content; background: #ad664a; color: #fffaf5; border-radius: 13px 13px 3px 13px; padding: 10px 14px; }
 .user-message time { color: #f0d8ca; text-align: right; }
 .assistant-message { color: #51483f; }

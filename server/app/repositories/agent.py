@@ -18,6 +18,7 @@ class AgentRepository:
         *,
         name: str,
         system_prompt: str,
+        avatar_emoji: str = "🤖",
         runtime: str = "native",
         provider: str | None = None,
         model: str | None = None,
@@ -26,6 +27,7 @@ class AgentRepository:
         agent = AgentRecord(
             client_id=client_id,
             name=name,
+            avatar_emoji=avatar_emoji,
             system_prompt=system_prompt,
             runtime=runtime,
             provider=provider,
