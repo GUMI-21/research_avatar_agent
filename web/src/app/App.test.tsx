@@ -11,7 +11,8 @@ const agent = {
   name: "Personal",
   system_prompt: "帮助我整理项目。",
   runtime: "native",
-  model: "gpt-5.6-luna",
+  provider: "mock",
+  model: "mock-echo",
   knowledge_source_ids: [],
   created_at: now,
   updated_at: now,
@@ -21,7 +22,7 @@ const reviewer = {
   id: "agent-2",
   name: "Reviewer",
   system_prompt: "审查实现并指出风险。",
-  model: "gpt-5.6-reviewer",
+  model: "mock-echo",
 };
 const session = {
   id: "session-1",
@@ -153,8 +154,10 @@ describe("Agent workspace resources", () => {
           api_key_configured: false, api_key_source: "not_required" });
       }
       if (path === "/api/v1/llm/config" && init?.method === "POST") {
-        return jsonResponse({ provider: "openai", model: "gpt-5.6-luna", base_url: "https://api.openai.com/v1",
-          api_key_configured: true, api_key_source: "request" });
+        const body = JSON.parse(String(init.body));
+        return jsonResponse({ provider: body.provider, model: body.model,
+          base_url: body.provider === "mock" ? "mock://local" : "https://api.openai.com/v1",
+          api_key_configured: body.provider !== "mock", api_key_source: body.provider === "mock" ? "not_required" : "request" });
       }
       if (path === "/api/v1/usage/runs?limit=100") return jsonResponse({ runs: [run] });
       if (path === "/api/v1/usage/summary") {
@@ -172,6 +175,9 @@ describe("Agent workspace resources", () => {
       }
       if (path === "/api/v1/agents" && init?.method === "POST") {
         return jsonResponse({ ...agent, id: "agent-2", ...JSON.parse(String(init.body)) });
+      }
+      if (path === `/api/v1/agents/${agent.id}` && init?.method === "PATCH") {
+        return jsonResponse({ ...agent, ...JSON.parse(String(init.body)) });
       }
       if (path === "/api/v1/agents") return jsonResponse({ agents: [agent, reviewer] });
       if (path === "/api/v1/sessions" && init?.method === "POST") {
@@ -384,18 +390,50 @@ describe("Agent workspace resources", () => {
   it("creates an Agent with the selected default model", async () => {
     renderApp();
     fireEvent.click(screen.getByRole("button", { name: "创建 Agent" }));
-    await screen.findByText(/Provider：mock/);
+    await waitFor(() => expect(screen.getByRole("button", { name: "保存" })).toBeEnabled());
     fireEvent.change(screen.getByPlaceholderText("例如：Personal"), { target: { value: "Reviewer" } });
     fireEvent.change(screen.getByPlaceholderText("说明 Agent 的职责和行为边界"), { target: { value: "Review code." } });
-    fireEvent.click(screen.getByRole("button", { name: "创建" }));
+    fireEvent.click(screen.getByRole("button", { name: "保存" }));
 
     await waitFor(() => expect(fetch).toHaveBeenCalledWith(
       "/api/v1/agents",
       expect.objectContaining({
         method: "POST",
-        body: JSON.stringify({ name: "Reviewer", system_prompt: "Review code.", runtime: "native", model: "mock-echo" }),
+        body: JSON.stringify({ name: "Reviewer", system_prompt: "Review code.", provider: "mock", model: "mock-echo", runtime: "native" }),
       }),
     ));
+  });
+  it("edits an existing Agent provider and model", async () => {
+    renderApp();
+    await screen.findByRole("heading", { name: "项目计划" });
+    fireEvent.click(screen.getByRole("button", { name: "编辑 Agent" }));
+    await screen.findByRole("option", { name: "OpenAI" });
+    fireEvent.change(screen.getByRole("combobox", { name: "Agent 厂商" }), {
+      target: { value: "openai" },
+    });
+    fireEvent.change(screen.getByLabelText("API Key（首次使用该厂商时填写）"), {
+      target: { value: "agent-key" },
+    });
+    await waitFor(() => expect(screen.getByRole("button", { name: "保存" })).toBeEnabled());
+    fireEvent.click(screen.getByRole("button", { name: "保存" }));
+
+    await waitFor(() => expect(fetch).toHaveBeenCalledWith(
+      `/api/v1/agents/${agent.id}`,
+      expect.objectContaining({
+        method: "PATCH",
+        body: JSON.stringify({
+          name: "Personal", system_prompt: "帮助我整理项目。",
+          provider: "openai", model: "gpt-5.6-luna",
+        }),
+      }),
+    ));
+    expect(fetch).toHaveBeenCalledWith(
+      "/api/v1/llm/config",
+      expect.objectContaining({
+        method: "POST",
+        body: JSON.stringify({ provider: "openai", model: "gpt-5.6-luna", api_key: "agent-key" }),
+      }),
+    );
   });
   it("switches the REST and WebSocket workspace to a custom user ID", async () => {
     renderApp();

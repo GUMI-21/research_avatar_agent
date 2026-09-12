@@ -22,6 +22,7 @@ class AgentService:
         name: str,
         system_prompt: str,
         runtime: str = "native",
+        provider: str | None = None,
         model: str | None = None,
         knowledge_source_ids: list[str] | None = None,
     ) -> AgentRecord:
@@ -36,6 +37,7 @@ class AgentService:
             name=name,
             system_prompt=system_prompt,
             runtime=runtime,
+            provider=provider,
             model=model,
             knowledge_sources=[sources_by_id[item] for item in requested_ids],
         )

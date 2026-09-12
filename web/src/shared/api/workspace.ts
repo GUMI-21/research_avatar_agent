@@ -11,6 +11,7 @@ export type Agent = {
   name: string;
   system_prompt: string;
   runtime: string;
+  provider: string | null;
   model: string | null;
   knowledge_source_ids: string[];
   created_at: string;
@@ -145,9 +146,14 @@ export const workspaceApi = {
   },
   listAgents: async () =>
     (await request<{ agents: Agent[] }>("/api/v1/agents")).agents,
-  createAgent: (input: { name: string; system_prompt: string; runtime?: string; model?: string }) =>
+  createAgent: (input: { name: string; system_prompt: string; runtime?: string; provider: string; model: string }) =>
     request<Agent>("/api/v1/agents", {
       method: "POST",
+      body: JSON.stringify(input),
+    }),
+  updateAgent: (agentId: string, input: { name: string; system_prompt: string; provider: string; model: string }) =>
+    request<Agent>(`/api/v1/agents/${encodeURIComponent(agentId)}`, {
+      method: "PATCH",
       body: JSON.stringify(input),
     }),
   listSessions: async () =>

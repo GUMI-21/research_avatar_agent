@@ -292,8 +292,9 @@ Native Runtime 注入最近 12 条、最多 6,000 字符的会话上下文。Lan
 - Web 模型设置直接使用 Server 的 Provider Catalog 与 LLM Runtime 配置接口，可读取当前安全摘要、
   切换 Provider/Model，并选择临时提交 API Key 或使用环境变量；配置与 Key 在服务进程内按
   `client_id` 隔离，页面不持久化或回显密钥。
-- 会话标题区提供真实 Session 历史下拉选择；创建 Agent 时从当前 Workspace Provider Catalog
-  选择默认模型。Agent 模型会随 RuntimeRequest 进入实际 LLM 调用，handoff 后改用目标 Agent 模型。
+- 会话标题区提供真实 Session 历史下拉选择；Agent 创建与编辑均使用 Provider Catalog 联动选择
+  厂商和模型。LLM Runtime 按 `client_id + provider` 保留进程内凭据，Agent 的厂商和模型会随
+  RuntimeRequest 进入实际调用，handoff 后改用目标 Agent 配置。
 - Obsidian RAG 已开始建设 KnowledgeSource 与 KnowledgeDocument 数据基础。
 - KnowledgeSource 已具备客户端隔离的 Repository、事务服务和本地目录安全校验。
 - KnowledgeSource REST API 支持注册、列表和详情查询；目录扫描通过后续同步操作显式触发。

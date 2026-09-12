@@ -64,6 +64,39 @@ class AgentRoutesTest(unittest.IsolatedAsyncioTestCase):
         self.assertEqual(concealed.status_code, 404)
         self.assertEqual(concealed.json(), {"detail": "Agent not found"})
 
+    async def test_update_agent_provider_and_model_is_client_scoped(self) -> None:
+        created = await self.client.post(
+            "/api/v1/agents",
+            headers={"X-Client-ID": "client-a"},
+            json={
+                "name": "Personal",
+                "system_prompt": "Help with my work.",
+                "provider": "mock",
+                "model": "mock-echo",
+            },
+        )
+        agent_id = created.json()["id"]
+        updated = await self.client.patch(
+            f"/api/v1/agents/{agent_id}",
+            headers={"X-Client-ID": "client-a"},
+            json={
+                "system_prompt": "Use the selected provider.",
+                "provider": "openai",
+                "model": "gpt-5.6-sol",
+            },
+        )
+        concealed = await self.client.patch(
+            f"/api/v1/agents/{agent_id}",
+            headers={"X-Client-ID": "client-b"},
+            json={"model": "hidden-model"},
+        )
+
+        self.assertEqual(updated.status_code, 200)
+        self.assertEqual(updated.json()["provider"], "openai")
+        self.assertEqual(updated.json()["model"], "gpt-5.6-sol")
+        self.assertEqual(updated.json()["system_prompt"], "Use the selected provider.")
+        self.assertEqual(concealed.status_code, 404)
+
     async def test_client_header_is_required(self) -> None:
         response = await self.client.get("/api/v1/agents")
 

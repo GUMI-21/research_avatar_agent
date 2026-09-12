@@ -160,3 +160,7 @@ button:disabled { cursor: not-allowed; opacity: .45; }
   .workspace-shell { grid-template-columns: 230px minmax(480px, 1fr); }
   .inspector { display: none; }
 }
+
+.header-actions { display: flex; align-items: center; gap: 8px; }
+.icon-action { width: 30px; height: 30px; display: grid; place-items: center; border: 1px solid #d9c8b7; border-radius: 8px; background: #fffaf2; color: #8d5e45; }
+.icon-action:hover { background: #f5e8d8; }

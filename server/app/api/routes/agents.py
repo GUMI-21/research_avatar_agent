@@ -5,7 +5,7 @@ from sqlalchemy.exc import IntegrityError
 
 from app.api.dependencies import ClientID, DBSession
 from app.repositories import AgentRepository
-from app.schemas.agent import AgentCreate, AgentListResponse, AgentRead
+from app.schemas.agent import AgentCreate, AgentListResponse, AgentRead, AgentUpdate
 from app.services import AgentKnowledgeSourceNotFoundError, AgentService
 
 router = APIRouter(prefix="/agents")
@@ -37,6 +37,26 @@ async def create_agent(
             status_code=status.HTTP_404_NOT_FOUND,
             detail="Knowledge source not found",
         ) from error
+    return AgentRead.model_validate(agent)
+
+
+@router.patch("/{agent_id}", response_model=AgentRead)
+async def update_agent(
+    agent_id: str,
+    request: AgentUpdate,
+    client_id: ClientID,
+    session: DBSession,
+) -> AgentRead:
+    try:
+        agent = await AgentRepository(session).update(
+            client_id, agent_id, request.model_dump(exclude_unset=True)
+        )
+        if agent is None:
+            raise HTTPException(status_code=404, detail="Agent not found")
+        await session.commit()
+    except IntegrityError as error:
+        await session.rollback()
+        raise HTTPException(status_code=409, detail="Agent name already exists") from error
     return AgentRead.model_validate(agent)
 
 # 获取当前agent_list

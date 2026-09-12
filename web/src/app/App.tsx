@@ -5,6 +5,7 @@ import {
   FileText,
   LoaderCircle,
   MessageSquareText,
+  Pencil,
   Plus,
   RotateCcw,
   Send,
@@ -115,6 +116,7 @@ export function App() {
   const [selectedAgentId, setSelectedAgentId] = useState("");
   const [selectedSessionId, setSelectedSessionId] = useState("");
   const [dialog, setDialog] = useState<CreateDialog>(null);
+  const [editingAgent, setEditingAgent] = useState<Agent | null>(null);
   const [draft, setDraft] = useState("");
   const [targetAgentId, setTargetAgentId] = useState("");
   const sessionsInitialized = useRef(false);
@@ -253,7 +255,7 @@ export function App() {
 
         <div className="section-heading">
           <p className="section-label">AGENTS</p>
-          <button aria-label="创建 Agent" onClick={() => setDialog("agent")}>
+          <button aria-label="创建 Agent" onClick={() => { setEditingAgent(null); setDialog("agent"); }}>
             <CirclePlus size={15} />
           </button>
         </div>
@@ -268,7 +270,7 @@ export function App() {
               <span className="avatar">{agentInitial(agent.name)}</span>
               <span>
                 <b>{agent.name}</b>
-                <small>{agent.runtime} · {agent.model || "默认模型"}</small>
+                <small>{agent.provider || "默认厂商"} · {agent.model || "默认模型"}</small>
               </span>
             </button>
           ))}
@@ -325,12 +327,23 @@ export function App() {
                   : "选择或创建一个 Agent"}
             </p>
           </div>
-          <span className={`connection-badge ${queryError || stream.connection === "closed" ? "error" : ""}`}>
+          <div className="header-actions">
+            {selectedAgent && (
+              <button
+                className="icon-action"
+                aria-label="编辑 Agent"
+                onClick={() => { setEditingAgent(selectedAgent); setDialog("agent"); }}
+              >
+                <Pencil size={14} />
+              </button>
+            )}
+            <span className={`connection-badge ${queryError || stream.connection === "closed" ? "error" : ""}`}>
             {queryError ? "资源请求失败"
               : resourcesLoading ? "资源加载中"
               : stream.connection === "open" ? "实时已连接"
               : stream.connection === "connecting" ? "实时连接中" : "实时连接断开"}
-          </span>
+            </span>
+          </div>
         </header>
 
         <div className="messages" aria-live="polite">
@@ -452,10 +465,13 @@ export function App() {
       )}
       {dialog === "agent" && (
         <AgentDialog
+          agent={editingAgent}
           onClose={() => setDialog(null)}
-          onCreated={(agent) => {
-            queryClient.setQueryData<Agent[]>(["agents"], (old = []) => [agent, ...old]);
-            setSelectedAgentId(agent.id);
+          onSaved={(saved) => {
+            queryClient.setQueryData<Agent[]>(["agents"], (old = []) =>
+              editingAgent ? old.map((item) => item.id === saved.id ? saved : item) : [saved, ...old]
+            );
+            setSelectedAgentId(saved.id);
             setDialog(null);
           }}
         />
@@ -475,50 +491,83 @@ export function App() {
   );
 }
 
-function AgentDialog({ onClose, onCreated }: {
+function AgentDialog({ agent, onClose, onSaved }: {
+  agent: Agent | null;
   onClose: () => void;
-  onCreated: (agent: Agent) => void;
+  onSaved: (agent: Agent) => void;
 }) {
   const providersQuery = useQuery({ queryKey: ["llm-providers"], queryFn: workspaceApi.listLLMProviders });
   const configQuery = useQuery({ queryKey: ["llm-config"], queryFn: workspaceApi.getLLMConfig });
+  const [providerId, setProviderId] = useState("");
   const [model, setModel] = useState("");
-  const provider = providersQuery.data?.find((item) => item.provider === configQuery.data?.provider);
+  const initialized = useRef(false);
+  const providers = providersQuery.data ?? [];
+  const provider = providers.find((item) => item.provider === providerId);
   useEffect(() => {
-    if (configQuery.data) setModel(configQuery.data.model);
-  }, [configQuery.data]);
-  const mutation = useMutation({ mutationFn: workspaceApi.createAgent, onSuccess: onCreated });
+    if (initialized.current || !configQuery.data || !providers.length) return;
+    initialized.current = true;
+    const initialProvider = agent?.provider || configQuery.data.provider;
+    const option = providers.find((item) => item.provider === initialProvider);
+    setProviderId(initialProvider);
+    setModel(agent?.model || option?.default_model || "");
+  }, [agent, configQuery.data, providersQuery.data]);
+  const mutation = useMutation({
+    mutationFn: async (input: { name: string; system_prompt: string; apiKey: string }) => {
+      await workspaceApi.configureLLM({
+        provider: providerId,
+        model,
+        ...(input.apiKey ? { api_key: input.apiKey } : {}),
+      });
+      const agentInput = { name: input.name, system_prompt: input.system_prompt, provider: providerId, model };
+      return agent
+        ? workspaceApi.updateAgent(agent.id, agentInput)
+        : workspaceApi.createAgent({ ...agentInput, runtime: "native" });
+    },
+    onSuccess: onSaved,
+  });
   function submit(event: FormEvent<HTMLFormElement>) {
     event.preventDefault();
     const data = new FormData(event.currentTarget);
     mutation.mutate({
       name: String(data.get("name")),
       system_prompt: String(data.get("system_prompt")),
-      runtime: "native",
-      model,
+      apiKey: String(data.get("api_key") || ""),
     });
   }
   return (
     <div className="modal-backdrop">
       <form className="modal" onSubmit={submit}>
         <div className="modal-title">
-          <div><small>NEW AGENT</small><h2>创建 Agent</h2></div>
+          <div><small>{agent ? "EDIT AGENT" : "NEW AGENT"}</small><h2>{agent ? "编辑 Agent" : "创建 Agent"}</h2></div>
           <button type="button" aria-label="关闭" onClick={onClose}><X size={18} /></button>
         </div>
-        <label>名称<input name="name" required maxLength={80} placeholder="例如：Personal" /></label>
-        <label>系统提示词<textarea name="system_prompt" required maxLength={50000} placeholder="说明 Agent 的职责和行为边界" /></label>
+        <label>名称<input name="name" required maxLength={80} defaultValue={agent?.name} placeholder="例如：Personal" /></label>
+        <label>系统提示词<textarea name="system_prompt" required maxLength={50000} defaultValue={agent?.system_prompt} placeholder="说明 Agent 的职责和行为边界" /></label>
         <label>
-          默认模型
-          <select aria-label="Agent 默认模型" required value={model} onChange={(event) => setModel(event.target.value)}>
-            {provider?.models.map((item) => (
-              <option key={item.model} value={item.model}>{item.display_name}</option>
-            ))}
+          厂商
+          <select aria-label="Agent 厂商" required disabled={!providers.length} value={providerId} onChange={(event) => {
+            initialized.current = true;
+            const next = providers.find((item) => item.provider === event.target.value);
+            setProviderId(event.target.value);
+            setModel(next?.default_model || "");
+          }}>
+            {providers.map((item) => <option key={item.provider} value={item.provider}>{item.display_name}</option>)}
           </select>
-          <small className="field-hint">Provider：{configQuery.data?.provider || "读取中"}，可在设置中切换。</small>
         </label>
+        <label>
+          模型
+          <select aria-label="Agent 默认模型" required value={model} onChange={(event) => setModel(event.target.value)}>
+            {provider?.models.map((item) => <option key={item.model} value={item.model}>{item.display_name}</option>)}
+          </select>
+        </label>
+        {providerId !== "mock" && (
+          <label>API Key（首次使用该厂商时填写）<input name="api_key" type="password" autoComplete="off" /></label>
+        )}
+        <small className="field-hint">凭据仅保存在 Server 进程内存中；已配置过该厂商时可留空。</small>
         {mutation.error && <p className="form-error">{mutation.error.message}</p>}
         <div className="modal-actions">
           <button type="button" onClick={onClose}>取消</button>
-          <button className="primary" disabled={!model || mutation.isPending}>{mutation.isPending ? "创建中…" : "创建"}</button>
+          <button className="primary" disabled={!providerId || !model || mutation.isPending}>{mutation.isPending ? "保存中…" : "保存"}</button>
         </div>
       </form>
     </div>

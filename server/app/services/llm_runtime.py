@@ -35,7 +35,10 @@ class LLMRuntime(LLMClient):
 
     def __init__(self, settings: LLMSettings) -> None:
         self._settings = settings
-        self._client_configs: dict[str, tuple[LLMClientConfig, str]] = {}
+        self._client_configs: dict[
+            tuple[str, LLMProvider], tuple[LLMClientConfig, str]
+        ] = {}
+        self._active_providers: dict[str, LLMProvider] = {}
         self._config = LLMClientConfig(
             provider=LLMProvider.MOCK,
             model="mock-echo",
@@ -64,7 +67,7 @@ class LLMRuntime(LLMClient):
             return self._store_config(client_id, config, "not_required")
 
         defaults = getattr(self._settings, request.provider.value)
-        api_key, api_key_source = self._resolve_api_key(request)
+        api_key, api_key_source = self._resolve_api_key(request, client_id)
         base_url = str(request.base_url or defaults.base_url).rstrip("/")
         default_base_url = str(defaults.base_url).rstrip("/")
         if api_key_source == "environment" and base_url != default_base_url:
@@ -92,11 +95,13 @@ class LLMRuntime(LLMClient):
 
     def current_config(self, client_id: str | None = None) -> LLMConfigResponse:
         """Return one client's safe summary without exposing its API key."""
-        config, source = (
-            self._client_configs.get(client_id, (self._config, self._api_key_source))
-            if client_id is not None
-            else (self._config, self._api_key_source)
-        )
+        if client_id is None:
+            config, source = self._config, self._api_key_source
+        else:
+            provider = self._active_providers.get(client_id)
+            config, source = self._client_configs.get(
+                (client_id, provider), (self._config, self._api_key_source)
+            )
         return LLMConfigResponse(
             provider=config.provider,
             model=config.model,
@@ -111,19 +116,28 @@ class LLMRuntime(LLMClient):
         if client_id is None:
             self._config, self._api_key_source = config, source
         else:
-            self._client_configs[client_id] = (config, source)
+            self._client_configs[(client_id, config.provider)] = (config, source)
+            self._active_providers[client_id] = config.provider
         return self.current_config(client_id)
 
-    def _config_for(self, client_id: str | None) -> LLMClientConfig:
+    def _config_for(
+        self, client_id: str | None, provider: LLMProvider | None
+    ) -> LLMClientConfig:
         if client_id is None:
             return self._config
-        return self._client_configs.get(
-            client_id, (self._config, self._api_key_source)
-        )[0]
+        selected = provider or self._active_providers.get(client_id)
+        stored = self._client_configs.get((client_id, selected))
+        if stored is not None:
+            return stored[0]
+        if selected is None or selected is self._config.provider:
+            return self._config
+        raise LLMConfigurationError(
+            f"Provider {selected.value} is not configured for this workspace"
+        )
 
     async def generate(self, request: LLMRequest) -> LLMResult:
         """Generate text with the provider active at the start of this call."""
-        base_config = self._config_for(request.client_id)
+        base_config = self._config_for(request.client_id, request.provider)
         config = (
             replace(base_config, model=request.model)
             if request.model else base_config
@@ -159,7 +173,7 @@ class LLMRuntime(LLMClient):
         self, request: LLMRequest
     ) -> AsyncIterator[LLMStreamChunk]:
         """Stream with the provider active at the start of this call."""
-        base_config = self._config_for(request.client_id)
+        base_config = self._config_for(request.client_id, request.provider)
         config = (
             replace(base_config, model=request.model)
             if request.model else base_config
@@ -189,10 +203,14 @@ class LLMRuntime(LLMClient):
         )
 
     def _resolve_api_key(
-        self, request: LLMConfigRequest
+        self, request: LLMConfigRequest, client_id: str | None
     ) -> tuple[SecretStr, str]:
         if request.api_key is not None:
             return request.api_key, "request"
+        if client_id is not None:
+            stored = self._client_configs.get((client_id, request.provider))
+            if stored is not None and stored[0].api_key is not None:
+                return stored[0].api_key, stored[1]
 
         for environment_name in API_KEY_ENVIRONMENTS[request.provider]:
             value = os.getenv(environment_name)

@@ -30,6 +30,7 @@ class LLMRequest:
     session_id: str
     message: str
     client_id: str | None = None
+    provider: LLMProvider | None = None
     model: str | None = None
     instructions: str | None = None
     tools: tuple[LLMToolDefinition, ...] = ()

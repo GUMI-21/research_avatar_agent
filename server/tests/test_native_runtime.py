@@ -86,6 +86,7 @@ def make_request(knowledge_context: str = "") -> RuntimeRequest:
         agent_id="agent-1",
         session_id="session-1",
         message="Hello",
+        provider="openai",
         model="agent-default-model",
         system_prompt="You are a personal assistant.",
         knowledge_context=knowledge_context,
@@ -118,6 +119,7 @@ class NativeAgentRuntimeTest(unittest.IsolatedAsyncioTestCase):
         self.assertEqual(events[3].payload["cost_status"], "unavailable")
         assert client.last_request is not None
         self.assertEqual(client.last_request.client_id, "client-a")
+        self.assertEqual(client.last_request.provider, LLMProvider.OPENAI)
         self.assertEqual(client.last_request.model, "agent-default-model")
         self.assertEqual(
             client.last_request.instructions,

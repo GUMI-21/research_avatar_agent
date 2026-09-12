@@ -302,6 +302,7 @@ class RunExecutionService:
             agent_id=agent.id,
             session_id=session_id,
             message=message,
+            provider=agent.provider,
             model=agent.model,
             # 身份、近期会话和 RAG 上下文保持独立边界。
             system_prompt=agent.system_prompt,
@@ -318,6 +319,7 @@ class RunExecutionService:
                     request,
                     agent_id=item.id,
                     message="",
+                    provider=item.provider,
                     model=item.model,
                     system_prompt=item.system_prompt,
                     memory_context=memory_contexts.get(item.id, ""),

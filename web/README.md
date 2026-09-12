@@ -42,6 +42,10 @@ all REST and WebSocket requests.
 
 `X-Client-ID` is a development scope header and is not authentication.
 
+Agents can be created and edited with their own provider and model. Selecting a
+cloud provider may require its API key after each Server restart because provider
+credentials are kept only in process memory.
+
 ## Validation and delivery
 
 Run the same checks locally and in CI:

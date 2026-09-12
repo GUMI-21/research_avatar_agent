@@ -97,6 +97,28 @@ class LLMRuntimeConfigurationTest(unittest.TestCase):
         self.assertEqual(response.api_key_source, "environment")
         self.assertNotIn("api_key", response.model_dump())
 
+    def test_client_keeps_separate_provider_credentials(self) -> None:
+        runtime = LLMRuntime(make_llm_settings())
+        runtime.configure(
+            LLMConfigRequest(provider=LLMProvider.OPENAI, api_key="openai-key"),
+            "client-a",
+        )
+        runtime.configure(
+            LLMConfigRequest(provider=LLMProvider.DEEPSEEK, api_key="deepseek-key"),
+            "client-a",
+        )
+        restored = runtime.configure(
+            LLMConfigRequest(provider=LLMProvider.OPENAI), "client-a"
+        )
+
+        self.assertEqual(restored.provider, LLMProvider.OPENAI)
+        self.assertTrue(restored.api_key_configured)
+        self.assertEqual(
+            runtime._config_for("client-a", LLMProvider.DEEPSEEK).provider,
+            LLMProvider.DEEPSEEK,
+        )
+        self.assertEqual(runtime.current_config("client-b").provider, LLMProvider.MOCK)
+
     def test_request_key_is_not_logged_or_returned(self) -> None:
         runtime = LLMRuntime(make_llm_settings())
         stream = io.StringIO()

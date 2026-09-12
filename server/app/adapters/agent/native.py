@@ -14,6 +14,7 @@ from app.adapters.llm import (
     LLMToolDefinition,
     LLMUsage,
 )
+from app.schemas.llm import LLMProvider
 
 
 class HandoffRequestRejectedError(ValueError):
@@ -103,6 +104,9 @@ class NativeAgentRuntime:
                     session_id=request.session_id,
                     message=message,
                     client_id=request.client_id,
+                    provider=(
+                        LLMProvider(request.provider) if request.provider else None
+                    ),
                     model=request.model,
                     instructions=instructions,
                     tools=_handoff_tools(request.handoff_targets),
