@@ -151,7 +151,7 @@ export const workspaceApi = {
       method: "POST",
       body: JSON.stringify(input),
     }),
-  updateAgent: (agentId: string, input: { name: string; system_prompt: string; provider: string; model: string }) =>
+  updateAgent: (agentId: string, input: Partial<Pick<Agent, "name" | "system_prompt" | "provider" | "model">>) =>
     request<Agent>(`/api/v1/agents/${encodeURIComponent(agentId)}`, {
       method: "PATCH",
       body: JSON.stringify(input),

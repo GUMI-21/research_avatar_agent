@@ -11,8 +11,8 @@ const agent = {
   name: "Personal",
   system_prompt: "帮助我整理项目。",
   runtime: "native",
-  provider: "mock",
-  model: "mock-echo",
+  provider: "openai",
+  model: "gpt-5.6-luna",
   knowledge_source_ids: [],
   created_at: now,
   updated_at: now,
@@ -22,6 +22,7 @@ const reviewer = {
   id: "agent-2",
   name: "Reviewer",
   system_prompt: "审查实现并指出风险。",
+  provider: "mock",
   model: "mock-echo",
 };
 const session = {
@@ -146,7 +147,10 @@ describe("Agent workspace resources", () => {
           { provider: "mock", display_name: "Mock", default_model: "mock-echo", allow_custom_model: false,
             models: [{ model: "mock-echo", display_name: "Mock Echo", config: { provider: "mock", model: "mock-echo" } }] },
           { provider: "openai", display_name: "OpenAI", default_model: "gpt-5.6-luna", allow_custom_model: true,
-            models: [{ model: "gpt-5.6-luna", display_name: "GPT-5.6 Luna", config: { provider: "openai", model: "gpt-5.6-luna" } }] },
+            models: [
+              { model: "gpt-5.6-luna", display_name: "GPT-5.6 Luna", config: { provider: "openai", model: "gpt-5.6-luna" } },
+              { model: "gpt-5.6-sol", display_name: "GPT-5.6 Sol", config: { provider: "openai", model: "gpt-5.6-sol" } },
+            ] },
         ] });
       }
       if (path === "/api/v1/llm/config" && !init?.method) {
@@ -303,16 +307,16 @@ describe("Agent workspace resources", () => {
     expect(screen.getByText("这是流式回答")).toBeInTheDocument();
     expect(screen.getAllByText("运行完成")).toHaveLength(2);
   });
-  it("manually hands the next message to another Agent", async () => {
+  it("hands a message to an @mentioned Agent", async () => {
     renderApp();
     const composer = screen.getByLabelText("消息");
     await waitFor(() => expect(composer).toBeEnabled());
 
-    fireEvent.change(screen.getByRole("combobox", { name: "转交给 Agent" }), {
-      target: { value: reviewer.id },
-    });
+    fireEvent.change(composer, { target: { value: "@Rev" } });
+    fireEvent.click(await screen.findByRole("option", { name: /@Reviewer/ }));
+    expect(composer).toHaveValue("@Reviewer ");
     expect(screen.getByText("Personal → Reviewer")).toBeInTheDocument();
-    fireEvent.change(composer, { target: { value: "请审查这段实现" } });
+    fireEvent.change(composer, { target: { value: "@Reviewer 请审查这段实现" } });
     fireEvent.click(screen.getByRole("button", { name: "发送" }));
 
     const socket = FakeWebSocket.instances[0];
@@ -322,30 +326,35 @@ describe("Agent workspace resources", () => {
       content: "请审查这段实现",
       target_agent_id: reviewer.id,
     });
-    expect(screen.getByRole("combobox", { name: "转交给 Agent" })).toHaveValue("");
 
     act(() => {
       socket.emit({
-        type: "handoff_started",
-        run_id: "run-handoff",
-        sequence: 1,
+        type: "handoff_started", run_id: "run-handoff", sequence: 1,
         payload: { from_agent_id: agent.id, to_agent_id: reviewer.id, mode: "manual" },
       });
       socket.emit({
-        type: "handoff_finished",
-        run_id: "run-handoff",
-        sequence: 2,
+        type: "handoff_finished", run_id: "run-handoff", sequence: 2,
         payload: { from_agent_id: agent.id, to_agent_id: reviewer.id, mode: "manual" },
       });
       socket.emit({
-        type: "assistant_delta",
-        run_id: "run-handoff",
-        sequence: null,
+        type: "assistant_delta", run_id: "run-handoff", sequence: null,
         payload: { text: "审查完成" },
       });
     });
     expect(screen.getAllByText("Personal → Reviewer · 手动转交")).toHaveLength(2);
     expect(screen.getByText("审查完成").closest("article")).toHaveTextContent("Reviewer");
+  });
+
+  it("switches the current Agent model from the composer", async () => {
+    renderApp();
+    const selector = await screen.findByRole("combobox", { name: "当前 Agent 模型" });
+    await waitFor(() => expect(selector).toBeEnabled());
+    fireEvent.change(selector, { target: { value: "gpt-5.6-sol" } });
+
+    await waitFor(() => expect(fetch).toHaveBeenCalledWith(
+      `/api/v1/agents/${agent.id}`,
+      expect.objectContaining({ method: "PATCH", body: JSON.stringify({ model: "gpt-5.6-sol" }) }),
+    ));
   });
 
   it("shows persisted run and usage details", async () => {

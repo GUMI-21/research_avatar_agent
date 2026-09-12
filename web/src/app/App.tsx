@@ -32,6 +32,11 @@ function agentInitial(name: string) {
   return name.trim().charAt(0).toUpperCase() || "A";
 }
 
+function agentMentionPattern(name: string) {
+  const escaped = name.replace(/[.*+?^${}()|[\]\\]/g, "\\$&");
+  return new RegExp(`(^|\\s)@${escaped}(?=\\s|$)`);
+}
+
 function formatDate(value: string) {
   return new Intl.DateTimeFormat("zh-CN", {
     month: "numeric",
@@ -118,7 +123,6 @@ export function App() {
   const [dialog, setDialog] = useState<CreateDialog>(null);
   const [editingAgent, setEditingAgent] = useState<Agent | null>(null);
   const [draft, setDraft] = useState("");
-  const [targetAgentId, setTargetAgentId] = useState("");
   const sessionsInitialized = useRef(false);
   const messagesEndRef = useRef<HTMLDivElement>(null);
 
@@ -146,6 +150,10 @@ export function App() {
   const usageQuery = useQuery({
     queryKey: ["usage"],
     queryFn: workspaceApi.getUsageSummary,
+  });
+  const providerCatalogQuery = useQuery({
+    queryKey: ["llm-providers"],
+    queryFn: workspaceApi.listLLMProviders,
   });
   const agents = agentsQuery.data ?? [];
   const sessions = sessionsQuery.data ?? [];
@@ -196,13 +204,11 @@ export function App() {
   function selectSession(session: WorkspaceSession) {
     setSelectedSessionId(session.id);
     setSelectedAgentId(session.agent_id);
-    setTargetAgentId("");
   }
 
   function selectAgent(agent: Agent) {
     const recentSession = sessions.find((session) => session.agent_id === agent.id);
     setSelectedAgentId(agent.id);
-    setTargetAgentId("");
     if (recentSession) selectSession(recentSession);
     else setSelectedSessionId("");
   }
@@ -218,23 +224,50 @@ export function App() {
     sessionsInitialized.current = false;
     setSelectedAgentId("");
     setSelectedSessionId("");
-    setTargetAgentId("");
     setDraft("");
     setClientId(nextClientId);
     setDialog(null);
   }
 
+  const mentionedAgent = [...agents]
+    .sort((left, right) => right.name.length - left.name.length)
+    .find((item) =>
+      item.id !== sessionAgent?.id && agentMentionPattern(item.name).test(draft)
+    );
+  const mentionMatch = draft.match(/(?:^|\s)@([^@\s]*)$/);
+  const mentionQuery = mentionMatch?.[1].toLocaleLowerCase() ?? null;
+  const mentionCandidates = mentionQuery === null ? [] : agents.filter((item) =>
+    item.id !== sessionAgent?.id && item.name.toLocaleLowerCase().startsWith(mentionQuery)
+  );
+  const executionAgent = mentionedAgent || sessionAgent;
+  const executionProvider = providerCatalogQuery.data?.find(
+    (item) => item.provider === executionAgent?.provider
+  );
+  const modelMutation = useMutation({
+    mutationFn: ({ agentId, model }: { agentId: string; model: string }) =>
+      workspaceApi.updateAgent(agentId, { model }),
+    onSuccess: (saved) => queryClient.setQueryData<Agent[]>(["agents"], (old = []) =>
+      old.map((item) => item.id === saved.id ? saved : item)
+    ),
+  });
+
+  function selectMention(agent: Agent) {
+    setDraft((current) => current.replace(/@[^@\s]*$/, `@${agent.name} `));
+  }
+
   function submitMessage(event?: FormEvent<HTMLFormElement> | KeyboardEvent<HTMLTextAreaElement>) {
     event?.preventDefault();
-    const content = draft.trim();
+    const content = (mentionedAgent
+      ? draft.replace(agentMentionPattern(mentionedAgent.name), "$1")
+      : draft).trim();
     if (!selectedSession || !content || stream.run.status === "running") return;
-    stream.send(selectedSession.id, content, targetAgentId || undefined);
+    stream.send(selectedSession.id, content, mentionedAgent?.id);
     setDraft("");
-    setTargetAgentId("");
   }
 
   const queryError = workspaceQuery.error || agentsQuery.error || sessionsQuery.error
-    || messagesQuery.error || runsQuery.error || usageQuery.error;
+    || messagesQuery.error || runsQuery.error || usageQuery.error
+    || providerCatalogQuery.error || modelMutation.error;
   const resourcesLoading = workspaceQuery.isLoading || agentsQuery.isLoading
     || sessionsQuery.isLoading;
 
@@ -410,28 +443,35 @@ export function App() {
             value={draft}
             onChange={(event) => setDraft(event.target.value)}
             onKeyDown={(event) => {
-              if (event.key === "Enter" && !event.shiftKey) submitMessage(event);
+              if (event.key === "Enter" && !event.shiftKey && mentionCandidates[0]) {
+                event.preventDefault();
+                selectMention(mentionCandidates[0]);
+              } else if (event.key === "Enter" && !event.shiftKey) submitMessage(event);
             }}
             placeholder={selectedSession ? `向 ${sessionAgent?.name || "Agent"} 发送消息…` : "先选择一个会话"}
           />
+          {mentionCandidates.length > 0 && (
+            <div className="mention-menu" role="listbox" aria-label="Agent 候选">
+              {mentionCandidates.map((item) => (
+                <button type="button" role="option" key={item.id} onMouseDown={(event) => event.preventDefault()} onClick={() => selectMention(item)}>
+                  <span className="avatar">{agentInitial(item.name)}</span>
+                  <span><b>@{item.name}</b><small>{item.provider || "默认厂商"} · {item.model || "默认模型"}</small></span>
+                </button>
+              ))}
+            </div>
+          )}
           <div className="composer-actions">
-            <div className="handoff-control">
+            <div className="model-control">
+              <span>{mentionedAgent ? `${sessionAgent?.name} → ${mentionedAgent.name}` : executionAgent?.provider || "Agent 模型"}</span>
               <select
-                aria-label="转交给 Agent"
-                disabled={!selectedSession || stream.run.status === "running"}
-                value={targetAgentId}
-                onChange={(event) => setTargetAgentId(event.target.value)}
+                aria-label="当前 Agent 模型"
+                disabled={!executionAgent || !executionProvider || modelMutation.isPending || stream.run.status === "running"}
+                value={executionAgent?.model || ""}
+                onChange={(event) => executionAgent && modelMutation.mutate({ agentId: executionAgent.id, model: event.target.value })}
               >
-                <option value="">由 {sessionAgent?.name || "会话 Agent"} 执行</option>
-                {agents.filter((agent) => agent.id !== selectedSession?.agent_id).map((agent) => (
-                  <option key={agent.id} value={agent.id}>转交给 {agent.name}</option>
-                ))}
+                {!executionProvider && <option value={executionAgent?.model || ""}>{executionAgent?.model || "未配置模型"}</option>}
+                {executionProvider?.models.map((item) => <option key={item.model} value={item.model}>{item.display_name}</option>)}
               </select>
-              {targetAgentId && (
-                <span className="handoff-preview">
-                  {sessionAgent?.name} → {agentById.get(targetAgentId)?.name}
-                </span>
-              )}
             </div>
             {stream.run.status === "running" ? (
               <button type="button" aria-label="停止运行" disabled={!stream.run.runId} onClick={stream.cancel}>
@@ -563,7 +603,7 @@ function AgentDialog({ agent, onClose, onSaved }: {
         {providerId !== "mock" && (
           <label>API Key（首次使用该厂商时填写）<input name="api_key" type="password" autoComplete="off" /></label>
         )}
-        <small className="field-hint">凭据仅保存在 Server 进程内存中；已配置过该厂商时可留空。</small>
+        <small className="field-hint">凭据按用户加密保存在本地 Server；已配置过该厂商时可留空。</small>
         {mutation.error && <p className="form-error">{mutation.error.message}</p>}
         <div className="modal-actions">
           <button type="button" onClick={onClose}>取消</button>
