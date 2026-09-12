@@ -8,6 +8,7 @@ from pathlib import Path
 from app.adapters.agent.base import RuntimeEvent, RuntimeEventType, RuntimeRequest
 
 LineSource = Callable[[tuple[str, ...], str], AsyncIterator[str]]
+_TOOL_ITEM_TYPES = {"command_execution", "file_change", "mcp_tool_call"}
 
 
 class CodexProcessError(RuntimeError):
@@ -57,8 +58,7 @@ class CodexAgentRuntime:
     def _command(self, model: str | None) -> tuple[str, ...]:
         command = [
             self._executable, "exec", "--json", "--ephemeral",
-            "--sandbox", "workspace-write", "--approve-for-me",
-            "--cd", str(self._workspace),
+            "--approve-for-me", "--cd", str(self._workspace),
         ]
         if model:
             command.extend(("--model", model))
@@ -78,6 +78,42 @@ class CodexAgentRuntime:
             for title, content in sections if content.strip()
         )
 
+    @staticmethod
+    def _tool_event(event: dict[str, object]) -> RuntimeEvent | None:
+        event_type = event.get("type")
+        item = event.get("item")
+        if (
+            event_type not in {"item.started", "item.completed"}
+            or not isinstance(item, dict)
+            or item.get("type") not in _TOOL_ITEM_TYPES
+        ):
+            return None
+        tool_type = str(item["type"])
+        payload: dict[str, object] = {
+            "item_id": item.get("id"),
+            "tool_type": tool_type,
+            "tool_name": "shell" if tool_type == "command_execution" else tool_type,
+        }
+        if tool_type == "mcp_tool_call":
+            payload.update(server=item.get("server"), tool_name=item.get("tool"))
+        elif tool_type == "file_change" and event_type == "item.completed":
+            changes = item.get("changes")
+            if isinstance(changes, list):
+                payload["changes"] = [
+                    {"path": change.get("path"), "kind": change.get("kind")}
+                    for change in changes[:100] if isinstance(change, dict)
+                ]
+        elif tool_type == "command_execution" and event_type == "item.completed":
+            payload["exit_code"] = item.get("exit_code")
+        return RuntimeEvent(
+            type=(
+                RuntimeEventType.TOOL_STARTED
+                if event_type == "item.started"
+                else RuntimeEventType.TOOL_FINISHED
+            ),
+            payload=payload,
+        )
+
     async def stream(self, request: RuntimeRequest) -> AsyncIterator[RuntimeEvent]:
         yield RuntimeEvent(type=RuntimeEventType.RUN_STARTED)
         yield RuntimeEvent(
@@ -91,15 +127,31 @@ class CodexAgentRuntime:
                     self._command(request.model), self._prompt(request)
                 ):
                     event = json.loads(line)
-                    if event.get("type") == "item.completed":
+                    if not isinstance(event, dict):
+                        raise CodexProcessError("Codex emitted invalid JSONL")
+                    tool_event = self._tool_event(event)
+                    if tool_event is not None:
+                        yield tool_event
+                    elif event.get("type") == "item.completed":
                         item = event.get("item", {})
-                        if item.get("type") == "agent_message" and item.get("text"):
+                        if isinstance(item, dict) and (
+                            item.get("type") == "agent_message"
+                            and isinstance(item.get("text"), str)
+                        ):
                             yield RuntimeEvent(
                                 type=RuntimeEventType.ASSISTANT_DELTA,
                                 payload={"text": item["text"]},
                             )
+                    elif event.get("type") == "error":
+                        yield RuntimeEvent(
+                            type=RuntimeEventType.PROVIDER_RETRY,
+                            payload={"provider": "codex"},
+                        )
+                    elif event.get("type") == "turn.failed":
+                        raise CodexProcessError("Codex turn failed")
                     elif event.get("type") == "turn.completed":
                         usage = event.get("usage", {})
+                        usage = usage if isinstance(usage, dict) else {}
                         yield RuntimeEvent(
                             type=RuntimeEventType.USAGE_UPDATED,
                             payload={

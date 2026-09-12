@@ -120,7 +120,7 @@ The real symlink-escape test skips on Windows error 1314 when the current user
 lacks symlink privileges; run it with Developer Mode or appropriate privileges
 to cover that filesystem case.
 
-The current backend baseline is 121 tests passing with one optional Windows
+The current backend baseline is 123 tests passing with one optional Windows
 symlink test skipped. OpenAI Responses supports the structured
 `delegate_to_agent` tool. Gemini and DeepSeek continue to support normal streamed
 chat, while their automatic handoff wire formats are deferred until after the
