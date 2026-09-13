@@ -14,6 +14,7 @@ export type Agent = {
   runtime: string;
   provider: string | null;
   model: string | null;
+  workspace_path: string | null;
   knowledge_source_ids: string[];
   created_at: string;
   updated_at: string;
@@ -147,7 +148,7 @@ export const workspaceApi = {
   },
   listAgents: async () =>
     (await request<{ agents: Agent[] }>("/api/v1/agents")).agents,
-  createAgent: (input: { name: string; avatar_emoji: string; system_prompt: string; runtime?: string; provider: string; model: string }) =>
+  createAgent: (input: { name: string; avatar_emoji: string; system_prompt: string; runtime?: string; provider?: string | null; model?: string | null; workspace_path?: string | null }) =>
     request<Agent>("/api/v1/agents", {
       method: "POST",
       body: JSON.stringify(input),

@@ -89,12 +89,12 @@ export function WorkspaceInspector({
             <h2><Bot size={15} />当前 Agent</h2>
             <div className="profile-card">
               <span className="avatar large">{agent.avatar_emoji || agent.name.trim().charAt(0).toUpperCase()}</span>
-              <div><b>{agent.name}</b><small>{agent.runtime} · {agent.model || "默认模型"}</small></div>
+              <div><b>{agent.name}</b><small>{agent.runtime === "codex" ? `Codex CLI · ${agent.workspace_path || "默认目录"}` : `${agent.runtime} · ${agent.model || "默认模型"}`}</small></div>
             </div>
           </section>
           <section>
-            <h2><Sparkles size={15} />System Prompt</h2>
-            <p className="reason">{agent.system_prompt}</p>
+            <h2><Sparkles size={15} />{agent.runtime === "codex" ? "服务端项目" : "System Prompt"}</h2>
+            <p className="reason">{agent.runtime === "codex" ? agent.workspace_path || "默认目录" : agent.system_prompt}</p>
           </section>
           <section>
             <h2><Database size={15} />工作区数据</h2>

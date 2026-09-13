@@ -46,6 +46,10 @@ Agents can be created and edited with their own provider and model. Selecting a
 cloud provider may require its API key after each Server restart because provider
 credentials are kept only in process memory.
 
+A Codex CLI Agent instead selects a project below the Server's configured
+`codex.workspace_root`. Its browser conversation resumes one Server-side Codex
+thread; the browser does not hold Codex credentials or access local files directly.
+
 ## Validation and delivery
 
 Run the same checks locally and in CI:

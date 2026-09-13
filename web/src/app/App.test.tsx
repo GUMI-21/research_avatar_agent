@@ -14,6 +14,7 @@ const agent = {
   runtime: "native",
   provider: "openai",
   model: "gpt-5.6-luna",
+  workspace_path: null,
   knowledge_source_ids: [],
   created_at: now,
   updated_at: now,
@@ -180,7 +181,7 @@ describe("Agent workspace resources", () => {
         });
       }
       if (path === "/api/v1/agents" && init?.method === "POST") {
-        return jsonResponse({ ...agent, id: "agent-2", ...JSON.parse(String(init.body)) });
+        return jsonResponse({ ...agent, id: "agent-created", ...JSON.parse(String(init.body)) });
       }
       if (path === `/api/v1/agents/${agent.id}` && init?.method === "PATCH") {
         return jsonResponse({ ...agent, ...JSON.parse(String(init.body)) });
@@ -415,6 +416,33 @@ describe("Agent workspace resources", () => {
       expect.objectContaining({
         method: "POST",
         body: JSON.stringify({ name: "Reviewer", avatar_emoji: "💻", system_prompt: "Review code.", provider: "mock", model: "mock-echo", runtime: "native" }),
+      }),
+    ));
+  });
+  it("creates a Codex CLI Agent for a server project", async () => {
+    renderApp();
+    fireEvent.click(screen.getByRole("button", { name: "创建 Agent" }));
+    await screen.findByRole("option", { name: "Codex CLI" });
+    fireEvent.change(screen.getByRole("combobox", { name: "Agent 运行时" }), {
+      target: { value: "codex" },
+    });
+    fireEvent.change(screen.getByPlaceholderText("例如：Personal"), {
+      target: { value: "Coder" },
+    });
+    fireEvent.change(screen.getByLabelText("服务端项目目录"), {
+      target: { value: "server" },
+    });
+    expect(screen.getByText(/Codex 在服务器上运行/)).toBeInTheDocument();
+    fireEvent.click(screen.getByRole("button", { name: "保存" }));
+
+    await waitFor(() => expect(fetch).toHaveBeenCalledWith(
+      "/api/v1/agents",
+      expect.objectContaining({
+        method: "POST",
+        body: JSON.stringify({
+          name: "Coder", avatar_emoji: "🤖", system_prompt: "Codex CLI proxy",
+          runtime: "codex", provider: null, model: null, workspace_path: "server",
+        }),
       }),
     ));
   });

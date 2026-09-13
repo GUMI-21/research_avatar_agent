@@ -306,7 +306,7 @@ export function App() {
               <span className="avatar">{agentAvatar(agent)}</span>
               <span>
                 <b>{agent.name}</b>
-                <small>{agent.provider || "默认厂商"} · {agent.model || "默认模型"}</small>
+                <small>{agent.runtime === "codex" ? `Codex CLI · ${agent.workspace_path || "默认目录"}` : `${agent.provider || "默认厂商"} · ${agent.model || "默认模型"}`}</small>
               </span>
             </button>
           ))}
@@ -543,6 +543,7 @@ function AgentDialog({ agent, onClose, onSaved }: {
 }) {
   const providersQuery = useQuery({ queryKey: ["llm-providers"], queryFn: workspaceApi.listLLMProviders });
   const configQuery = useQuery({ queryKey: ["llm-config"], queryFn: workspaceApi.getLLMConfig });
+  const [runtime, setRuntime] = useState(agent?.runtime || "native");
   const [providerId, setProviderId] = useState("");
   const [model, setModel] = useState("");
   const [avatarEmoji, setAvatarEmoji] = useState(agent?.avatar_emoji || "🤖");
@@ -550,6 +551,10 @@ function AgentDialog({ agent, onClose, onSaved }: {
   const providers = providersQuery.data ?? [];
   const provider = providers.find((item) => item.provider === providerId);
   useEffect(() => {
+    if (agent?.runtime === "codex") {
+      initialized.current = true;
+      return;
+    }
     if (initialized.current || !configQuery.data || !providers.length) return;
     initialized.current = true;
     const initialProvider = agent?.provider || configQuery.data.provider;
@@ -558,16 +563,25 @@ function AgentDialog({ agent, onClose, onSaved }: {
     setModel(agent?.model || option?.default_model || "");
   }, [agent, configQuery.data, providersQuery.data]);
   const mutation = useMutation({
-    mutationFn: async (input: { name: string; system_prompt: string; apiKey: string }) => {
+    mutationFn: async (input: { name: string; systemPrompt: string; workspacePath: string; apiKey: string }) => {
+      const base = { name: input.name, avatar_emoji: avatarEmoji, system_prompt: input.systemPrompt };
+      if (runtime === "codex") {
+        return agent
+          ? workspaceApi.updateAgent(agent.id, base)
+          : workspaceApi.createAgent({
+              ...base, runtime: "codex", provider: null, model: null,
+              workspace_path: input.workspacePath,
+            });
+      }
       await workspaceApi.configureLLM({
         provider: providerId,
         model,
         ...(input.apiKey ? { api_key: input.apiKey } : {}),
       });
-      const agentInput = { name: input.name, avatar_emoji: avatarEmoji, system_prompt: input.system_prompt, provider: providerId, model };
+      const nativeInput = { ...base, provider: providerId, model };
       return agent
-        ? workspaceApi.updateAgent(agent.id, agentInput)
-        : workspaceApi.createAgent({ ...agentInput, runtime: "native" });
+        ? workspaceApi.updateAgent(agent.id, nativeInput)
+        : workspaceApi.createAgent({ ...nativeInput, runtime: "native" });
     },
     onSuccess: onSaved,
   });
@@ -576,7 +590,8 @@ function AgentDialog({ agent, onClose, onSaved }: {
     const data = new FormData(event.currentTarget);
     mutation.mutate({
       name: String(data.get("name")),
-      system_prompt: String(data.get("system_prompt")),
+      systemPrompt: String(data.get("system_prompt")),
+      workspacePath: String(data.get("workspace_path") || ""),
       apiKey: String(data.get("api_key") || ""),
     });
   }
@@ -594,38 +609,61 @@ function AgentDialog({ agent, onClose, onSaved }: {
             {AGENT_EMOJIS.map((emoji) => <option key={emoji} value={emoji}>{emoji}</option>)}
           </select>
         </label>
-        <label>系统提示词<textarea name="system_prompt" required maxLength={50000} defaultValue={agent?.system_prompt} placeholder="说明 Agent 的职责和行为边界" /></label>
         <label>
-          厂商
-          <select aria-label="Agent 厂商" required disabled={!providers.length} value={providerId} onChange={(event) => {
-            initialized.current = true;
-            const next = providers.find((item) => item.provider === event.target.value);
-            setProviderId(event.target.value);
-            setModel(next?.default_model || "");
-          }}>
-            {providers.map((item) => <option key={item.provider} value={item.provider}>{item.display_name}</option>)}
+          运行时
+          <select aria-label="Agent 运行时" disabled={Boolean(agent)} value={runtime} onChange={(event) => setRuntime(event.target.value)}>
+            <option value="native">Native Agent</option>
+            <option value="codex">Codex CLI</option>
           </select>
         </label>
-        <label>
-          模型
-          <select aria-label="Agent 默认模型" required value={model} onChange={(event) => setModel(event.target.value)}>
-            {provider?.models.map((item) => <option key={item.model} value={item.model}>{item.display_name}</option>)}
-          </select>
-        </label>
-        {providerId !== "mock" && (
-          <label>API Key（首次使用该厂商时填写）<input name="api_key" type="password" autoComplete="off" /></label>
+        {runtime === "codex" ? (
+          <>
+            <input name="system_prompt" type="hidden" value={agent?.system_prompt || "Codex CLI proxy"} readOnly />
+            <label>
+              服务端项目目录
+              <input name="workspace_path" required={!agent} disabled={Boolean(agent)} maxLength={1024}
+                defaultValue={agent?.workspace_path || ""} placeholder="例如：server 或 web" />
+            </label>
+            <small className="field-hint">
+              Codex 在服务器上运行。项目目录可选择管理员配置的根目录或其任意子目录；网页只负责转发消息、事件和 Usage。
+              {agent && " 已创建 Agent 的目录当前为只读。"}
+            </small>
+          </>
+        ) : (
+          <>
+            <label>系统提示词<textarea name="system_prompt" required maxLength={50000} defaultValue={agent?.system_prompt} placeholder="说明 Agent 的职责和行为边界" /></label>
+            <label>
+              厂商
+              <select aria-label="Agent 厂商" required disabled={!providers.length} value={providerId} onChange={(event) => {
+                initialized.current = true;
+                const next = providers.find((item) => item.provider === event.target.value);
+                setProviderId(event.target.value);
+                setModel(next?.default_model || "");
+              }}>
+                {providers.map((item) => <option key={item.provider} value={item.provider}>{item.display_name}</option>)}
+              </select>
+            </label>
+            <label>
+              模型
+              <select aria-label="Agent 默认模型" required value={model} onChange={(event) => setModel(event.target.value)}>
+                {provider?.models.map((item) => <option key={item.model} value={item.model}>{item.display_name}</option>)}
+              </select>
+            </label>
+            {providerId !== "mock" && (
+              <label>API Key（首次使用该厂商时填写）<input name="api_key" type="password" autoComplete="off" /></label>
+            )}
+            <small className="field-hint">凭据按用户加密保存在本地 Server；已配置过该厂商时可留空。</small>
+          </>
         )}
-        <small className="field-hint">凭据按用户加密保存在本地 Server；已配置过该厂商时可留空。</small>
         {mutation.error && <p className="form-error">{mutation.error.message}</p>}
         <div className="modal-actions">
           <button type="button" onClick={onClose}>取消</button>
-          <button className="primary" disabled={!providerId || !model || mutation.isPending}>{mutation.isPending ? "保存中…" : "保存"}</button>
+          <button className="primary" disabled={(runtime === "native" && (!providerId || !model)) || mutation.isPending}>{mutation.isPending ? "保存中…" : "保存"}</button>
         </div>
       </form>
     </div>
   );
 }
-
 function SessionDialog({ agent, onClose, onCreated }: {
   agent: Agent;
   onClose: () => void;
