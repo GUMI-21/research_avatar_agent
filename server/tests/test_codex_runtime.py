@@ -8,11 +8,14 @@ from pathlib import Path
 from app.adapters.agent import CodexAgentRuntime, RuntimeEventType, RuntimeRequest
 
 
-def request(model: str | None = None) -> RuntimeRequest:
+def request(
+    model: str | None = None, runtime_thread_id: str | None = None
+) -> RuntimeRequest:
     return RuntimeRequest(
         run_id="run-1", client_id="alice", agent_id="coder",
         session_id="session-1", message="Implement feature",
-        model=model, system_prompt="Follow AGENTS.md",
+        model=model, runtime_thread_id=runtime_thread_id,
+        system_prompt="Follow AGENTS.md",
     )
 
 
@@ -44,12 +47,36 @@ class CodexRuntimeTest(unittest.IsolatedAsyncioTestCase):
         self.assertEqual(command[0:3], ("codex-test", "exec", "--json"))
         self.assertIn("--approve-for-me", command)
         self.assertNotIn("--sandbox", command)
+        self.assertNotIn("--ephemeral", command)
         self.assertNotIn("--model", command)
         self.assertIn("## Task\nImplement feature", captured["prompt"])
         self.assertEqual(events[2].payload, {"text": "Done"})
         self.assertEqual(events[3].payload["cache_read_tokens"], 8)
         self.assertEqual(events[-1].type, RuntimeEventType.RUN_FINISHED)
 
+    async def test_resumes_thread_and_only_sends_current_task(self) -> None:
+        captured: dict[str, object] = {}
+
+        async def lines(command: tuple[str, ...], prompt: str) -> AsyncIterator[str]:
+            captured.update(command=command, prompt=prompt)
+            yield json.dumps({"type": "thread.started", "thread_id": "thread-1"})
+            yield json.dumps({"type": "turn.completed", "usage": {}})
+
+        runtime = CodexAgentRuntime(Path("project"), line_source=lines)
+        events = [
+            event async for event in runtime.stream(
+                request(runtime_thread_id="thread-1")
+            )
+        ]
+
+        self.assertEqual(
+            captured["command"][-3:], ("resume", "thread-1", "-")
+        )
+        self.assertEqual(
+            str(captured["prompt"]).splitlines(),
+            ["## Task", "Implement feature"],
+        )
+        self.assertEqual(events[2].payload["thread_id"], "thread-1")
     async def test_maps_safe_tool_metadata_without_command_or_arguments(self) -> None:
         async def lines(command: tuple[str, ...], prompt: str) -> AsyncIterator[str]:
             items = [

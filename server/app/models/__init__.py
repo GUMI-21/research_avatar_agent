@@ -12,6 +12,7 @@ from app.models.memory import AgentMemoryRecord
 from app.models.message import MessageRecord
 from app.models.run import RunRecord
 from app.models.run_event import RunEventRecord
+from app.models.runtime_thread import RuntimeThreadRecord
 from app.models.session import SessionRecord
 from app.models.workspace import WorkspaceRecord
 
@@ -27,6 +28,7 @@ __all__ = [
     "MessageRecord",
     "RunEventRecord",
     "RunRecord",
+    "RuntimeThreadRecord",
     "SessionRecord",
     "WorkspaceRecord",
 ]

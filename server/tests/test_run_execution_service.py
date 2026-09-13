@@ -17,6 +17,7 @@ from app.repositories import (
     MessageRepository,
     RunEventRepository,
     RunRepository,
+    RuntimeThreadRepository,
     SessionRepository,
 )
 from app.services import RunExecutionService
@@ -104,6 +105,28 @@ class HandoffTargetRuntime:
         )
         yield RuntimeEvent(type=RuntimeEventType.RUN_FINISHED)
 
+
+class ResumableRuntime:
+    requests: list[RuntimeRequest] = []
+
+    async def stream(
+        self, request: RuntimeRequest
+    ) -> AsyncIterator[RuntimeEvent]:
+        type(self).requests.append(request)
+        yield RuntimeEvent(type=RuntimeEventType.RUN_STARTED)
+        if request.runtime_thread_id is None:
+            yield RuntimeEvent(
+                type=RuntimeEventType.AGENT_STATUS,
+                payload={
+                    "status": "thread_started",
+                    "thread_id": "codex-thread-1",
+                },
+            )
+        yield RuntimeEvent(
+            type=RuntimeEventType.ASSISTANT_DELTA,
+            payload={"text": "done"},
+        )
+        yield RuntimeEvent(type=RuntimeEventType.RUN_FINISHED)
 
 class StubRetrieval:
     def __init__(self, hits_by_source: dict[str, list[KnowledgeChunkHit]]) -> None:
@@ -323,6 +346,41 @@ class RunExecutionServiceTest(unittest.IsolatedAsyncioTestCase):
         )
         self.assertTrue(all(message.agent_id == target.id for message in messages))
 
+    async def test_codex_thread_is_scoped_and_reused_by_next_run(self) -> None:
+        ResumableRuntime.requests = []
+        async with self.database.session() as database_session:
+            session_id = await self._create_session(database_session, "codex")
+            registry = RuntimeRegistry()
+            registry.register("codex", ResumableRuntime)
+            service = RunExecutionService(database_session, registry)
+
+            _ = [
+                item async for item in service.stream(
+                    "client-a", session_id, "First"
+                )
+            ]
+            _ = [
+                item async for item in service.stream(
+                    "client-a", session_id, "Second"
+                )
+            ]
+            threads = RuntimeThreadRepository(database_session)
+            external_id = await threads.get_external_id(
+                "client-a", session_id,
+                ResumableRuntime.requests[0].agent_id, "codex",
+            )
+            hidden = await threads.get_external_id(
+                "client-b", session_id,
+                ResumableRuntime.requests[0].agent_id, "codex",
+            )
+
+        self.assertIsNone(ResumableRuntime.requests[0].runtime_thread_id)
+        self.assertEqual(
+            ResumableRuntime.requests[1].runtime_thread_id,
+            "codex-thread-1",
+        )
+        self.assertEqual(external_id, "codex-thread-1")
+        self.assertIsNone(hidden)
     async def test_runtime_error_marks_run_failed(self) -> None:
         async with self.database.session() as database_session:
             session_id = await self._create_session(database_session, "failing")

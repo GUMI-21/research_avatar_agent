@@ -55,13 +55,17 @@ class CodexAgentRuntime:
         self._timeout_seconds = timeout_seconds
         self._line_source = line_source
 
-    def _command(self, model: str | None) -> tuple[str, ...]:
+    def _command(
+        self, model: str | None, runtime_thread_id: str | None
+    ) -> tuple[str, ...]:
         command = [
-            self._executable, "exec", "--json", "--ephemeral",
+            self._executable, "exec", "--json",
             "--approve-for-me", "--cd", str(self._workspace),
         ]
         if model:
             command.extend(("--model", model))
+        if runtime_thread_id:
+            command.extend(("resume", runtime_thread_id))
         command.append("-")
         return tuple(command)
 
@@ -73,6 +77,8 @@ class CodexAgentRuntime:
             ("Long-term memory", request.memory_context),
             ("Task", request.message),
         ]
+        if request.runtime_thread_id:
+            sections = sections[-1:]
         return "\n\n".join(
             f"## {title}\n{content.strip()}"
             for title, content in sections if content.strip()
@@ -124,11 +130,20 @@ class CodexAgentRuntime:
         try:
             async with asyncio.timeout(self._timeout_seconds):
                 async for line in self._line_source(
-                    self._command(request.model), self._prompt(request)
+                    self._command(request.model, request.runtime_thread_id),
+                    self._prompt(request)
                 ):
                     event = json.loads(line)
                     if not isinstance(event, dict):
                         raise CodexProcessError("Codex emitted invalid JSONL")
+                    if event.get("type") == "thread.started":
+                        thread_id = event.get("thread_id")
+                        if isinstance(thread_id, str):
+                            yield RuntimeEvent(
+                                type=RuntimeEventType.AGENT_STATUS,
+                                payload={"status": "thread_started", "thread_id": thread_id},
+                            )
+                        continue
                     tool_event = self._tool_event(event)
                     if tool_event is not None:
                         yield tool_event

@@ -26,6 +26,7 @@ class RuntimeRequest:
     message: str
     provider: str | None = None
     model: str | None = None
+    runtime_thread_id: str | None = None
     system_prompt: str = ""
     conversation_context: str = ""
     memory_context: str = ""

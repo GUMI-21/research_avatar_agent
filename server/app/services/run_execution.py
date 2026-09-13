@@ -19,7 +19,8 @@ from app.adapters.knowledge import EmbeddingClient
 from app.models import MessageRecord
 from app.orchestration import AgentRunTarget, LangGraphRunOrchestrator
 from app.repositories import (
-    AgentRepository, MemoryRepository, MessageRepository, SessionRepository,
+    AgentRepository, MemoryRepository, MessageRepository, RuntimeThreadRepository,
+    SessionRepository,
 )
 from app.services.message import MessageService
 from app.services.knowledge_context import (
@@ -165,6 +166,14 @@ class RunExecutionService:
             for item in await agent_repository.list_agents(client_id)
             if item.runtime in available_runtime_ids
         ]
+        agents_by_id = {item.id: item for item in available_agents}
+        thread_repository = RuntimeThreadRepository(self._session)
+        runtime_thread_ids = {
+            item.id: await thread_repository.get_external_id(
+                client_id, session_id, item.id, item.runtime
+            )
+            for item in available_agents if item.runtime == "codex"
+        }
         memory_repository = MemoryRepository(self._session)
         memory_records = {
             item.id: await memory_repository.list_for_agent(
@@ -304,6 +313,7 @@ class RunExecutionService:
             message=message,
             provider=agent.provider,
             model=agent.model,
+            runtime_thread_id=runtime_thread_ids.get(agent.id),
             # 身份、近期会话和 RAG 上下文保持独立边界。
             system_prompt=agent.system_prompt,
             conversation_context=_assemble_recent_context(recent_messages),
@@ -321,6 +331,7 @@ class RunExecutionService:
                     message="",
                     provider=item.provider,
                     model=item.model,
+                    runtime_thread_id=runtime_thread_ids.get(item.id),
                     system_prompt=item.system_prompt,
                     memory_context=memory_contexts.get(item.id, ""),
                     memory_ids=tuple(
@@ -383,6 +394,17 @@ class RunExecutionService:
                         yield streamed
                 raise
 
+            if (
+                event.type is RuntimeEventType.AGENT_STATUS
+                and event.payload.get("status") == "thread_started"
+            ):
+                thread_id = event.payload.get("thread_id")
+                active_agent = agents_by_id.get(assistant_agent_id)
+                if isinstance(thread_id, str) and active_agent is not None:
+                    await thread_repository.set_external_id(
+                        client_id, session_id, active_agent.id,
+                        active_agent.runtime, thread_id,
+                    )
             terminal_received = event.type in TERMINAL_EVENTS or terminal_received
             if event.type is RuntimeEventType.HANDOFF_FINISHED:
                 target_id = event.payload.get("to_agent_id")
