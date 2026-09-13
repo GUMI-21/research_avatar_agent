@@ -25,6 +25,7 @@ class AgentService:
         runtime: str = "native",
         provider: str | None = None,
         model: str | None = None,
+        workspace_path: str | None = None,
         knowledge_source_ids: list[str] | None = None,
     ) -> AgentRecord:
         requested_ids = knowledge_source_ids or []
@@ -41,5 +42,6 @@ class AgentService:
             runtime=runtime,
             provider=provider,
             model=model,
+            workspace_path=workspace_path,
             knowledge_sources=[sources_by_id[item] for item in requested_ids],
         )

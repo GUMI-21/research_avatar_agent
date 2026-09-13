@@ -45,6 +45,7 @@ class AgentRecord(Base):
     )  # Runtime Adapter 注册名
     provider: Mapped[str | None] = mapped_column(String(32), nullable=True)
     model: Mapped[str | None] = mapped_column(String(128), nullable=True)  # 可选模型覆盖
+    workspace_path: Mapped[str | None] = mapped_column(String(1024), nullable=True)
     knowledge_links: Mapped[list[AgentKnowledgeSourceRecord]] = relationship(
         cascade="all, delete-orphan",
         lazy="selectin",

@@ -3,6 +3,7 @@
 import json
 import unittest
 from collections.abc import AsyncIterator
+from tempfile import TemporaryDirectory
 from pathlib import Path
 
 from app.adapters.agent import CodexAgentRuntime, RuntimeEventType, RuntimeRequest
@@ -15,7 +16,8 @@ def request(
         run_id="run-1", client_id="alice", agent_id="coder",
         session_id="session-1", message="Implement feature",
         model=model, runtime_thread_id=runtime_thread_id,
-        system_prompt="Follow AGENTS.md",
+        system_prompt="Follow AGENTS.md", conversation_context="old turn",
+        memory_context="private memory", knowledge_context="retrieved note",
     )
 
 
@@ -39,7 +41,7 @@ class CodexRuntimeTest(unittest.IsolatedAsyncioTestCase):
             })
 
         runtime = CodexAgentRuntime(
-            Path("project"), executable="codex-test", line_source=lines
+            Path("."), executable="codex-test", line_source=lines
         )
         events = [event async for event in runtime.stream(request())]
 
@@ -49,7 +51,7 @@ class CodexRuntimeTest(unittest.IsolatedAsyncioTestCase):
         self.assertNotIn("--sandbox", command)
         self.assertNotIn("--ephemeral", command)
         self.assertNotIn("--model", command)
-        self.assertIn("## Task\nImplement feature", captured["prompt"])
+        self.assertEqual(captured["prompt"], "Implement feature")
         self.assertEqual(events[2].payload, {"text": "Done"})
         self.assertEqual(events[3].payload["cache_read_tokens"], 8)
         self.assertEqual(events[-1].type, RuntimeEventType.RUN_FINISHED)
@@ -62,7 +64,7 @@ class CodexRuntimeTest(unittest.IsolatedAsyncioTestCase):
             yield json.dumps({"type": "thread.started", "thread_id": "thread-1"})
             yield json.dumps({"type": "turn.completed", "usage": {}})
 
-        runtime = CodexAgentRuntime(Path("project"), line_source=lines)
+        runtime = CodexAgentRuntime(Path("."), line_source=lines)
         events = [
             event async for event in runtime.stream(
                 request(runtime_thread_id="thread-1")
@@ -72,11 +74,9 @@ class CodexRuntimeTest(unittest.IsolatedAsyncioTestCase):
         self.assertEqual(
             captured["command"][-3:], ("resume", "thread-1", "-")
         )
-        self.assertEqual(
-            str(captured["prompt"]).splitlines(),
-            ["## Task", "Implement feature"],
-        )
+        self.assertEqual(captured["prompt"], "Implement feature")
         self.assertEqual(events[2].payload["thread_id"], "thread-1")
+
     async def test_maps_safe_tool_metadata_without_command_or_arguments(self) -> None:
         async def lines(command: tuple[str, ...], prompt: str) -> AsyncIterator[str]:
             items = [
@@ -102,7 +102,7 @@ class CodexRuntimeTest(unittest.IsolatedAsyncioTestCase):
 
         events = [
             event async for event in CodexAgentRuntime(
-                Path("project"), line_source=lines
+                Path("."), line_source=lines
             ).stream(request())
         ]
 
@@ -116,13 +116,26 @@ class CodexRuntimeTest(unittest.IsolatedAsyncioTestCase):
             [{"path": "app.py", "kind": "update"}],
         )
 
+    async def test_workspace_is_resolved_under_allowed_root(self) -> None:
+        with TemporaryDirectory() as directory:
+            root = Path(directory)
+            child = root / "child"
+            child.mkdir()
+            runtime = CodexAgentRuntime(root)
+
+            command = runtime._command(None, None, "child")
+
+            self.assertEqual(command[command.index("--cd") + 1], str(child.resolve()))
+            with self.assertRaises(ValueError):
+                runtime._command(None, None, str(root.parent))
+
     async def test_model_override_and_incomplete_stream_fail(self) -> None:
         async def lines(command: tuple[str, ...], prompt: str) -> AsyncIterator[str]:
             self.assertEqual(command[-3:], ("--model", "gpt-test", "-"))
             if False:
                 yield ""
 
-        runtime = CodexAgentRuntime(Path("project"), line_source=lines)
+        runtime = CodexAgentRuntime(Path("."), line_source=lines)
         events = []
         with self.assertRaises(Exception):
             async for event in runtime.stream(request("gpt-test")):
@@ -137,7 +150,7 @@ class CodexRuntimeTest(unittest.IsolatedAsyncioTestCase):
         events = []
         with self.assertRaises(Exception):
             async for event in CodexAgentRuntime(
-                Path("project"), line_source=lines
+                Path("."), line_source=lines
             ).stream(request()):
                 events.append(event)
 

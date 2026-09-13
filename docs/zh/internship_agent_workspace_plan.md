@@ -252,9 +252,9 @@ Provider/Model 聚合属于后续增强，不阻塞可用 Workspace。
 
 ## 开发批次
 
-### 当前实现状态（2026-09-11）
+### 当前实现状态（2026-09-13）
 
-Codex CLI Adapter 第一批已接入 `codex exec --json`：固定仓库工作目录和 `workspace-write` 沙箱，默认继承本机 Codex/CC Switch 模型配置，并将回复及 Token 用量归一化为现有 `RuntimeEvent`。第二批已把命令执行、文件修改、MCP 调用和 Provider 重试映射为不含命令正文、参数或结果正文的审计事件，并修正 Codex 0.153.4 中互斥的沙箱参数。第三批新增按 `client_id + session_id + agent_id + runtime` 隔离的外部 thread 绑定；首次运行持久化 Codex thread ID，后续运行通过 `codex exec resume` 继续上下文，并只发送本轮任务以避免重复注入历史。项目目录配置和前端 Runtime 选择待后续批次。
+Codex CLI Adapter 第一批已接入 `codex exec --json`：固定仓库工作目录和 `workspace-write` 沙箱，默认继承本机 Codex/CC Switch 模型配置，并将回复及 Token 用量归一化为现有 `RuntimeEvent`。第二批已把命令执行、文件修改、MCP 调用和 Provider 重试映射为不含命令正文、参数或结果正文的审计事件，并修正 Codex 0.153.4 中互斥的沙箱参数。第三批新增按 `client_id + session_id + agent_id + runtime` 隔离的外部 thread 绑定；首次运行持久化 Codex thread ID，后续运行通过 `codex exec resume` 继续上下文，并只发送本轮任务以避免重复注入历史。第四批允许 Codex Agent 在创建时指定项目目录；CLI 执行前会解析真实路径并限制在服务端允许根目录内，避免路径或软链接越界。Codex Runtime 采用纯代理边界：只转发本轮用户消息，代码上下文、文件访问、工具调用和上下文压缩均由 Codex thread 管理；服务端仅保留身份隔离、会话绑定、事件与 usage 记录。前端 Runtime 选择和 Codex CLI 登录状态检查待后续批次。
 
 Native Agent 聊天执行链已接入其绑定知识库的混合检索，并在 6000 字符预算内注入带
 引用上下文；缺少 Embedding Client 的轻量执行仍可回退到关键词检索。运行事件会记录

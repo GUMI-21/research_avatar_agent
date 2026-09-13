@@ -83,6 +83,14 @@ class LLMSettings(StrictSettingsModel):
     deepseek: LLMProviderSettings
 
 
+class CodexSettings(StrictSettingsModel):
+    """Local Codex CLI execution boundary."""
+
+    executable: str = "codex"
+    workspace_root: Path = SERVER_ROOT.parent
+    timeout_seconds: float = Field(default=300, gt=0.0, le=3600.0)
+
+
 class Settings(StrictSettingsModel):
     """Complete server configuration for one runtime environment."""
 
@@ -92,6 +100,7 @@ class Settings(StrictSettingsModel):
     logging: LoggingSettings
     database: DatabaseSettings
     embedding: EmbeddingSettings = Field(default_factory=EmbeddingSettings)
+    codex: CodexSettings = Field(default_factory=CodexSettings)
     llm: LLMSettings
 
 

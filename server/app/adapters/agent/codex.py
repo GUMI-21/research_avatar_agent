@@ -15,6 +15,10 @@ class CodexProcessError(RuntimeError):
     pass
 
 
+class CodexWorkspaceError(ValueError):
+    pass
+
+
 async def _codex_lines(command: tuple[str, ...], prompt: str) -> AsyncIterator[str]:
     process = await asyncio.create_subprocess_exec(
         *command,
@@ -50,17 +54,19 @@ class CodexAgentRuntime:
         timeout_seconds: float = 300,
         line_source: LineSource = _codex_lines,
     ) -> None:
-        self._workspace = workspace.resolve()
+        self._workspace_root = workspace.resolve()
         self._executable = executable
         self._timeout_seconds = timeout_seconds
         self._line_source = line_source
 
     def _command(
-        self, model: str | None, runtime_thread_id: str | None
+        self, model: str | None, runtime_thread_id: str | None,
+        workspace_path: str | None,
     ) -> tuple[str, ...]:
+        workspace = self._resolve_workspace(workspace_path)
         command = [
             self._executable, "exec", "--json",
-            "--approve-for-me", "--cd", str(self._workspace),
+            "--approve-for-me", "--cd", str(workspace),
         ]
         if model:
             command.extend(("--model", model))
@@ -69,20 +75,23 @@ class CodexAgentRuntime:
         command.append("-")
         return tuple(command)
 
+    def _resolve_workspace(self, requested: str | None) -> Path:
+        candidate = (
+            Path(requested).expanduser() if requested else self._workspace_root
+        )
+        if not candidate.is_absolute():
+            candidate = self._workspace_root / candidate
+        workspace = candidate.resolve()
+        if (
+            not workspace.is_dir()
+            or not workspace.is_relative_to(self._workspace_root)
+        ):
+            raise CodexWorkspaceError("Codex workspace is outside the allowed root")
+        return workspace
+
     @staticmethod
     def _prompt(request: RuntimeRequest) -> str:
-        sections = [
-            ("Agent instructions", request.system_prompt),
-            ("Recent conversation", request.conversation_context),
-            ("Long-term memory", request.memory_context),
-            ("Task", request.message),
-        ]
-        if request.runtime_thread_id:
-            sections = sections[-1:]
-        return "\n\n".join(
-            f"## {title}\n{content.strip()}"
-            for title, content in sections if content.strip()
-        )
+        return request.message
 
     @staticmethod
     def _tool_event(event: dict[str, object]) -> RuntimeEvent | None:
@@ -130,7 +139,10 @@ class CodexAgentRuntime:
         try:
             async with asyncio.timeout(self._timeout_seconds):
                 async for line in self._line_source(
-                    self._command(request.model, request.runtime_thread_id),
+                    self._command(
+                        request.model, request.runtime_thread_id,
+                        request.workspace_path,
+                    ),
                     self._prompt(request)
                 ):
                     event = json.loads(line)

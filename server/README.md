@@ -114,13 +114,14 @@ username through `/api/v1/workspaces`, then send it as `X-Client-ID`; this is
 workspace scoping rather than authentication.
 Run commands from `server/` because the database path is relative to that directory.
 Codex Agents additionally require `codex` on `PATH` and a working Codex/CC Switch login; the server never reads or stores Codex credentials.
+Set `codex.workspace_root` to the only directory tree Codex Agents may use; each Agent may select that root or one of its descendant project directories.
 The first server startup downloads the embedding model into `data/models/fastembed`;
 ordinary unit tests use substitutes and do not validate model download or quality.
 The real symlink-escape test skips on Windows error 1314 when the current user
 lacks symlink privileges; run it with Developer Mode or appropriate privileges
 to cover that filesystem case.
 
-The current backend baseline is 125 tests passing with one optional Windows
+The current backend baseline is 128 tests passing with one optional Windows
 symlink test skipped. OpenAI Responses supports the structured
 `delegate_to_agent` tool. Gemini and DeepSeek continue to support normal streamed
 chat, while their automatic handoff wire formats are deferred until after the

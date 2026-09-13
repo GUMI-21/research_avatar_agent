@@ -35,6 +35,13 @@ class AgentSchemaTest(unittest.TestCase):
 
         self.assertEqual(data.runtime, "deepseek_harness")
 
+    def test_workspace_requires_codex_runtime(self) -> None:
+        with self.assertRaises(ValidationError):
+            AgentCreate(
+                name="Native",
+                system_prompt="No filesystem runtime.",
+                workspace_path="server",
+            )
     def test_blank_prompt_is_rejected(self) -> None:
         with self.assertRaises(ValidationError):
             AgentCreate(name="Personal", system_prompt="   ")

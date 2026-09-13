@@ -24,6 +24,11 @@ embedding:
   model: sentence-transformers/paraphrase-multilingual-MiniLM-L12-v2
   dimensions: 384
 
+codex:
+  executable: codex
+  workspace_root: ..
+  timeout_seconds: 300
+
 llm:
   default_provider: mock
   timeout_seconds: 30

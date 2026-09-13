@@ -66,6 +66,21 @@ class AgentRoutesTest(unittest.IsolatedAsyncioTestCase):
         self.assertEqual(concealed.status_code, 404)
         self.assertEqual(concealed.json(), {"detail": "Agent not found"})
 
+    async def test_create_codex_agent_keeps_workspace_path(self) -> None:
+        created = await self.client.post(
+            "/api/v1/agents",
+            headers={"X-Client-ID": "client-a"},
+            json={
+                "name": "Coder",
+                "system_prompt": "Work inside the selected repository.",
+                "runtime": "codex",
+                "workspace_path": "server",
+            },
+        )
+
+        self.assertEqual(created.status_code, 201)
+        self.assertEqual(created.json()["runtime"], "codex")
+        self.assertEqual(created.json()["workspace_path"], "server")
     async def test_update_agent_provider_and_model_is_client_scoped(self) -> None:
         created = await self.client.post(
             "/api/v1/agents",

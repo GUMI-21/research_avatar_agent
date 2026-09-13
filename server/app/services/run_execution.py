@@ -314,6 +314,7 @@ class RunExecutionService:
             provider=agent.provider,
             model=agent.model,
             runtime_thread_id=runtime_thread_ids.get(agent.id),
+            workspace_path=agent.workspace_path,
             # 身份、近期会话和 RAG 上下文保持独立边界。
             system_prompt=agent.system_prompt,
             conversation_context=_assemble_recent_context(recent_messages),
@@ -332,6 +333,7 @@ class RunExecutionService:
                     provider=item.provider,
                     model=item.model,
                     runtime_thread_id=runtime_thread_ids.get(item.id),
+                    workspace_path=item.workspace_path,
                     system_prompt=item.system_prompt,
                     memory_context=memory_contexts.get(item.id, ""),
                     memory_ids=tuple(

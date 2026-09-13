@@ -22,6 +22,7 @@ class AgentRepository:
         runtime: str = "native",
         provider: str | None = None,
         model: str | None = None,
+        workspace_path: str | None = None,
         knowledge_sources: Sequence[KnowledgeSourceRecord] = (),
     ) -> AgentRecord:
         agent = AgentRecord(
@@ -32,6 +33,7 @@ class AgentRepository:
             runtime=runtime,
             provider=provider,
             model=model,
+            workspace_path=workspace_path,
             # 绑定知识库
             knowledge_links=[
                 AgentKnowledgeSourceRecord(
