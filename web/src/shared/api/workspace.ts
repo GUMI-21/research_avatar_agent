@@ -82,6 +82,21 @@ export type AgentMemory = {
   created_at: string;
   updated_at: string;
 };
+export type CodexRateLimitWindow = {
+  name: string;
+  used_percent: number;
+  window_minutes: number | null;
+  resets_at: number | null;
+};
+
+export type CodexStatus = {
+  installed: boolean;
+  authenticated: boolean;
+  auth_mode: string | null;
+  plan_type: string | null;
+  windows: CodexRateLimitWindow[];
+  error: string | null;
+};
 export type LLMModelOption = {
   model: string;
   display_name: string;
@@ -191,6 +206,7 @@ export const workspaceApi = {
       `/api/v1/agents/${encodeURIComponent(agentId)}/memories/${encodeURIComponent(memoryId)}`,
       { method: "DELETE" },
     ),
+  getCodexStatus: () => request<CodexStatus>("/api/v1/codex/status"),
   listLLMProviders: async () =>
     (await request<{ providers: LLMProviderOption[] }>("/api/v1/llm/providers")).providers,
   getLLMConfig: () => request<LLMConfigResponse>("/api/v1/llm/config"),

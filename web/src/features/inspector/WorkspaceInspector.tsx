@@ -8,6 +8,7 @@ import {
   Sparkles,
   TriangleAlert,
 } from "lucide-react";
+import { useQuery } from "@tanstack/react-query";
 import { useMemo, useState } from "react";
 
 import { MemoryPanel } from "../memory/MemoryPanel";
@@ -17,6 +18,7 @@ import {
   RunUsage,
   UsageSummary,
   WorkspaceSession,
+  workspaceApi,
 } from "../../shared/api/workspace";
 
 type InspectorTab = "agent" | "memory" | "run" | "usage";
@@ -48,6 +50,11 @@ function duration(value: number | null) {
   return value < 1_000 ? `${value} ms` : `${(value / 1_000).toFixed(2)} s`;
 }
 
+function codexWindowLabel(minutes: number | null) {
+  if (minutes === 300) return "5 小时";
+  if (minutes === 10080) return "周";
+  return minutes ? `${minutes} 分钟` : "额度";
+}
 function cost(value: string | null) {
   return value == null ? "不可用" : `$${Number(value).toFixed(6)}`;
 }
@@ -62,6 +69,13 @@ export function WorkspaceInspector({
   loading,
 }: Props) {
   const [tab, setTab] = useState<InspectorTab>("agent");
+  const showCodexUsage = agent?.runtime === "codex" && tab === "usage";
+  const codexStatusQuery = useQuery({
+    queryKey: ["codex-status"],
+    queryFn: workspaceApi.getCodexStatus,
+    enabled: showCodexUsage,
+    refetchInterval: showCodexUsage ? 60_000 : false,
+  });
   const sessionRuns = useMemo(
     () => runs.filter((run) => run.session_id === session?.id),
     [runs, session?.id],
@@ -132,6 +146,26 @@ export function WorkspaceInspector({
               <div><dt>估算费用</dt><dd>${sessionUsage.cost.toFixed(6)}</dd></div>
             </dl>
           </section>
+          {agent?.runtime === "codex" && (
+            <section>
+              <h2><Gauge size={15} />Codex 剩余额度</h2>
+              {codexStatusQuery.isLoading && <p className="inspector-muted">正在读取 Codex 额度…</p>}
+              {codexStatusQuery.error && <p className="form-error">Codex 额度暂不可用</p>}
+              {codexStatusQuery.data && !codexStatusQuery.data.authenticated && (
+                <p className="inspector-muted">Server Codex CLI 未登录</p>
+              )}
+              {codexStatusQuery.data?.windows.map((window) => {
+                const remaining = Math.max(0, Math.min(100, 100 - window.used_percent));
+                return (
+                  <div className="limit-row" key={window.name}>
+                    <p><span>{codexWindowLabel(window.window_minutes)}额度</span><b>剩余 {remaining}%</b></p>
+                    <progress aria-label={`${codexWindowLabel(window.window_minutes)}剩余额度`} max={100} value={remaining} />
+                    <small>{window.resets_at ? `${new Date(window.resets_at * 1000).toLocaleString("zh-CN")} 重置` : "重置时间不可用"}</small>
+                  </div>
+                );
+              })}
+            </section>
+          )}
           <section>
             <h2><CircleDollarSign size={15} />Workspace 总计</h2>
             {summary ? (

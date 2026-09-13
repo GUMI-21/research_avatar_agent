@@ -4,6 +4,7 @@ from fastapi import APIRouter
 
 from app.api.routes import (
     agents,
+    codex_status,
     knowledge,
     llm_config,
     memories,
@@ -20,6 +21,7 @@ api_router = APIRouter()
 api_router.include_router(ping.router, tags=["health"])
 api_router.include_router(unity.router, tags=["unity"])
 api_router.include_router(agents.router, prefix="/api/v1", tags=["agents"])
+api_router.include_router(codex_status.router, prefix="/api/v1", tags=["codex"])
 api_router.include_router(knowledge.router, prefix="/api/v1", tags=["knowledge"])
 api_router.include_router(sessions.router, prefix="/api/v1", tags=["sessions"])
 api_router.include_router(memories.router, prefix="/api/v1", tags=["memories"])

@@ -25,8 +25,10 @@ const reviewer = {
   name: "Reviewer",
   avatar_emoji: "🔎",
   system_prompt: "审查实现并指出风险。",
-  provider: "mock",
-  model: "mock-echo",
+  runtime: "codex",
+  provider: null,
+  model: null,
+  workspace_path: "server",
 };
 const session = {
   id: "session-1",
@@ -166,6 +168,19 @@ describe("Agent workspace resources", () => {
           base_url: body.provider === "mock" ? "mock://local" : "https://api.openai.com/v1",
           api_key_configured: body.provider !== "mock", api_key_source: body.provider === "mock" ? "not_required" : "request" });
       }
+      if (path === "/api/v1/codex/status") {
+        return jsonResponse({
+          installed: true,
+          authenticated: true,
+          auth_mode: "chatgpt",
+          plan_type: "plus",
+          windows: [
+            { name: "primary", used_percent: 53, window_minutes: 300, resets_at: 1789303661 },
+            { name: "secondary", used_percent: 20, window_minutes: 10080, resets_at: 1789805406 },
+          ],
+          error: null,
+        });
+      }
       if (path === "/api/v1/usage/runs?limit=100") return jsonResponse({ runs: [run] });
       if (path === "/api/v1/usage/summary") {
         return jsonResponse({
@@ -237,7 +252,7 @@ describe("Agent workspace resources", () => {
 
     expect(await screen.findByRole("heading", { name: "代码审查" })).toBeInTheDocument();
     expect(screen.getByRole("combobox", { name: "聊天记录" })).toHaveValue(reviewerSession.id);
-    expect(screen.getByText("Reviewer · native")).toBeInTheDocument();
+    expect(screen.getByText("Reviewer · codex")).toBeInTheDocument();
   });
 
   it("retries active resource requests after a server error", async () => {
@@ -378,6 +393,20 @@ describe("Agent workspace resources", () => {
   });
 
 
+  it("shows Codex remaining limits for a Codex conversation", async () => {
+    renderApp();
+    const codexAgent = await screen.findByRole("button", { name: /Reviewer.*Codex CLI/ });
+    fireEvent.click(codexAgent);
+    fireEvent.click(screen.getByRole("button", { name: "Usage" }));
+
+    expect(await screen.findByText("Codex 剩余额度")).toBeInTheDocument();
+    expect(screen.getByText("剩余 47%")).toBeInTheDocument();
+    expect(screen.getByRole("progressbar", { name: "5 小时剩余额度" })).toHaveValue(47);
+    expect(fetch).toHaveBeenCalledWith(
+      "/api/v1/codex/status",
+      expect.objectContaining({ headers: expect.objectContaining({ "X-Client-ID": "local-demo" }) }),
+    );
+  });
   it("manages Agent memory through the API", async () => {
     renderApp();
     fireEvent.click(screen.getByRole("button", { name: "Memory" }));
@@ -530,5 +559,15 @@ describe("Agent workspace resources", () => {
       }),
     ));
     expect(await screen.findByText(/当前配置：openai \/ gpt-5.6-luna/)).toBeInTheDocument();
+  });
+
+  it("shows the server Codex login and rate limits", async () => {
+    renderApp();
+    fireEvent.click(screen.getByRole("button", { name: "设置" }));
+
+    expect(await screen.findByText("已通过 chatgpt 登录 · plus")).toBeInTheDocument();
+    expect(screen.getByText("5 小时额度")).toBeInTheDocument();
+    expect(screen.getByText("剩余 47%")).toBeInTheDocument();
+    expect(screen.getByText("周额度")).toBeInTheDocument();
   });
 });

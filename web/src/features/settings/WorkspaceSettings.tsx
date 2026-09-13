@@ -1,5 +1,5 @@
 import { useMutation, useQuery } from "@tanstack/react-query";
-import { ChevronDown, KeyRound, ServerCog, UserRound, X } from "lucide-react";
+import { Bot, ChevronDown, KeyRound, ServerCog, UserRound, X } from "lucide-react";
 import { FormEvent, useEffect, useState } from "react";
 
 import { LLMConfigResponse, workspaceApi } from "../../shared/api/workspace";
@@ -10,6 +10,16 @@ type Props = {
   onWorkspaceChange: (clientId: string) => Promise<void>;
 };
 
+function limitLabel(minutes: number | null) {
+  if (minutes === 300) return "5 小时额度";
+  if (minutes === 10080) return "周额度";
+  return minutes ? `${minutes} 分钟额度` : "额度窗口";
+}
+
+function remainingPercent(usedPercent: number) {
+  return Math.max(0, Math.min(100, 100 - usedPercent));
+}
+
 export function WorkspaceSettings({ clientId, onClose, onWorkspaceChange }: Props) {
   const providersQuery = useQuery({
     queryKey: ["llm-providers"],
@@ -18,6 +28,11 @@ export function WorkspaceSettings({ clientId, onClose, onWorkspaceChange }: Prop
   const configQuery = useQuery({
     queryKey: ["llm-config", clientId],
     queryFn: workspaceApi.getLLMConfig,
+  });
+  const codexQuery = useQuery({
+    queryKey: ["codex-status"],
+    queryFn: workspaceApi.getCodexStatus,
+    refetchInterval: 60_000,
   });
   const [provider, setProvider] = useState("mock");
   const [model, setModel] = useState("mock-echo");
@@ -99,6 +114,32 @@ export function WorkspaceSettings({ clientId, onClose, onWorkspaceChange }: Prop
           </form>
         </details>
 
+        <details className="settings-section" open>
+          <summary>
+            <span><Bot size={14} />Codex CLI</span>
+            <small>{codexQuery.data?.authenticated ? "已登录" : "未连接"}</small>
+            <ChevronDown size={14} />
+          </summary>
+          <div className="codex-status">
+            {codexQuery.isLoading && <p className="inspector-muted">正在读取 Server 上的 Codex 状态…</p>}
+            {codexQuery.error && <p className="form-error">无法读取 Codex 状态：{codexQuery.error.message}</p>}
+            {codexQuery.data && !codexQuery.data.authenticated && (
+              <p className="settings-note">请在 Server 主机运行 codex login，完成后刷新状态。</p>
+            )}
+            {codexQuery.data?.authenticated && (
+              <p className="settings-success">
+                已通过 {codexQuery.data.auth_mode} 登录{codexQuery.data.plan_type ? ` · ${codexQuery.data.plan_type}` : ""}
+              </p>
+            )}
+            {codexQuery.data?.windows.map((window) => (
+              <div className="limit-row" key={window.name}>
+                <p><span>{limitLabel(window.window_minutes)}</span><b>剩余 {remainingPercent(window.used_percent)}%</b></p>
+                <progress aria-label={limitLabel(window.window_minutes)} max={100} value={remainingPercent(window.used_percent)} />
+                <small>{window.resets_at ? `${new Date(window.resets_at * 1000).toLocaleString("zh-CN")} 重置` : "重置时间不可用"}</small>
+              </div>
+            ))}
+          </div>
+        </details>
         <details className="settings-section" open>
           <summary><span><ServerCog size={14} />模型运行时</span><small>{provider}</small><ChevronDown size={14} /></summary>
           <form onSubmit={submitConfig}>
