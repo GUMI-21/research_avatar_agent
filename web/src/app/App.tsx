@@ -17,7 +17,7 @@ import {
 import { FormEvent, KeyboardEvent, ReactNode, useEffect, useMemo, useRef, useState } from "react";
 
 import { WorkspaceInspector } from "../features/inspector/WorkspaceInspector";
-import { LiveRun, useRunStream } from "../features/runs/useRunStream";
+import { LiveRun, PendingApproval, useRunStream } from "../features/runs/useRunStream";
 import { WorkspaceSettings } from "../features/settings/WorkspaceSettings";
 import { getClientId, saveClientId } from "../shared/clientIdentity";
 import {
@@ -90,6 +90,7 @@ function eventDetail(type: string, payload: Record<string, unknown>, agents: Age
     return payload.duration_ms == null ? "终态已持久化" : `${payload.duration_ms} ms`;
   }
   if (type === "retrieval_result") return "候选与命中片段已记录";
+  if (type.startsWith("tool_") || type === "approval_required") return String(payload.tool_name || "工具事件");
   return String(payload.message || payload.status || "事件已记录");
 }
 
@@ -114,6 +115,26 @@ function RunCard({ run, agents }: { run: LiveRun; agents: Agent[] }) {
           <time>{event.sequence == null ? "live" : `#${event.sequence}`}</time>
         </div>
       ))}
+    </article>
+  );
+}
+
+function ToolApprovalCard({
+  approval,
+  onDecision,
+}: {
+  approval: PendingApproval;
+  onDecision: (approved: boolean) => void;
+}) {
+  return (
+    <article className="approval-card" role="alert">
+      <div><FileText size={16} /><b>批准 Markdown 写入？</b></div>
+      <code>{approval.path}</code>
+      <pre>{approval.contentPreview || "（空文件）"}</pre>
+      <div className="approval-actions">
+        <button type="button" onClick={() => onDecision(false)}>拒绝</button>
+        <button type="button" className="primary" onClick={() => onDecision(true)}>批准写入</button>
+      </div>
     </article>
   );
 }
@@ -417,6 +438,9 @@ export function App() {
             </article>
           )}
           {liveHere && stream.run.events.length > 0 && <RunCard run={stream.run} agents={agents} />}
+          {liveHere && stream.run.approval && (
+            <ToolApprovalCard approval={stream.run.approval} onDecision={stream.approve} />
+          )}
           {liveHere && stream.run.assistantText && (
             <article className="message assistant-message live-message">
               <div className="message-author"><span className="avatar message-avatar">{agentAvatar(liveAgent)}</span>{liveAgent?.name || "Agent"}</div>

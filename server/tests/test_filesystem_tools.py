@@ -45,6 +45,22 @@ class FileToolsTest(unittest.IsolatedAsyncioTestCase):
 
             self.assertEqual(result.content, "allowed by OS")
 
+    async def test_markdown_write_requires_approval(self) -> None:
+        with tempfile.TemporaryDirectory() as directory:
+            path = Path(directory) / "note.md"
+            registry = create_file_tool_registry()
+            context = ToolContext("client-a", "agent-a")
+            arguments = {"path": str(path), "content": "# Updated"}
+
+            with self.assertRaises(PermissionError):
+                await registry.execute("write_markdown", context, arguments)
+            self.assertFalse(path.exists())
+
+            result = await registry.execute(
+                "write_markdown", context, arguments, approved=True
+            )
+            self.assertEqual(path.read_text(encoding="utf-8"), "# Updated")
+            self.assertEqual(result.metadata["path"], str(path))
 
 if __name__ == "__main__":
     unittest.main()

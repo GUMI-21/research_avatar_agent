@@ -39,6 +39,23 @@ describe("WorkspaceRunSocket", () => {
     client.close();
   });
 
+  it("sends a scoped tool approval decision", () => {
+    vi.stubGlobal("WebSocket", FakeWebSocket);
+    const client = new WorkspaceRunSocket("client-a", () => undefined, () => undefined);
+    client.connect();
+    const socket = FakeWebSocket.instances[0];
+    socket.open();
+
+    client.approve("run-1", "approval-1", true);
+
+    expect(JSON.parse(socket.sent[0])).toEqual({
+      type: "tool_approval",
+      run_id: "run-1",
+      approval_id: "approval-1",
+      approved: true,
+    });
+    client.close();
+  });
   it("reconnects and resumes the active run after its last durable event", () => {
     vi.useFakeTimers();
     vi.stubGlobal("WebSocket", FakeWebSocket);

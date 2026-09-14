@@ -22,6 +22,7 @@ from app.core.database import Base, Database
 from app.repositories import AgentRepository, KnowledgeSourceRepository, SessionRepository
 from app.schemas.llm import LLMProvider
 from app.services.runtime_registry import RuntimeRegistry
+from app.tools import ToolApprovalBroker
 
 
 class WebSocketRuntime:
@@ -36,6 +37,26 @@ class WebSocketRuntime:
         )
         yield RuntimeEvent(type=RuntimeEventType.RUN_FINISHED)
 
+
+class ApprovalRuntime:
+    def __init__(self, approvals: ToolApprovalBroker) -> None:
+        self.approvals = approvals
+
+    async def stream(
+        self, request: RuntimeRequest
+    ) -> AsyncIterator[RuntimeEvent]:
+        yield RuntimeEvent(type=RuntimeEventType.RUN_STARTED)
+        pending = self.approvals.create(request.client_id, request.run_id)
+        yield RuntimeEvent(
+            type=RuntimeEventType.APPROVAL_REQUIRED,
+            payload={"approval_id": pending.id, "tool_name": "write_markdown"},
+        )
+        approved = await pending.decision
+        yield RuntimeEvent(
+            type=RuntimeEventType.TOOL_FINISHED,
+            payload={"tool_name": "write_markdown", "approved": approved},
+        )
+        yield RuntimeEvent(type=RuntimeEventType.RUN_FINISHED)
 
 class RecordingLLMClient(LLMClient):
     def __init__(self) -> None:
@@ -72,6 +93,8 @@ class WorkspaceWebSocketTest(unittest.TestCase):
         app.state.runtime_registry = registry
         app.state.embedding_client = HashEmbeddingAdapter()
         app.state.graph_checkpointer = InMemorySaver()
+        self.approvals = ToolApprovalBroker()
+        app.state.tool_approval_broker = self.approvals
         app.include_router(api_router)
         self.client = TestClient(app)
         self.session_id = asyncio.run(self._create_session())
@@ -214,6 +237,31 @@ class WorkspaceWebSocketTest(unittest.TestCase):
         )
         self.assertEqual(frames[1]["payload"]["to_agent_id"], target_agent_id)
 
+    @patch("app.api.routes.workspace_ws.log")
+    def test_tool_approval_resumes_active_run(self, _mocked_log) -> None:
+        self.registry._factories["native"] = lambda: ApprovalRuntime(self.approvals)
+        with self.client.websocket_connect(
+            "/api/v1/ws?client_id=client-a"
+        ) as websocket:
+            websocket.send_json({
+                "type": "send_message",
+                "session_id": self.session_id,
+                "content": "Write",
+            })
+            started = websocket.receive_json()
+            approval = websocket.receive_json()
+            websocket.send_json({
+                "type": "tool_approval",
+                "run_id": started["run_id"],
+                "approval_id": approval["payload"]["approval_id"],
+                "approved": True,
+            })
+            finished = websocket.receive_json()
+            completed = websocket.receive_json()
+
+        self.assertEqual(approval["type"], "approval_required")
+        self.assertTrue(finished["payload"]["approved"])
+        self.assertEqual(completed["type"], "run_finished")
     @patch("app.api.routes.workspace_ws.log")
     def test_invalid_command_returns_safe_error(self, _mocked_log) -> None:
         with self.client.websocket_connect(

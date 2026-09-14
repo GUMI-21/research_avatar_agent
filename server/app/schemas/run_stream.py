@@ -45,13 +45,20 @@ class PingCommand(BaseModel):
     request_id: str = Field(min_length=1, max_length=64)
 
 
+class ToolApprovalCommand(BaseModel):
+    type: Literal["tool_approval"]
+    run_id: str = Field(min_length=1, max_length=36)
+    approval_id: str = Field(min_length=1, max_length=36)
+    approved: bool
+
 class CancelRunCommand(BaseModel):
     type: Literal["cancel_run"]
     run_id: str = Field(min_length=1, max_length=36)
 
 
 WorkspaceCommand = Annotated[
-    SendMessageCommand | ResumeRunCommand | PingCommand | CancelRunCommand,
+    SendMessageCommand | ResumeRunCommand | PingCommand | CancelRunCommand
+    | ToolApprovalCommand,
     Field(discriminator="type"),
 ]
 WORKSPACE_COMMAND_ADAPTER = TypeAdapter(WorkspaceCommand)

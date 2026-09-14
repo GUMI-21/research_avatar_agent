@@ -48,7 +48,7 @@ MCP 返回内容与网页、邮件内容都视为不可信数据。它们只作�
 
 1. 已完成：工具契约、注册表、严格参数校验和风险审批拦截。
 2. 已完成：Server 文件只读工具与 Native Agent 多轮工具循环。
-3. 文件修改工具、Run 暂停恢复与前端批准/拒绝。
+3. 已完成：Markdown 修改工具、当前连接内 Run 暂停恢复与前端批准/拒绝。跨进程恢复后续补充。
 4. MCP Client 的 HTTP/stdio 连接、工具发现、调用和错误归一化。
 5. Playwright MCP 浏览器连接与域名策略。
 6. Google OAuth，以及 Gmail/Calendar 只读工具。

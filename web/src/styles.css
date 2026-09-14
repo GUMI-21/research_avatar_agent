@@ -193,3 +193,11 @@ button:disabled { cursor: not-allowed; opacity: .45; }
 .header-actions { display: flex; align-items: center; gap: 8px; }
 .icon-action { width: 30px; height: 30px; display: grid; place-items: center; border: 1px solid #d9c8b7; border-radius: 8px; background: #fffaf2; color: #8d5e45; }
 .icon-action:hover { background: #f5e8d8; }
+
+.approval-card { max-width: 720px; margin: 10px 0 22px; padding: 14px; border: 1px solid #d5ad88; border-radius: 10px; background: #fff7e9; box-shadow: 0 8px 24px #8a6c4d18; }
+.approval-card > div:first-child { display: flex; align-items: center; gap: 8px; color: #704936; }
+.approval-card code { display: block; margin: 10px 0; color: #865d47; overflow-wrap: anywhere; }
+.approval-card pre { max-height: 220px; overflow: auto; white-space: pre-wrap; padding: 10px; border-radius: 8px; background: #f3e8d9; color: #4f433a; font: 12px/1.55 ui-monospace, monospace; }
+.approval-actions { display: flex; justify-content: flex-end; gap: 8px; margin-top: 12px; }
+.approval-actions button { border: 1px solid #ccb7a3; border-radius: 7px; padding: 7px 12px; background: #f4e8da; cursor: pointer; }
+.approval-actions button.primary { border-color: #9d583f; background: #ad664a; color: #fffaf5; }

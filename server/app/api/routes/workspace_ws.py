@@ -20,6 +20,7 @@ from app.schemas.run_stream import (
     ReplayCompleteFrame,
     ResumeRunCommand,
     RunEventFrame,
+    ToolApprovalCommand,
     WebSocketErrorFrame,
 )
 from app.services import (
@@ -28,6 +29,7 @@ from app.services import (
     RunExecutionService,
 )
 from app.services.runtime_registry import RuntimeNotFoundError, RuntimeRegistry
+from app.tools import ToolApprovalBroker
 from logs import log
 
 router = APIRouter()
@@ -53,6 +55,7 @@ async def workspace_socket(
     graph_checkpointer: BaseCheckpointSaver[str] = (
         websocket.app.state.graph_checkpointer
     )
+    approvals: ToolApprovalBroker = websocket.app.state.tool_approval_broker
     log.info("websocket_connected business=agent_workspace client_id={}", client_id)
     # 异步协程锁，保证发送消息不冲突
     send_lock = asyncio.Lock()
@@ -80,6 +83,23 @@ async def workspace_socket(
                     send_lock,
                     PongFrame(request_id=command.request_id),
                 )
+                continue
+            if isinstance(command, ToolApprovalCommand):
+                if (
+                    active_run.run_id != command.run_id
+                    or not approvals.decide(
+                        client_id,
+                        command.run_id,
+                        command.approval_id,
+                        command.approved,
+                    )
+                ):
+                    await _send_error(
+                        websocket,
+                        send_lock,
+                        "approval_not_pending",
+                        "Tool approval is not pending for this Run",
+                    )
                 continue
             # 终止当前连接中正在执行的 Agent Run
             if isinstance(command, CancelRunCommand):

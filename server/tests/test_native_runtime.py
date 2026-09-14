@@ -1,5 +1,6 @@
 """Tests for the API-backed native Personal Agent runtime."""
 
+import tempfile
 import unittest
 from pathlib import Path
 from collections.abc import AsyncIterator
@@ -21,7 +22,7 @@ from app.adapters.llm import (
     LLMUsage,
 )
 from app.schemas.llm import LLMProvider
-from app.tools import create_file_tool_registry
+from app.tools import ToolApprovalBroker, create_file_tool_registry
 
 
 class FakeLLMClient(LLMClient):
@@ -105,6 +106,26 @@ class FileToolCallingLLMClient(FakeLLMClient):
             text="Read completed",
             provider=LLMProvider.MOCK,
             model="mock-tools",
+        )
+
+class WriteToolCallingLLMClient(FakeLLMClient):
+    def __init__(self, path: str) -> None:
+        super().__init__()
+        self.path = path
+        self.calls = 0
+
+    async def stream(
+        self, request: LLMRequest
+    ) -> AsyncIterator[LLMStreamChunk]:
+        self.calls += 1
+        yield LLMStreamChunk(
+            text="Done" if self.calls > 1 else "",
+            provider=LLMProvider.MOCK,
+            model="mock-tools",
+            tool_call=None if self.calls > 1 else LLMToolCall(
+                name="write_markdown",
+                arguments={"path": self.path, "content": "# Approved"},
+            ),
         )
 
 def make_request(knowledge_context: str = "") -> RuntimeRequest:
@@ -246,6 +267,27 @@ class NativeAgentRuntimeTest(unittest.IsolatedAsyncioTestCase):
         self.assertEqual(len(client.requests), 2)
         self.assertIn("<read_text_file>", client.requests[1].message)
         self.assertEqual(events[-1].type, RuntimeEventType.RUN_FINISHED)
+    async def test_markdown_write_pauses_for_approval(self) -> None:
+        with tempfile.TemporaryDirectory() as directory:
+            path = Path(directory) / "note.md"
+            approvals = ToolApprovalBroker()
+            runtime = NativeAgentRuntime(
+                WriteToolCallingLLMClient(str(path)),
+                create_file_tool_registry(),
+                approvals,
+            )
+            events = []
+            async for event in runtime.stream(make_request()):
+                events.append(event)
+                if event.type is RuntimeEventType.APPROVAL_REQUIRED:
+                    self.assertFalse(path.exists())
+                    approvals.decide(
+                        "client-a", "run-1",
+                        str(event.payload["approval_id"]), True,
+                    )
+
+            self.assertEqual(path.read_text(encoding="utf-8"), "# Approved")
+            self.assertIn(RuntimeEventType.TOOL_FINISHED, [item.type for item in events])
     async def test_delegate_tool_rejects_target_outside_allowlist(self) -> None:
         client = ToolCallingLLMClient("agent-unknown")
         request = replace(

@@ -73,6 +73,10 @@ export class WorkspaceRunSocket {
     });
   }
 
+  approve(runId: string, approvalId: string, approved: boolean) {
+    this.send({ type: "tool_approval", run_id: runId, approval_id: approvalId, approved });
+  }
+
   cancel(runId: string) {
     this.send({ type: "cancel_run", run_id: runId });
   }

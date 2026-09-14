@@ -327,6 +327,36 @@ describe("Agent workspace resources", () => {
     expect(screen.getByText("这是流式回答").closest("article")).toHaveTextContent("🧠");
     expect(screen.getAllByText("运行完成")).toHaveLength(2);
   });
+  it("reviews and approves a Markdown tool call", async () => {
+    renderApp();
+    const composer = screen.getByLabelText("消息");
+    await waitFor(() => expect(composer).toBeEnabled());
+    fireEvent.change(composer, { target: { value: "更新笔记" } });
+    fireEvent.click(screen.getByRole("button", { name: "发送" }));
+    const socket = FakeWebSocket.instances[0];
+
+    act(() => socket.emit({
+      type: "approval_required",
+      run_id: "run-write",
+      sequence: 2,
+      payload: {
+        approval_id: "approval-1",
+        tool_name: "write_markdown",
+        path: "D:/projects/笔记/today.md",
+        content_preview: "# Today",
+      },
+    }));
+
+    expect(screen.getByText("D:/projects/笔记/today.md")).toBeInTheDocument();
+    expect(screen.getByText("# Today")).toBeInTheDocument();
+    fireEvent.click(screen.getByRole("button", { name: "批准写入" }));
+    expect(JSON.parse(socket.sent[1])).toEqual({
+      type: "tool_approval",
+      run_id: "run-write",
+      approval_id: "approval-1",
+      approved: true,
+    });
+  });
   it("hands a message to an @mentioned Agent", async () => {
     renderApp();
     const composer = screen.getByLabelText("消息");

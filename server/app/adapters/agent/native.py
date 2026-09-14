@@ -15,7 +15,13 @@ from app.adapters.llm import (
     LLMUsage,
 )
 from app.schemas.llm import LLMProvider
-from app.tools import ToolContext, ToolRegistry
+from app.tools import (
+    ToolApprovalBroker,
+    ToolApprovalRequiredError,
+    ToolContext,
+    ToolRegistry,
+    ToolResult,
+)
 
 
 def _add_usage(total: LLMUsage | None, current: LLMUsage | None) -> LLMUsage | None:
@@ -33,6 +39,7 @@ def _add_usage(total: LLMUsage | None, current: LLMUsage | None) -> LLMUsage | N
         add(total.cache_read_tokens, current.cache_read_tokens),
         add(total.cache_write_tokens, current.cache_write_tokens),
     )
+
 
 class HandoffRequestRejectedError(ValueError):
     pass
@@ -68,10 +75,14 @@ class NativeAgentRuntime:
     """Normalize one provider call into auditable Agent Runtime events."""
 
     def __init__(
-        self, llm_client: LLMClient, tool_registry: ToolRegistry | None = None
+        self,
+        llm_client: LLMClient,
+        tool_registry: ToolRegistry | None = None,
+        approvals: ToolApprovalBroker | None = None,
     ) -> None:
         self._llm_client = llm_client
         self._tools = tool_registry
+        self._approvals = approvals
 
     # 实现 AgentRuntimeAdapter 约定的 stream 接口
     async def stream(
@@ -181,9 +192,45 @@ class NativeAgentRuntime:
                             type=RuntimeEventType.TOOL_STARTED,
                             payload={"tool_name": chunk.tool_call.name},
                         )
-                        result = await self._tools.execute(
-                            chunk.tool_call.name, tool_context, arguments
-                        )
+                        try:
+                            result = await self._tools.execute(
+                                chunk.tool_call.name, tool_context, arguments
+                            )
+                        except ToolApprovalRequiredError as approval:
+                            if self._approvals is None:
+                                raise
+                            pending = self._approvals.create(
+                                request.client_id, request.run_id
+                            )
+                            yield RuntimeEvent(
+                                type=RuntimeEventType.APPROVAL_REQUIRED,
+                                payload={
+                                    "approval_id": pending.id,
+                                    "tool_name": chunk.tool_call.name,
+                                    "risk": approval.tool.risk.value,
+                                    "path": arguments.get("path"),
+                                    "content_preview": str(
+                                        arguments.get("content", "")
+                                    )[:4_000],
+                                },
+                            )
+                            try:
+                                approved = await pending.decision
+                            finally:
+                                self._approvals.discard(pending.id)
+                            result = (
+                                await self._tools.execute(
+                                    chunk.tool_call.name,
+                                    tool_context,
+                                    arguments,
+                                    approved=True,
+                                )
+                                if approved
+                                else ToolResult(
+                                    "User rejected the tool call",
+                                    {"status": "rejected"},
+                                )
+                            )
                         yield RuntimeEvent(
                             type=RuntimeEventType.TOOL_FINISHED,
                             payload={
