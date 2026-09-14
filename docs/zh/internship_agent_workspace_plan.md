@@ -256,6 +256,8 @@ Provider/Model 聚合属于后续增强，不阻塞可用 Workspace。
 
 Codex CLI Adapter 第一批已接入 `codex exec --json`：固定仓库工作目录和 `workspace-write` 沙箱，默认继承本机 Codex/CC Switch 模型配置，并将回复及 Token 用量归一化为现有 `RuntimeEvent`。第二批已把命令执行、文件修改、MCP 调用和 Provider 重试映射为不含命令正文、参数或结果正文的审计事件，并修正 Codex 0.153.4 中互斥的沙箱参数。第三批新增按 `client_id + session_id + agent_id + runtime` 隔离的外部 thread 绑定；首次运行持久化 Codex thread ID，后续运行通过 `codex exec resume` 继续上下文，并只发送本轮任务以避免重复注入历史。第四批允许 Codex Agent 在创建时指定项目目录；CLI 执行前会解析真实路径并限制在服务端允许根目录内，避免路径或软链接越界。Codex Runtime 采用纯代理边界：只转发本轮用户消息，代码上下文、文件访问、工具调用和上下文压缩均由 Codex thread 管理；服务端仅保留身份隔离、会话绑定、事件与 usage 记录。前端已支持创建 Codex Runtime Agent；设置页通过安全状态接口每分钟读取 Server 主机的登录方式、套餐与额度窗口，不返回账号身份或凭据。
 
+Tool/MCP/Skill 阶段第一批已建立 provider-neutral 的 Tool Registry：Pydantic 严格校验输入，按只读、本地写、外部读、外部写划分风险，并在执行副作用前统一抛出审批请求。后续文件、浏览器与 Google Workspace 能力都通过该边界进入 Native Runtime。总体设计见 [Tool、MCP 与 Skill 开发计划](tool_mcp_skill_plan.md)。
+
 Native Agent 聊天执行链已接入其绑定知识库的混合检索，并在 6000 字符预算内注入带
 引用上下文；缺少 Embedding Client 的轻量执行仍可回退到关键词检索。运行事件会记录
 检索策略、每个知识库的候选 Chunk 与预算后实际选中的 Chunk，但不持久化笔记正文。
