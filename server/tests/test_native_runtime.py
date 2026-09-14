@@ -1,6 +1,7 @@
 """Tests for the API-backed native Personal Agent runtime."""
 
 import unittest
+from pathlib import Path
 from collections.abc import AsyncIterator
 from dataclasses import replace
 
@@ -20,6 +21,7 @@ from app.adapters.llm import (
     LLMUsage,
 )
 from app.schemas.llm import LLMProvider
+from app.tools import create_file_tool_registry
 
 
 class FakeLLMClient(LLMClient):
@@ -78,6 +80,32 @@ class ToolCallingLLMClient(FakeLLMClient):
             ),
         )
 
+
+class FileToolCallingLLMClient(FakeLLMClient):
+    def __init__(self) -> None:
+        super().__init__()
+        self.requests: list[LLMRequest] = []
+
+    async def stream(
+        self, request: LLMRequest
+    ) -> AsyncIterator[LLMStreamChunk]:
+        self.requests.append(request)
+        if len(self.requests) == 1:
+            yield LLMStreamChunk(
+                text="",
+                provider=LLMProvider.MOCK,
+                model="mock-tools",
+                tool_call=LLMToolCall(
+                    name="read_text_file",
+                    arguments={"path": "README.md", "max_chars": 40},
+                ),
+            )
+            return
+        yield LLMStreamChunk(
+            text="Read completed",
+            provider=LLMProvider.MOCK,
+            model="mock-tools",
+        )
 
 def make_request(knowledge_context: str = "") -> RuntimeRequest:
     return RuntimeRequest(
@@ -205,6 +233,19 @@ class NativeAgentRuntimeTest(unittest.IsolatedAsyncioTestCase):
         assert client.last_request is not None
         self.assertEqual(client.last_request.tools[0].name, "delegate_to_agent")
 
+    async def test_read_tool_result_is_returned_to_model(self) -> None:
+        client = FileToolCallingLLMClient()
+        root = Path(__file__).resolve().parents[1]
+        runtime = NativeAgentRuntime(client, create_file_tool_registry(root))
+
+        events = [event async for event in runtime.stream(make_request())]
+
+        event_types = [event.type for event in events]
+        self.assertIn(RuntimeEventType.TOOL_STARTED, event_types)
+        self.assertIn(RuntimeEventType.TOOL_FINISHED, event_types)
+        self.assertEqual(len(client.requests), 2)
+        self.assertIn("<read_text_file>", client.requests[1].message)
+        self.assertEqual(events[-1].type, RuntimeEventType.RUN_FINISHED)
     async def test_delegate_tool_rejects_target_outside_allowlist(self) -> None:
         client = ToolCallingLLMClient("agent-unknown")
         request = replace(

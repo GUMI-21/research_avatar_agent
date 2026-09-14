@@ -1,5 +1,6 @@
 """Native and MCP tool execution boundaries."""
 
+from app.tools.filesystem import create_file_tool_registry
 from app.tools.registry import (
     ToolApprovalRequiredError,
     ToolArguments,
@@ -20,4 +21,5 @@ __all__ = [
     "ToolResult",
     "ToolRisk",
     "ToolSpec",
+    "create_file_tool_registry",
 ]

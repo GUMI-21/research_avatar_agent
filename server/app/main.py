@@ -14,6 +14,7 @@ from app.core.settings import Settings, get_settings
 from app.services.llm_credentials import LLMCredentialStore
 from app.services.llm_runtime import LLMRuntime
 from app.services.runtime_registry import RuntimeRegistry
+from app.tools import create_file_tool_registry
 from logs import configure_logging, log
 
 
@@ -56,8 +57,11 @@ def create_app(settings: Settings) -> FastAPI:
         app.state.database, settings.llm.credential_key_path
     )
     runtime_registry = RuntimeRegistry()
+    file_tools = create_file_tool_registry()
     # 注册创建 NativeAgentRuntime 的匿名工厂函数
-    runtime_registry.register("native", lambda: NativeAgentRuntime(llm_runtime))
+    runtime_registry.register(
+        "native", lambda: NativeAgentRuntime(llm_runtime, file_tools)
+    )
     runtime_registry.register(
         "codex", lambda: CodexAgentRuntime(
             settings.codex.workspace_root,
