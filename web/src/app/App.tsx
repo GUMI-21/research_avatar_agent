@@ -434,7 +434,8 @@ export function App() {
           })}
           {liveHere && stream.run.userText && (
             <article className="message user-message live-message">
-              <p>{stream.run.userText}</p><time>刚刚</time>
+              <p>{stream.run.userText}</p>
+              <time>{stream.run.completedAt ? formatDate(stream.run.completedAt) : "刚刚"}</time>
             </article>
           )}
           {liveHere && stream.run.events.length > 0 && <RunCard run={stream.run} agents={agents} />}
@@ -444,7 +445,11 @@ export function App() {
           {liveHere && stream.run.assistantText && (
             <article className="message assistant-message live-message">
               <div className="message-author"><span className="avatar message-avatar">{agentAvatar(liveAgent)}</span>{liveAgent?.name || "Agent"}</div>
-              <div className="markdown-content streaming"><MarkdownContent>{stream.run.assistantText}</MarkdownContent><span className="stream-cursor" /></div>
+              <div className={`markdown-content ${stream.run.status === "running" ? "streaming" : ""}`}>
+                <MarkdownContent>{stream.run.assistantText}</MarkdownContent>
+                {stream.run.status === "running" && <span className="stream-cursor" />}
+              </div>
+              <time>{stream.run.completedAt ? formatDate(stream.run.completedAt) : "正在输入"}</time>
             </article>
           )}
           {liveHere && stream.run.error && <div className="error-banner">{stream.run.error}</div>}

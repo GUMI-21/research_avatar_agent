@@ -29,7 +29,7 @@ llm:
   credential_key_path: /app/runtime/credential.key
   default_provider: mock
   timeout_seconds: 30
-  max_output_tokens: 1024
+  max_output_tokens: 8192
   openai:
     model: gpt-5.6-luna
     base_url: https://api.openai.com/v1

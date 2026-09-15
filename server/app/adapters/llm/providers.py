@@ -460,11 +460,11 @@ class GeminiAdapter(_HTTPAdapter):
                 )
             usage = event.get("usageMetadata")
             if isinstance(usage, dict):
+                candidate_tokens = _optional_int(usage.get("candidatesTokenCount"))
+                thought_tokens = _optional_int(usage.get("thoughtsTokenCount"))
                 reported_usage = LLMUsage(
                     input_tokens=_optional_int(usage.get("promptTokenCount")),
-                    output_tokens=_optional_int(
-                        usage.get("candidatesTokenCount")
-                    ),
+                    output_tokens=(candidate_tokens or 0) + (thought_tokens or 0),
                     cache_read_tokens=_optional_int(
                         usage.get("cachedContentTokenCount")
                     ),

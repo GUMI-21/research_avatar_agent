@@ -511,7 +511,8 @@ class ProviderAdapterTest(unittest.IsolatedAsyncioTestCase):
                     'data: {"candidates":[{"content":{"parts":['
                     '{"text":"reply"}]},"finishReason":"STOP"}],'
                     '"usageMetadata":{"promptTokenCount":8,'
-                    '"candidatesTokenCount":2,"cachedContentTokenCount":3}}',
+                    '"candidatesTokenCount":2,"thoughtsTokenCount":5,'
+                    '"cachedContentTokenCount":3}}',
                 ]
             )
             return httpx.Response(
@@ -538,7 +539,7 @@ class ProviderAdapterTest(unittest.IsolatedAsyncioTestCase):
         self.assertIsNotNone(usage)
         assert usage is not None
         self.assertEqual(usage.input_tokens, 8)
-        self.assertEqual(usage.output_tokens, 2)
+        self.assertEqual(usage.output_tokens, 7)
         self.assertEqual(usage.cache_read_tokens, 3)
 
     async def test_deepseek_chat_completions_format(self) -> None:

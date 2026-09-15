@@ -325,6 +325,9 @@ describe("Agent workspace resources", () => {
     expect(screen.getByText("解释状态图")).toBeInTheDocument();
     expect(screen.getByText("这是流式回答").tagName).toBe("STRONG");
     expect(screen.getByText("这是流式回答").closest("article")).toHaveTextContent("🧠");
+    expect(screen.getByText("这是流式回答").closest("article")?.querySelector(".stream-cursor")).toBeNull();
+    expect(screen.getByText("这是流式回答").closest("article")?.querySelector("time"))
+      .not.toHaveTextContent("正在输入");
     expect(screen.getAllByText("运行完成")).toHaveLength(2);
   });
   it("reviews and approves a Markdown tool call", async () => {

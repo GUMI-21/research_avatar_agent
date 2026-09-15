@@ -23,6 +23,7 @@ export type LiveRun = {
   assistantText: string;
   events: RunEventFrame[];
   status: "idle" | "running" | "completed" | "failed" | "cancelled";
+  completedAt: string | null;
   error: string | null;
   approval: PendingApproval | null;
 };
@@ -34,6 +35,7 @@ const emptyRun: LiveRun = {
   assistantText: "",
   events: [],
   status: "idle",
+  completedAt: null,
   error: null,
   approval: null,
 };
@@ -114,6 +116,7 @@ function handleFrame(
       : frame.type === "run_failed" ? "failed"
       : frame.type === "run_cancelled" ? "cancelled"
       : current.status,
+    completedAt: terminalEvents.has(frame.type) ? new Date().toISOString() : current.completedAt,
   }));
   if (terminalEvents.has(frame.type)) onTerminal(frame.run_id, sessionId);
 }
