@@ -2,6 +2,7 @@
 
 from app.tools.approval import ToolApprovalBroker
 from app.tools.filesystem import create_file_tool_registry
+from app.tools.mcp import MCPClient, MCPError, MCPTransport
 from app.tools.registry import (
     ToolApprovalRequiredError,
     ToolArguments,
@@ -14,6 +15,9 @@ from app.tools.registry import (
 )
 
 __all__ = [
+    "MCPClient",
+    "MCPError",
+    "MCPTransport",
     "ToolApprovalBroker",
     "ToolApprovalRequiredError",
     "ToolArguments",
