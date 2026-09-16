@@ -3,7 +3,7 @@
 import unittest
 from unittest.mock import patch
 
-from app.tools import MCPError, StdioMCPTransport
+from app.tools import MCPError, StdioMCPTransport, StreamableHttpMCPTransport
 
 
 class FakeResult:
@@ -41,7 +41,7 @@ class StdioMCPTransportTest(unittest.IsolatedAsyncioTestCase):
         with self.assertRaisesRegex(MCPError, "not connected"):
             await transport.request("tools/list")
 
-        with patch("app.tools.mcp_stdio.Client", return_value=fake) as factory:
+        with patch("app.tools.mcp_sdk.Client", return_value=fake) as factory:
             async with transport:
                 listed = await transport.request("tools/list")
                 called = await transport.request("tools/call", {
@@ -56,9 +56,21 @@ class StdioMCPTransportTest(unittest.IsolatedAsyncioTestCase):
         self.assertEqual(parameters.command, "fake-server")
         self.assertEqual(parameters.args, ["--stdio"])
 
+    async def test_streamable_http_uses_url_client(self) -> None:
+        fake = FakeClient()
+        with patch("app.tools.mcp_sdk.Client", return_value=fake) as factory:
+            async with StreamableHttpMCPTransport(
+                "http://127.0.0.1:8931/mcp"
+            ) as transport:
+                listed = await transport.request("tools/list")
+
+        self.assertEqual(listed["tools"], [{"name": "search"}])
+        self.assertEqual(factory.call_args.args[0], "http://127.0.0.1:8931/mcp")
+        self.assertTrue(fake.closed)
+
     async def test_rejects_unknown_method_and_invalid_call(self) -> None:
         fake = FakeClient()
-        with patch("app.tools.mcp_stdio.Client", return_value=fake):
+        with patch("app.tools.mcp_sdk.Client", return_value=fake):
             async with StdioMCPTransport("fake-server") as transport:
                 with self.assertRaisesRegex(MCPError, "Unsupported"):
                     await transport.request("resources/list")

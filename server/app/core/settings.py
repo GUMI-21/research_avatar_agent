@@ -99,8 +99,15 @@ class MCPStdioServerSettings(StrictSettingsModel):
     timeout_seconds: float = Field(default=30, gt=0, le=300)
 
 
+class MCPHttpServerSettings(StrictSettingsModel):
+    name: str = Field(pattern=r"^[a-z][a-z0-9_]{0,31}$")
+    url: AnyHttpUrl
+    timeout_seconds: float = Field(default=30, gt=0, le=300)
+
+
 class MCPSettings(StrictSettingsModel):
     stdio_servers: tuple[MCPStdioServerSettings, ...] = ()
+    http_servers: tuple[MCPHttpServerSettings, ...] = ()
 
 class Settings(StrictSettingsModel):
     """Complete server configuration for one runtime environment."""

@@ -27,6 +27,7 @@ embedding:
 
 mcp:
   stdio_servers: []
+  http_servers: []
 
 llm:
   credential_key_path: /app/runtime/credential.key

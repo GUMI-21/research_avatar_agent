@@ -3,7 +3,7 @@
 from app.tools.approval import ToolApprovalBroker
 from app.tools.filesystem import create_file_tool_registry
 from app.tools.mcp import MCPClient, MCPError, MCPTransport
-from app.tools.mcp_stdio import StdioMCPTransport
+from app.tools.mcp_sdk import StdioMCPTransport, StreamableHttpMCPTransport
 from app.tools.registry import (
     ToolApprovalRequiredError,
     ToolArguments,
@@ -20,6 +20,7 @@ __all__ = [
     "MCPError",
     "MCPTransport",
     "StdioMCPTransport",
+    "StreamableHttpMCPTransport",
     "ToolApprovalBroker",
     "ToolApprovalRequiredError",
     "ToolArguments",

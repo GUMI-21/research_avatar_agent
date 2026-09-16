@@ -15,7 +15,8 @@ from app.services.llm_credentials import LLMCredentialStore
 from app.services.llm_runtime import LLMRuntime
 from app.services.runtime_registry import RuntimeRegistry
 from app.tools import (
-    MCPClient, StdioMCPTransport, ToolApprovalBroker, create_file_tool_registry,
+    MCPClient, StdioMCPTransport, StreamableHttpMCPTransport,
+    ToolApprovalBroker, create_file_tool_registry,
 )
 from logs import configure_logging, log
 
@@ -38,6 +39,20 @@ async def lifespan(app: FastAPI) -> AsyncIterator[None]:
                     config.command, config.args, cwd=config.cwd,
                     timeout_seconds=config.timeout_seconds,
                 ))
+                names = await MCPClient(config.name, transport).register_tools(
+                    app.state.tool_registry
+                )
+                log.info("Connected MCP server={} tools={}", config.name, len(names))
+            except Exception as error:
+                log.warning("MCP server={} unavailable error_type={}",
+                            config.name, type(error).__name__)
+        for config in app.state.settings.mcp.http_servers:
+            try:
+                transport = await mcp_stack.enter_async_context(
+                    StreamableHttpMCPTransport(
+                        str(config.url), timeout_seconds=config.timeout_seconds,
+                    )
+                )
                 names = await MCPClient(config.name, transport).register_tools(
                     app.state.tool_registry
                 )

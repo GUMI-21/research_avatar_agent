@@ -31,6 +31,7 @@ codex:
 
 mcp:
   stdio_servers: []
+  http_servers: []
 
 llm:
   default_provider: mock
