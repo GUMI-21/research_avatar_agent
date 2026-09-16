@@ -4,6 +4,7 @@ import json
 import re
 from collections.abc import Mapping
 from typing import Protocol, cast
+from urllib.parse import urlsplit
 
 from jsonschema.validators import validator_for
 from pydantic import ConfigDict
@@ -34,9 +35,42 @@ def _tool_name(server: str, remote_name: str) -> str:
 
 
 class MCPClient:
-    def __init__(self, server_name: str, transport: MCPTransport) -> None:
+    def __init__(
+        self,
+        server_name: str,
+        transport: MCPTransport,
+        allowed_domains: tuple[str, ...] = (),
+    ) -> None:
         self._server_name = server_name
         self._transport = transport
+        self._allowed_domains = tuple(
+            domain.lower().rstrip(".") for domain in allowed_domains
+        )
+
+    def _validate_urls(self, value: object, key: str = "") -> None:
+        if not self._allowed_domains:
+            return
+        if isinstance(value, Mapping):
+            for child_key, child_value in value.items():
+                self._validate_urls(child_value, str(child_key).lower())
+            return
+        if isinstance(value, list):
+            for child_value in value:
+                self._validate_urls(child_value, key)
+            return
+        if not isinstance(value, str) or not (
+            key == "url" or key.endswith("_url")
+        ):
+            return
+        parsed = urlsplit(value)
+        hostname = (parsed.hostname or "").lower().rstrip(".")
+        if parsed.scheme not in {"http", "https"} or not hostname:
+            raise MCPError("MCP browser URL must use HTTP or HTTPS")
+        if not any(
+            hostname == domain or hostname.endswith(f".{domain}")
+            for domain in self._allowed_domains
+        ):
+            raise MCPError(f"MCP browser domain '{hostname}' is not allowed")
 
     async def register_tools(
         self, registry: ToolRegistry, risk: ToolRisk = ToolRisk.EXTERNAL_READ,
@@ -75,9 +109,11 @@ class MCPClient:
         async def call(
             _context: ToolContext, arguments: ToolArguments,
         ) -> ToolResult:
+            values = arguments.model_dump(exclude_unset=True)
+            self._validate_urls(values)
             response = await self._transport.request("tools/call", {
                 "name": remote_name,
-                "arguments": arguments.model_dump(exclude_unset=True),
+                "arguments": values,
             })
             if response.get("isError") is True:
                 raise MCPError(f"MCP tool '{remote_name}' failed")

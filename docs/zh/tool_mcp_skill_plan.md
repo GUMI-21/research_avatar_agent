@@ -39,8 +39,9 @@ MCP 返回内容与网页、邮件内容都视为不可信数据。它们只作�
 
 - Server 文件：内置 Python 工具。首版提供目录列表、UTF-8 文本读取和受控文本修改。
 - 浏览器：优先使用 Playwright MCP，保留浏览器域名允许列表、超时和下载禁用策略。
-- Gmail：优先连接 Google 官方 Gmail Remote MCP Server。它当前属于 Developer Preview；不可用时使用 Gmail REST API 兼容实现。
-- Calendar：优先连接 Google 官方 Calendar Remote MCP Server。它当前属于 Developer Preview；不可用时使用 Calendar REST API 兼容实现。
+  每个 MCP Server 可配置 `allowed_domains`；配置后仅允许 HTTP(S) 的精确域名及其子域名，空列表表示暂不启用 URL 过滤。
+- Gmail：评估可审计的社区 Google Workspace MCP；不满足安全要求时直接使用官方 Gmail REST API 实现。
+- Calendar：可与 Gmail 共用社区 Workspace MCP，也可直接使用官方 Calendar REST API；接入前以 `tools/list` 核对真实能力。
 - Google OAuth：按 client_id 隔离令牌，Server 加密保存 refresh token；前端只处理授权跳转和状态，不接触持久凭据。
 - Skill：从管理员允许目录加载 SKILL.md，限制文件大小和引用范围，记录 Skill ID 与版本哈希。
 
@@ -50,7 +51,7 @@ MCP 返回内容与网页、邮件内容都视为不可信数据。它们只作�
 2. 已完成：Server 文件只读工具与 Native Agent 多轮工具循环。
 3. 已完成：Markdown 修改工具、当前连接内 Run 暂停恢复与前端批准/拒绝。跨进程恢复后续补充。
 4. 已完成：工具发现、JSON Schema 校验、Registry 注册、调用与错误归一化，并用官方 SDK 接入 stdio、Streamable HTTP Transport 和应用生命周期。
-5. Playwright MCP 浏览器连接与域名策略。
+5. 进行中：MCP 浏览器 URL 已支持按 Server 配置域名允许列表；下一批完成真实 Playwright MCP 连接验证。
 6. Google OAuth，以及 Gmail/Calendar 只读工具。
 7. Gmail 草稿/发送与 Calendar 创建/修改工具的审批流程。
 8. Skill 发现、启用、上下文注入和审计展示。

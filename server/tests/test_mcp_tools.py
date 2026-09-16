@@ -12,6 +12,12 @@ class FakeTransport:
     def __init__(self) -> None:
         self.calls: list[tuple[str, Mapping[str, object] | None]] = []
         self.fail = False
+        self.schema: Mapping[str, object] = {
+            "type": "object",
+            "properties": {"query": {"type": "string"}},
+            "required": ["query"],
+            "additionalProperties": False,
+        }
 
     async def request(self, method: str, params=None):
         self.calls.append((method, params))
@@ -19,12 +25,7 @@ class FakeTransport:
             return {"tools": [{
                 "name": "search-web",
                 "description": "Search the web.",
-                "inputSchema": {
-                    "type": "object",
-                    "properties": {"query": {"type": "string"}},
-                    "required": ["query"],
-                    "additionalProperties": False,
-                },
+                "inputSchema": self.schema,
             }]}
         if self.fail:
             return {"isError": True, "content": [{"type": "text", "text": "secret"}]}
@@ -64,6 +65,27 @@ class MCPClientTest(unittest.IsolatedAsyncioTestCase):
         with self.assertRaisesRegex(MCPError, "search-web"):
             await self.registry.execute(
                 self.names[0], self.context, {"query": "agents"}, approved=True,
+            )
+
+    async def test_browser_url_policy_allows_domains_and_subdomains(self) -> None:
+        self.transport.schema = {
+            "type": "object",
+            "properties": {"url": {"type": "string"}},
+            "required": ["url"],
+            "additionalProperties": False,
+        }
+        registry = ToolRegistry()
+        names = await MCPClient(
+            "browser", self.transport, ("example.com",),
+        ).register_tools(registry)
+        await registry.execute(
+            names[0], self.context, {"url": "https://docs.example.com/agents"},
+            approved=True,
+        )
+        with self.assertRaisesRegex(MCPError, "not allowed"):
+            await registry.execute(
+                names[0], self.context, {"url": "http://127.0.0.1/admin"},
+                approved=True,
             )
 
 

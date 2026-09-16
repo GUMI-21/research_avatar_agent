@@ -39,7 +39,9 @@ async def lifespan(app: FastAPI) -> AsyncIterator[None]:
                     config.command, config.args, cwd=config.cwd,
                     timeout_seconds=config.timeout_seconds,
                 ))
-                names = await MCPClient(config.name, transport).register_tools(
+                names = await MCPClient(
+                    config.name, transport, config.allowed_domains,
+                ).register_tools(
                     app.state.tool_registry
                 )
                 log.info("Connected MCP server={} tools={}", config.name, len(names))
@@ -53,7 +55,9 @@ async def lifespan(app: FastAPI) -> AsyncIterator[None]:
                         str(config.url), timeout_seconds=config.timeout_seconds,
                     )
                 )
-                names = await MCPClient(config.name, transport).register_tools(
+                names = await MCPClient(
+                    config.name, transport, config.allowed_domains,
+                ).register_tools(
                     app.state.tool_registry
                 )
                 log.info("Connected MCP server={} tools={}", config.name, len(names))

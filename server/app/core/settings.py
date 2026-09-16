@@ -97,12 +97,14 @@ class MCPStdioServerSettings(StrictSettingsModel):
     args: tuple[str, ...] = ()
     cwd: Path | None = None
     timeout_seconds: float = Field(default=30, gt=0, le=300)
+    allowed_domains: tuple[str, ...] = ()
 
 
 class MCPHttpServerSettings(StrictSettingsModel):
     name: str = Field(pattern=r"^[a-z][a-z0-9_]{0,31}$")
     url: AnyHttpUrl
     timeout_seconds: float = Field(default=30, gt=0, le=300)
+    allowed_domains: tuple[str, ...] = ()
 
 
 class MCPSettings(StrictSettingsModel):
