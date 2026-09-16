@@ -91,6 +91,17 @@ class CodexSettings(StrictSettingsModel):
     timeout_seconds: float = Field(default=300, gt=0.0, le=3600.0)
 
 
+class MCPStdioServerSettings(StrictSettingsModel):
+    name: str = Field(pattern=r"^[a-z][a-z0-9_]{0,31}$")
+    command: str = Field(min_length=1)
+    args: tuple[str, ...] = ()
+    cwd: Path | None = None
+    timeout_seconds: float = Field(default=30, gt=0, le=300)
+
+
+class MCPSettings(StrictSettingsModel):
+    stdio_servers: tuple[MCPStdioServerSettings, ...] = ()
+
 class Settings(StrictSettingsModel):
     """Complete server configuration for one runtime environment."""
 
@@ -101,6 +112,7 @@ class Settings(StrictSettingsModel):
     database: DatabaseSettings
     embedding: EmbeddingSettings = Field(default_factory=EmbeddingSettings)
     codex: CodexSettings = Field(default_factory=CodexSettings)
+    mcp: MCPSettings = Field(default_factory=MCPSettings)
     llm: LLMSettings
 
 

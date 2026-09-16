@@ -1,7 +1,7 @@
 """FastAPI application entrypoint."""
 
 from collections.abc import AsyncIterator
-from contextlib import asynccontextmanager
+from contextlib import AsyncExitStack, asynccontextmanager
 
 from fastapi import FastAPI
 from langgraph.checkpoint.memory import InMemorySaver
@@ -14,7 +14,9 @@ from app.core.settings import Settings, get_settings
 from app.services.llm_credentials import LLMCredentialStore
 from app.services.llm_runtime import LLMRuntime
 from app.services.runtime_registry import RuntimeRegistry
-from app.tools import ToolApprovalBroker, create_file_tool_registry
+from app.tools import (
+    MCPClient, StdioMCPTransport, ToolApprovalBroker, create_file_tool_registry,
+)
 from logs import configure_logging, log
 
 
@@ -28,9 +30,24 @@ async def lifespan(app: FastAPI) -> AsyncIterator[None]:
         app.version,
         app.state.settings.environment,
     )
+    mcp_stack = AsyncExitStack()
     try:
+        for config in app.state.settings.mcp.stdio_servers:
+            try:
+                transport = await mcp_stack.enter_async_context(StdioMCPTransport(
+                    config.command, config.args, cwd=config.cwd,
+                    timeout_seconds=config.timeout_seconds,
+                ))
+                names = await MCPClient(config.name, transport).register_tools(
+                    app.state.tool_registry
+                )
+                log.info("Connected MCP server={} tools={}", config.name, len(names))
+            except Exception as error:
+                log.warning("MCP server={} unavailable error_type={}",
+                            config.name, type(error).__name__)
         yield
     finally:
+        await mcp_stack.aclose()
         await app.state.database.dispose()
         log.info("Stopping {}", app.title)
 
@@ -58,6 +75,7 @@ def create_app(settings: Settings) -> FastAPI:
     )
     runtime_registry = RuntimeRegistry()
     file_tools = create_file_tool_registry()
+    app.state.tool_registry = file_tools
     approvals = ToolApprovalBroker()
     app.state.tool_approval_broker = approvals
     # 注册创建 NativeAgentRuntime 的匿名工厂函数

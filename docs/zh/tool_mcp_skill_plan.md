@@ -49,7 +49,7 @@ MCP 返回内容与网页、邮件内容都视为不可信数据。它们只作�
 1. 已完成：工具契约、注册表、严格参数校验和风险审批拦截。
 2. 已完成：Server 文件只读工具与 Native Agent 多轮工具循环。
 3. 已完成：Markdown 修改工具、当前连接内 Run 暂停恢复与前端批准/拒绝。跨进程恢复后续补充。
-4. 进行中：已完成 MCP 工具发现、JSON Schema 校验、Registry 注册、调用和错误归一化；下一批补 HTTP/stdio Transport。
+4. 进行中：已完成工具发现、JSON Schema 校验、Registry 注册、调用与错误归一化，并用官方 SDK 接入 stdio Transport 和应用生命周期；下一批补 Streamable HTTP 与真实 Playwright MCP。
 5. Playwright MCP 浏览器连接与域名策略。
 6. Google OAuth，以及 Gmail/Calendar 只读工具。
 7. Gmail 草稿/发送与 Calendar 创建/修改工具的审批流程。

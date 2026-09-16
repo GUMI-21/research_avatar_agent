@@ -29,6 +29,9 @@ codex:
   workspace_root: ..
   timeout_seconds: 300
 
+mcp:
+  stdio_servers: []
+
 llm:
   default_provider: mock
   timeout_seconds: 30

@@ -25,6 +25,9 @@ embedding:
   dimensions: 384
   cache_dir: /app/runtime/data/models/fastembed
 
+mcp:
+  stdio_servers: []
+
 llm:
   credential_key_path: /app/runtime/credential.key
   default_provider: mock
