@@ -22,6 +22,7 @@ class AgentSchemaTest(unittest.TestCase):
         )
 
         self.assertEqual(data.name, "Personal")
+        self.assertEqual(data.avatar_emoji, "🤖")
         self.assertEqual(data.model, "demo-model")
         self.assertEqual(data.runtime, "native")
 
@@ -34,6 +35,13 @@ class AgentSchemaTest(unittest.TestCase):
 
         self.assertEqual(data.runtime, "deepseek_harness")
 
+    def test_workspace_requires_codex_runtime(self) -> None:
+        with self.assertRaises(ValidationError):
+            AgentCreate(
+                name="Native",
+                system_prompt="No filesystem runtime.",
+                workspace_path="server",
+            )
     def test_blank_prompt_is_rejected(self) -> None:
         with self.assertRaises(ValidationError):
             AgentCreate(name="Personal", system_prompt="   ")
@@ -43,6 +51,7 @@ class AgentSchemaTest(unittest.TestCase):
             id="agent-1",
             client_id="client-a",
             name="Personal",
+            avatar_emoji="🤖",
             system_prompt="Help.",
             runtime="native",
             created_at="2026-08-24T00:00:00Z",

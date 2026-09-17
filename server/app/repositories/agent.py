@@ -18,16 +18,22 @@ class AgentRepository:
         *,
         name: str,
         system_prompt: str,
+        avatar_emoji: str = "🤖",
         runtime: str = "native",
+        provider: str | None = None,
         model: str | None = None,
+        workspace_path: str | None = None,
         knowledge_sources: Sequence[KnowledgeSourceRecord] = (),
     ) -> AgentRecord:
         agent = AgentRecord(
             client_id=client_id,
             name=name,
+            avatar_emoji=avatar_emoji,
             system_prompt=system_prompt,
             runtime=runtime,
+            provider=provider,
             model=model,
+            workspace_path=workspace_path,
             # 绑定知识库
             knowledge_links=[
                 AgentKnowledgeSourceRecord(
@@ -59,3 +65,14 @@ class AgentRepository:
         )
         result = await self._session.execute(statement)
         return result.scalar_one_or_none()
+
+    async def update(
+        self, client_id: str, agent_id: str, changes: dict[str, object]
+    ) -> AgentRecord | None:
+        agent = await self.get(client_id, agent_id)
+        if agent is None:
+            return None
+        for field, value in changes.items():
+            setattr(agent, field, value)
+        await self._session.flush()
+        return agent

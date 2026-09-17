@@ -40,8 +40,9 @@ RunEvent：
 1. run_started
 2. retrieval_started
 3. retrieval_result
-4. tool_started
-5. tool_finished
-6. usage_updated
-7. run_finished
+4. context_prepared
+5. tool_started
+6. tool_finished
+7. usage_updated
+8. run_finished
 """

@@ -1,12 +1,25 @@
 """Provider-independent LLM client contracts."""
 
 from abc import ABC, abstractmethod
-from collections.abc import AsyncIterator
+from collections.abc import AsyncIterator, Mapping
 from dataclasses import dataclass
 
 from pydantic import SecretStr
 
 from app.schemas.llm import LLMProvider
+
+
+@dataclass(frozen=True)
+class LLMToolDefinition:
+    name: str
+    description: str
+    input_schema: Mapping[str, object]
+
+
+@dataclass(frozen=True)
+class LLMToolCall:
+    name: str
+    arguments: Mapping[str, object]
 
 
 @dataclass(frozen=True)
@@ -16,7 +29,11 @@ class LLMRequest:
     request_id: str
     session_id: str
     message: str
+    client_id: str | None = None
+    provider: LLMProvider | None = None
+    model: str | None = None
     instructions: str | None = None
+    tools: tuple[LLMToolDefinition, ...] = ()
 
 
 @dataclass(frozen=True)
@@ -46,6 +63,7 @@ class LLMStreamChunk:
     provider: LLMProvider
     model: str
     usage: LLMUsage | None = None
+    tool_call: LLMToolCall | None = None
 
 
 @dataclass(frozen=True)

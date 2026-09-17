@@ -31,6 +31,29 @@ FastAPI
 SQLite WAL + FTS5 + Qdrant Local vector index
 ```
 
+Implementation check (2026-09-09): vectors currently live in SQLite with exact
+cosine search; Qdrant and WAL configuration are not implemented. Native Agent
+runs now use hybrid retrieval over their bound sources and inject cited context
+within a 6,000-character budget, with keyword fallback when no Embedding Client
+is available. Durable events record the strategy and distinguish candidate
+Chunks from the final budgeted selection without storing note text. Real-Vault
+validation and the Context Inspector remain planned. Production workspace runs
+now use LangGraph; durable checkpoints and automatic handoff are subsequent slices. See the [Server README](../../server/README.md) for
+Windows environment setup.
+
+The second LangGraph slice routes production runs through the graph. The third
+adds an explicit `target_agent_id`; runs targeting another Agent follow
+`prepare -> handoff -> agent` and persist replayable handoff events. The shared
+in-memory checkpointer stores metadata without messages, prompts, or RAG text.
+Durable checkpoints, the frontend `@agent` picker, and restricted automatic
+handoff remain subsequent slices.
+
+The fourth LangGraph slice introduces provider-neutral tool definitions, tool
+calls, and allowed handoff targets. Native Runtime accepts only one
+`delegate_to_agent` call to a non-active allowlisted Agent with a non-empty task
+summary of at most 2,000 characters. Provider wire formats and graph continuation
+remain subsequent work.
+
 FastAPI remains the service boundary. LangGraph coordinates state transitions within a run; it does not own APIs, repositories, file scanning, or subprocess lifecycle.
 
 ## Protocols
@@ -42,6 +65,7 @@ WebSocket owns long-running turns using AG-UI-compatible events plus project-spe
 ```text
 run_started
 retrieval_started / retrieval_result
+context_prepared
 agent_started / agent_status
 assistant_delta
 tool_started / tool_finished
@@ -66,7 +90,7 @@ The importer supports Markdown, frontmatter, wiki links, `![[asset.png]]`, and s
 
 OCR, image embeddings, and multimodal retrieval follow after text RAG is stable.
 
-Retrieval combines keyword and vector results, applies client/source filters, deduplicates chunks, and builds cited context. The default Chinese-capable embedding model is selected after a speed and quality smoke test on the target Mac.
+Retrieval combines keyword and vector results, applies client/source filters, deduplicates chunks, and builds cited context. The current local default is FastEmbed multilingual MiniLM; evaluate retrieval quality on real notes on Windows/macOS before changing models.
 
 ## Multi-Agent Model
 
@@ -84,9 +108,10 @@ Retrieval combines keyword and vector results, applies client/source filters, de
 2. SQLite migrations, client isolation, Agent/Session/Message repositories and APIs.
 3. React shell and WebSocket Mock Chat vertical slice.
 4. Obsidian import, Chinese hybrid RAG, citations, and Context Inspector.
-5. LangGraph runs, checkpoints, traces, and handoff.
-6. ACP compatibility spike, Codex/Claude adapters, direct CLI fallbacks where needed, cancellation, timeouts, and normalized events.
-7. Usage Dashboard, restricted demo mode, documentation, tests, and interview packaging.
+5. LangGraph runs, checkpoints, traces, and streamed manual/automatic handoff. This is the current priority.
+6. Connect the Web Shell to real Agent/Session CRUD, message history, WebSocket runs, cancellation, reconnect, and handoff. Show provider, model, tokens, estimated cost, latency, and errors on each Run/turn and aggregate Runs in the conversation detail.
+7. Finish restricted demo mode, documentation, tests, and interview packaging. If the core workflow is ready, add a dashboard based on the [CC Switch statistics hierarchy](https://cc-switch.dev/docs/local-routing/usage-statistics/), with time/provider/model filters, summary cards, trends, and run details; these aggregate charts do not block the first usable workspace.
+8. After the interview-ready workspace, resume real-Vault RAG tuning, full Context Inspector and asset previews, then optional ACP/Codex/Claude workers and multimodal retrieval.
 
 Each batch contains about 100 lines of core implementation, is tested independently, and pauses for review.
 
@@ -95,10 +120,10 @@ Each batch contains about 100 lines of core implementation, is tested independen
 - A clean environment starts from the README.
 - Agents and sessions survive restart.
 - WebSocket events and assistant text stream reliably.
-- Real Obsidian notes answer questions with citations.
+- The existing text RAG path does not block the first interview-ready workspace; real-Vault tuning follows that milestone.
 - The native Personal Agent retrieves, orchestrates, and answers without requiring Codex or Claude.
 - Tasks move between Agents in one visible conversation.
-- Codex and Claude complete controlled real-runtime checks.
+- Codex and Claude real-runtime checks do not block the native Personal Agent release.
 - Resource IDs cannot bypass client isolation.
 - One run exposes context, model, usage, cost status, and latency.
 - A repeatable two-minute demo is available, with project interview Q&A generated on request.

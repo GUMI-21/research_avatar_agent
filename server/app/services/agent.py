@@ -21,8 +21,11 @@ class AgentService:
         *,
         name: str,
         system_prompt: str,
+        avatar_emoji: str = "🤖",
         runtime: str = "native",
+        provider: str | None = None,
         model: str | None = None,
+        workspace_path: str | None = None,
         knowledge_source_ids: list[str] | None = None,
     ) -> AgentRecord:
         requested_ids = knowledge_source_ids or []
@@ -35,7 +38,10 @@ class AgentService:
             client_id,
             name=name,
             system_prompt=system_prompt,
+            avatar_emoji=avatar_emoji,
             runtime=runtime,
+            provider=provider,
             model=model,
+            workspace_path=workspace_path,
             knowledge_sources=[sources_by_id[item] for item in requested_ids],
         )

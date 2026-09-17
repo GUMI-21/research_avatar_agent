@@ -32,10 +32,12 @@ PUBLIC_DURABLE_TYPES = {
     RuntimeEventType.AGENT_STATUS,
     RuntimeEventType.RETRIEVAL_STARTED,
     RuntimeEventType.RETRIEVAL_RESULT,
+    RuntimeEventType.CONTEXT_PREPARED,
     RuntimeEventType.TOOL_STARTED,
     RuntimeEventType.TOOL_FINISHED,
     RuntimeEventType.HANDOFF_STARTED,
     RuntimeEventType.HANDOFF_FINISHED,
+    RuntimeEventType.HANDOFF_REQUESTED,
     RuntimeEventType.USAGE_UPDATED,
     RuntimeEventType.APPROVAL_REQUIRED,
 }

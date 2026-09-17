@@ -1,7 +1,7 @@
 # Project Collaboration Rules
 
 - Plan the overall architecture before implementation, then deliver one coherent change at a time.
-- Keep each implementation batch around 100 changed lines unless the user explicitly requests a different pace.
+- Keep each functional implementation batch around 100 changed lines unless the user explicitly requests a different pace. Documentation changes have no line limit.
 - Tests, generated code, repetitive declarations, and comments do not count toward the implementation line guideline. Codex owns adding and running the tests needed for each batch.
 - Before editing, explain the goal and affected files. After editing, report test results and pause for user review before starting the next batch.
 - At the end of every batch, explicitly state whether any planned code changes still remain.
@@ -20,19 +20,16 @@
 
 - The active short-term goal is a web-based personal agent workspace suitable for AI Agent internships, with Go backend experience as a secondary candidate strength.
 - This workspace is separate from the future avatar teaching-script UI, but it reuses the existing FastAPI service boundary.
-- The MVP centers on the project's own Personal Agent runtime and LangGraph orchestration, plus Obsidian/Markdown RAG, visible context and usage management, and multi-agent handoff in one conversation.
+- The MVP centers on a usable web workspace for the project's own Personal Agent runtime, LangGraph orchestration, visible run/usage state, and multi-agent handoff in one conversation. The existing text RAG foundation remains available but is not the current delivery priority.
 - Treat Codex and Claude as optional specialized worker Agents. Prefer ACP adapters and keep direct CLI adapters only as compatibility fallbacks; the native Personal Agent must run without either CLI.
 - Use REST for resource CRUD and WebSocket for AG-UI-compatible streamed run events. Show auditable progress and tool events, never hidden model chain-of-thought.
 - Scope every persistent resource by `client_id`. Optimize for a local-first demo with single-digit clients; do not add distributed infrastructure prematurely.
-- Parse Obsidian image embeds and preserve note-to-asset relationships. OCR and multimodal image retrieval are optional after the text RAG path is stable.
+- Resume Obsidian asset relationships, real-Vault tuning, and Context Inspector work after the first usable Agent workflow and frontend are complete. OCR and multimodal retrieval remain optional.
 - Keep requested interview notes under `docs/zh/interview/`.
 
 # Research Direction
 
-- Working topic: an LLM- and emotion-model-based 3D avatar educational support system.
-- Research focus: supplement LLM text with consistent nonverbal expression, including facial expression, gaze, motion, and voice, for a more natural virtual teacher.
-- Proposed evaluation compares four conditions: text-only LLM teacher, 3D avatar teacher without an emotion model, 3D avatar teacher with an independent emotion model, and a human teacher.
-- Planned evaluation dimensions include learning effectiveness, engagement/presence, and perceived naturalness.
+- Avatar teaching, emotion modeling, and voice are deferred research work; preserve Unity API compatibility. See `docs/zh/research_plan.md` for research and evaluation details.
 
 # Target Architecture
 
@@ -44,7 +41,9 @@
 
 # Current Baseline And Priorities
 
-- As of the July 21, 2026 presentation baseline, FastAPI exposes `/api/v1/llm/providers`, `/api/v1/llm/config`, and `/api/v1/unity/chat`; Unity loads VRM 1.0 models and calls the Chat API.
-- Unity -> Server -> Mock LLM and Server -> Gemini real API have been verified. Direct Unity -> Gemini verification remains a required demo check.
-- Near-term order: deliver the agent workspace foundation; add WebSocket chat; integrate Obsidian RAG; add multi-agent handoff and Codex/Claude runtimes; add usage/context inspection; package the interview demo. Resume Unity, emotion, and voice work afterward.
+- Use `docs/zh/internship_agent_workspace_plan.md` as the active roadmap; distinguish implemented behavior from target architecture.
+- Implemented: workspace persistence and client scoping, native streaming runtime, WebSocket cancellation/replay, usage APIs, Markdown indexing, hybrid retrieval, Agent knowledge-source bindings, and auditable RAG context injection.
+- Priority order: LangGraph run orchestration; streamed manual/automatic handoff; then connect the existing Web Shell to real Agent/Session/WebSocket flows. In the first frontend, show the recorded provider, model, token, estimated cost, latency, and error data on each Run/turn and aggregate it in the conversation detail. CC Switch-style time curves and provider/model grouping are a later dashboard enhancement and must not delay a usable workspace.
+- After the usable workspace milestone, resume real-Vault RAG validation, Context Inspector detail, note-to-asset persistence, and optional ACP workers. Qdrant and LangGraph are not current runtime dependencies.
+- Windows setup and validation commands belong in `server/README.md`. Use `server/.venv/Scripts/python.exe`, apply Alembic migrations before startup, and run the server unittest suite for each backend batch.
 - API keys must stay outside Git, documentation, logs, and project memory.

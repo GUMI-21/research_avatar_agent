@@ -58,6 +58,9 @@ FastAPI
 SQLite WAL + FTS5 + Qdrant Local vector index
 ```
 
+以上为目标架构。2026-09-09 代码使用 SQLite 保存向量并执行精确余弦检索，尚未接入
+Qdrant；也尚未配置 WAL。RunExecutionService 已通过 LangGraph 状态图协调运行。
+
 FastAPI 是服务边界。LangGraph 只负责一次 Agent run 内的状态转移，不直接负责 API、数据库、文件扫描或 CLI 子进程生命周期。
 
 ## 通信协议
@@ -86,6 +89,7 @@ WebSocket 用于长时间运行且需要双向控制的 Agent turn：
 ```text
 run_started
 retrieval_started / retrieval_result
+context_prepared
 agent_started / agent_status
 assistant_delta
 tool_started / tool_finished
@@ -182,7 +186,7 @@ Token 上限。
 
 问题：为什么当前选择 `paraphrase-multilingual-MiniLM-L12-v2`，而不是其他模型？
 
-当前阶段以 Mac 本地运行、快速形成面试 Demo 为优先，因此默认使用 FastEmbed 的
+当前阶段以 Windows/macOS 本地运行、快速形成面试 Demo 为优先，因此默认使用 FastEmbed 的
 ONNX 版本：约 0.22 GB、384 维、支持约 50 种语言，不需要 API Key，也不会把私人
 笔记发送到云端。它的检索质量不是最终结论，但足以低成本验证完整 RAG 链路。
 
@@ -241,17 +245,63 @@ CLI adapter 必须限制工作目录、超时、允许工具和环境变量；�
 - RAG 命中的 chunk 和最终注入上下文。
 - handoff 和工具执行次数。
 
-Usage 页面优先保证数据诚实，不把估算费用表示成账单实际费用。
+首版在每条 Assistant 回复对应的 Run 详情中展示 Provider、Model、输入/输出/缓存 Token、
+估算费用、首 Token 延迟、总耗时和错误；会话详情汇总该 Session 下的 Runs。Usage 页面
+优先保证数据诚实，不把估算费用表示成账单实际费用。CC Switch 风格的时间曲线及按
+Provider/Model 聚合属于后续增强，不阻塞可用 Workspace。
 
 ## 开发批次
 
-### 当前实现状态（2026-09-03）
+### 当前实现状态（2026-09-13）
+
+Codex CLI Adapter 第一批已接入 `codex exec --json`：固定仓库工作目录和 `workspace-write` 沙箱，默认继承本机 Codex/CC Switch 模型配置，并将回复及 Token 用量归一化为现有 `RuntimeEvent`。第二批已把命令执行、文件修改、MCP 调用和 Provider 重试映射为不含命令正文、参数或结果正文的审计事件，并修正 Codex 0.153.4 中互斥的沙箱参数。第三批新增按 `client_id + session_id + agent_id + runtime` 隔离的外部 thread 绑定；首次运行持久化 Codex thread ID，后续运行通过 `codex exec resume` 继续上下文，并只发送本轮任务以避免重复注入历史。第四批允许 Codex Agent 在创建时指定项目目录；CLI 执行前会解析真实路径并限制在服务端允许根目录内，避免路径或软链接越界。Codex Runtime 采用纯代理边界：只转发本轮用户消息，代码上下文、文件访问、工具调用和上下文压缩均由 Codex thread 管理；服务端仅保留身份隔离、会话绑定、事件与 usage 记录。前端已支持创建 Codex Runtime Agent；设置页通过安全状态接口每分钟读取 Server 主机的登录方式、套餐与额度窗口，不返回账号身份或凭据。
+
+Tool/MCP/Skill 阶段第一批已建立 provider-neutral 的 Tool Registry：Pydantic 严格校验输入，按只读、本地写、外部读、外部写划分风险，并在执行副作用前统一抛出审批请求。后续文件、浏览器与 Google Workspace 能力都通过该边界进入 Native Runtime。总体设计见 [Tool、MCP 与 Skill 开发计划](tool_mcp_skill_plan.md)。
+
+Native Agent 聊天执行链已接入其绑定知识库的混合检索，并在 6000 字符预算内注入带
+引用上下文；缺少 Embedding Client 的轻量执行仍可回退到关键词检索。运行事件会记录
+检索策略、每个知识库的候选 Chunk 与预算后实际选中的 Chunk，但不持久化笔记正文。
+文本 RAG 基础链路到此暂缓；真实 Vault 调优、图片关系和完整 Context Inspector 延后。
+当前优先完成 LangGraph、handoff 和可正常使用的 Web Workspace。Windows 环境步骤见
+[Server README](../../server/README.md)。
+
+LangGraph 第二批已将生产 `RunExecutionService` 和 WebSocket 执行链路切换到状态图。
+第三批为 `send_message` 增加显式 `target_agent_id`，不同于 Session 入口 Agent 时执行
+`prepare -> handoff -> agent`，并持久化可重放的 handoff 事件。checkpoint 不包含消息、
+Prompt 或 RAG 正文；持久化 checkpoint 仍待后续阶段。
+
+LangGraph 第四批开始建设自动 handoff：LLM 与 Runtime 已有 provider-neutral 的工具定义、
+工具调用和候选 Agent 契约。Native Runtime 仅接受白名单内、非当前 Agent、单次且任务摘要
+不超过 2,000 字符的 `delegate_to_agent` 请求。OpenAI Responses API 已能发送该工具并将流式
+函数调用还原为统一事件。生产执行服务会按 `client_id` 提供除当前 Agent 外的候选，并向
+Native Runtime 注入最近 12 条、最多 6,000 字符的会话上下文。LangGraph 收到自动 handoff
+后会携任务摘要切换目标 Runtime，最多连续转交两次并拒绝循环，最终回复归属实际响应 Agent。
 
 - 已完成 Agent、Session、Message、Run 和 RunEvent 数据基础与客户端隔离。
+- 已增加唯一用户名 Workspace 注册与查询 API；用户名规范化后继续作为现有 `client_id` 数据隔离键。
+- Web 设置提供可展开的用户 ID 项，可打开或创建本地用户；切换后清空资源缓存并以新 ID
+  重连 WebSocket，后续 REST、Agent、会话、Key 和 Usage 均进入对应隔离范围。
 - 已完成 Native Runtime、三家 LLM 流式输出、WebSocket 取消/重连，以及用量、成本、延迟的记录与查询。
 - Web 前端确定为 React 19、TypeScript、Vite、TanStack Query、Zustand 和 Tailwind CSS。
-- Workspace 采用 Agent/Session 侧栏、对话事件流和 Context/Run/Usage Inspector 三栏布局。
-- Web Shell 已完成并暂停扩展；Usage API 完成后优先进入 Obsidian RAG 与 LangGraph 编排。
+- Workspace 采用 Agent/Session 侧栏、对话事件流和 Agent/Memory/Run/Usage Inspector 三栏布局。
+- Web 第一批已接入真实 Agent、Session 和 Message REST API，支持创建 Agent、创建会话、
+  读取历史消息及资源加载/错误/空状态。第二批已接入 WebSocket 消息发送、流式回复、
+  Run/handoff/usage 事件、取消运行及断线后的持久化事件补发。
+- Web 第三批将持久化 Run 与 Usage API 接入右侧 Inspector，可按当前会话查看模型、状态、
+  输入/输出 Token、估算费用、总耗时、首 Token 延迟和错误，并展示 Workspace 用量汇总。
+- 长期记忆第一批已提供按 `client_id + agent_id` 隔离的 Memory 创建、列表、启停和删除 API；
+  Native Runtime 按 4,000 字符预算注入启用项，handoff 使用目标 Agent 记忆，并只在 Run 事件中审计 Memory ID。
+- Web Memory Inspector 已直接接入上述 API，支持查看、新增、启停和删除当前 Agent 的长期记忆。
+- Web 首版交互已统一 Agent 与最近会话选择，流式消息自动滚动到底部，并为资源请求错误提供原位重试。
+- Web 模型设置直接使用 Server 的 Provider Catalog 与 LLM Runtime 配置接口，可读取当前安全摘要、
+  切换 Provider/Model，并提交 API Key 或使用环境变量；Key 按 `client_id + provider` 使用本地
+  Fernet 主密钥加密入库，页面和 API 均不持久化或回显明文。
+- Agent 支持持久化 Emoji 头像，创建、编辑、侧栏、Inspector 与对话回复使用同一展示身份。
+- 会话标题区提供真实 Session 历史下拉选择；Agent 创建与编辑均使用 Provider Catalog 联动选择
+  厂商和模型。LLM Runtime 按 `client_id + provider` 恢复持久凭据，Agent 的厂商和模型会随
+  RuntimeRequest 进入实际调用，handoff 后改用目标 Agent 配置。
+- 对话输入框支持 `@Agent` 候选，将提及解析为现有 `target_agent_id` handoff 并在发送前移除
+  提及文本；输入区左下角可切换当前实际执行 Agent 的持久模型配置。
 - Obsidian RAG 已开始建设 KnowledgeSource 与 KnowledgeDocument 数据基础。
 - KnowledgeSource 已具备客户端隔离的 Repository、事务服务和本地目录安全校验。
 - KnowledgeSource REST API 支持注册、列表和详情查询；目录扫描通过后续同步操作显式触发。
@@ -273,6 +323,8 @@ Usage 页面优先保证数据诚实，不把估算费用表示成账单实际�
 - 检索结果按文件、标题与原文行号组装为有字符预算的上下文，并将笔记标注为不可信参考资料。
 - Agent 可显式绑定多个同客户端知识库，为运行时 RAG 限定检索范围。
 - Agent system prompt 通过统一 LLM 请求传递，并映射为各厂商原生 system instruction。
+- Native Agent Run 使用绑定知识库构造引用上下文，并持久化可重放的上下文选择元数据。
+- Native Agent Run 默认使用混合检索，并在无 Embedding Client 时回退到关键词检索。
 
 ### Batch 0：架构与规则
 
@@ -293,23 +345,30 @@ Usage 页面优先保证数据诚实，不把估算费用表示成账单实际�
 ### Batch 3：Obsidian RAG
 
 - Vault 导入、Markdown/asset 解析、增量同步。
-- 中文混合检索、引用和 Context Inspector。
+- 中文混合检索、引用和运行时上下文注入已完成；其余完善暂缓。
 
-### Batch 4：Agent 编排
+### Batch 4：Agent 编排（当前最高优先级）
 
-- LangGraph run、checkpoint 和 trace。
-- 手动/自动 handoff。
+- 用 LangGraph 管理 run state、节点推进、checkpoint 和可审计 trace。
+- 后端已支持按目标 ID 手动 handoff，以及最多两层、拒绝循环的自动 handoff 连续执行；前端发送区可为单次请求选择目标 Agent，并以 Agent 名称展示手动或自动转交事件。
 
-### Batch 5：外部 Agent Runtime
+### Batch 5：可用 Web Workspace
 
-- ACP 兼容性验证和 Codex/Claude Adapter；必要时增加直接 CLI 回退。
-- 运行取消、超时和事件归一化。
+- 接入真实 Agent/Session CRUD、消息历史、流式运行、取消和重连。
+- 展示 Agent 状态、handoff、工具事件和错误；在每个回复的 Run 详情及会话详情展示 Usage。
+- 增加可查看、添加、禁用和删除的轻量长期记忆，并按预算注入 Agent 上下文。
 
-### Batch 6：面试打包
+### Batch 6：Usage 与面试版本
 
-- Usage Dashboard。
+- 若核心工作流完成后仍有时间，Usage Dashboard 参考 [CC Switch Usage Statistics](https://cc-switch.dev/docs/local-routing/usage-statistics/)：用时间、Provider、Model 筛选驱动请求数、标准化 Token、缓存命中率、估算费用和成功率汇总，并提供趋势和运行明细。
 - Demo mode、安全收口和错误处理。
 - README、测试、演示视频和面试讲解。
+
+### Batch 7：投递后增强
+
+- 恢复真实 Vault 验证、完整 Context Inspector、图片关系与安全预览。
+- ACP 兼容性验证和 Codex/Claude Adapter；必要时增加直接 CLI 回退。
+- OCR、多模态检索和更复杂的自动 handoff 策略。
 
 每批核心实现约 100 行，完成后测试并暂停 Review。
 
@@ -318,10 +377,10 @@ Usage 页面优先保证数据诚实，不把估算费用表示成账单实际�
 - 新环境能够按照 README 启动。
 - 可以创建 Agent 和 Session。
 - WebSocket 可以稳定流式输出运行事件和回复。
-- 可以导入真实 Obsidian 笔记并回答带引用的问题。
+- 已有文本 RAG 能力不阻塞首个可投递版本；真实 Vault 调优列入投递后增强。
 - 自研 Personal Agent 在没有 Codex/Claude CLI 时也可以独立检索、编排并回答。
 - 可以在同一对话中将任务交给另一个 Agent。
-- Codex 和 Claude 至少完成受控的真实运行验证。
+- Codex 和 Claude 的真实运行验证不阻塞原生 Personal Agent 首版。
 - 客户端之间无法通过资源 ID 读取彼此的数据。
 - 页面可以解释一次回答使用了哪些上下文、模型、Token、费用和时间。
 - 有可重复的两分钟演示脚本，并可按需生成项目面试题。

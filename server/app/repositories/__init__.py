@@ -8,9 +8,11 @@ from app.repositories.knowledge import (
     KnowledgeEmbeddingRepository,
     KnowledgeSourceRepository,
 )
+from app.repositories.memory import MemoryParentNotFoundError, MemoryRepository
 from app.repositories.message import MessageParentNotFoundError, MessageRepository
 from app.repositories.run import RunParentNotFoundError, RunRepository, RunUsageTotals
 from app.repositories.run_event import RunEventRepository, RunEventRunNotFoundError
+from app.repositories.runtime_thread import RuntimeThreadRepository
 from app.repositories.session import (
     SessionAgentNotFoundError,
     SessionRepository,
@@ -24,11 +26,14 @@ __all__ = [
     "KnowledgeEmbeddingRepository",
     "KnowledgeSourceRepository",
     "KnowledgeChunkHit",
+    "MemoryParentNotFoundError",
+    "MemoryRepository",
     "MessageParentNotFoundError",
     "MessageRepository",
     "RunParentNotFoundError",
     "RunRepository",
     "RunUsageTotals",
+    "RuntimeThreadRepository",
     "RunEventRepository",
     "RunEventRunNotFoundError",
     "SessionAgentNotFoundError",

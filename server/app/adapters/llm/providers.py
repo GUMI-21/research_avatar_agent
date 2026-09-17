@@ -1,6 +1,7 @@
 """HTTP and mock adapters for the supported LLM providers."""
 
 import json
+from abc import ABC
 from collections.abc import AsyncIterator
 from typing import Any
 from urllib.parse import quote
@@ -13,6 +14,7 @@ from app.adapters.llm.base import (
     LLMRequest,
     LLMResult,
     LLMStreamChunk,
+    LLMToolCall,
     LLMUsage,
 )
 from app.adapters.llm.errors import (
@@ -28,6 +30,20 @@ def _optional_int(value: object) -> int | None:
     return value if isinstance(value, int) and not isinstance(value, bool) else None
 
 
+# openAi 工具协议
+def _openai_tools(request: LLMRequest) -> list[dict[str, object]]:
+    return [
+        {
+            "type": "function",
+            "name": tool.name,
+            "description": tool.description,
+            "parameters": dict(tool.input_schema),
+            "strict": True,
+        }
+        for tool in request.tools
+    ]
+
+
 # 继承LLMclient抽象基
 class MockLLMAdapter(LLMClient):
     """Deterministic local adapter used before configuration and in tests."""
@@ -41,7 +57,7 @@ class MockLLMAdapter(LLMClient):
 
 
 # 中间类
-class _HTTPAdapter(LLMClient):
+class _HTTPAdapter(LLMClient, ABC):
     """Shared HTTP error handling for provider-specific request formats."""
 
     def __init__(
@@ -203,6 +219,15 @@ class OpenAIAdapter(_HTTPAdapter):
                 "max_output_tokens": self.config.max_output_tokens,
                 "stream": True,
                 **(
+                    {
+                        "tools": _openai_tools(request),
+                        "tool_choice": "auto",
+                        "parallel_tool_calls": False,
+                    }
+                    if request.tools
+                    else {}
+                ),
+                **(
                     {"instructions": request.instructions}
                     if request.instructions
                     else {}
@@ -223,6 +248,26 @@ class OpenAIAdapter(_HTTPAdapter):
                         text=delta,
                         provider=self.config.provider,
                         model=self.config.model,
+                    )
+            if event_type == "response.output_item.done":
+                item = event.get("item")
+                if isinstance(item, dict) and item.get("type") == "function_call":
+                    name = item.get("name")
+                    raw_arguments = item.get("arguments")
+                    if not isinstance(name, str) or not isinstance(raw_arguments, str):
+                        raise LLMResponseError(self.config.provider)
+                    try:
+                        arguments = json.loads(raw_arguments)
+                    except ValueError as error:
+                        raise LLMResponseError(self.config.provider) from error
+                    if not isinstance(arguments, dict):
+                        raise LLMResponseError(self.config.provider)
+                    emitted = True
+                    yield LLMStreamChunk(
+                        text="",
+                        provider=self.config.provider,
+                        model=self.config.model,
+                        tool_call=LLMToolCall(name=name, arguments=arguments),
                     )
             # 获取本次消耗的token
             if event_type == "response.completed":
@@ -415,11 +460,11 @@ class GeminiAdapter(_HTTPAdapter):
                 )
             usage = event.get("usageMetadata")
             if isinstance(usage, dict):
+                candidate_tokens = _optional_int(usage.get("candidatesTokenCount"))
+                thought_tokens = _optional_int(usage.get("thoughtsTokenCount"))
                 reported_usage = LLMUsage(
                     input_tokens=_optional_int(usage.get("promptTokenCount")),
-                    output_tokens=_optional_int(
-                        usage.get("candidatesTokenCount")
-                    ),
+                    output_tokens=(candidate_tokens or 0) + (thought_tokens or 0),
                     cache_read_tokens=_optional_int(
                         usage.get("cachedContentTokenCount")
                     ),

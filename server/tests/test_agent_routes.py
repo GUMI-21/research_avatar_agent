@@ -31,6 +31,7 @@ class AgentRoutesTest(unittest.IsolatedAsyncioTestCase):
     async def test_create_and_list_agents_are_scoped_by_client(self) -> None:
         payload = {
             "name": "Personal",
+            "avatar_emoji": "🧠",
             "system_prompt": "Help with my work.",
         }
         created = await self.client.post(
@@ -58,11 +59,62 @@ class AgentRoutesTest(unittest.IsolatedAsyncioTestCase):
 
         self.assertEqual(created.status_code, 201)
         self.assertEqual(created.json()["client_id"], "client-a")
+        self.assertEqual(created.json()["avatar_emoji"], "🧠")
         self.assertEqual(len(visible.json()["agents"]), 1)
         self.assertEqual(hidden.json(), {"agents": []})
         self.assertEqual(detail.json()["id"], agent_id)
         self.assertEqual(concealed.status_code, 404)
         self.assertEqual(concealed.json(), {"detail": "Agent not found"})
+
+    async def test_create_codex_agent_keeps_workspace_path(self) -> None:
+        created = await self.client.post(
+            "/api/v1/agents",
+            headers={"X-Client-ID": "client-a"},
+            json={
+                "name": "Coder",
+                "system_prompt": "Work inside the selected repository.",
+                "runtime": "codex",
+                "workspace_path": "server",
+            },
+        )
+
+        self.assertEqual(created.status_code, 201)
+        self.assertEqual(created.json()["runtime"], "codex")
+        self.assertEqual(created.json()["workspace_path"], "server")
+    async def test_update_agent_provider_and_model_is_client_scoped(self) -> None:
+        created = await self.client.post(
+            "/api/v1/agents",
+            headers={"X-Client-ID": "client-a"},
+            json={
+                "name": "Personal",
+                "system_prompt": "Help with my work.",
+                "provider": "mock",
+                "model": "mock-echo",
+            },
+        )
+        agent_id = created.json()["id"]
+        updated = await self.client.patch(
+            f"/api/v1/agents/{agent_id}",
+            headers={"X-Client-ID": "client-a"},
+            json={
+                "system_prompt": "Use the selected provider.",
+                "avatar_emoji": "💻",
+                "provider": "openai",
+                "model": "gpt-5.6-sol",
+            },
+        )
+        concealed = await self.client.patch(
+            f"/api/v1/agents/{agent_id}",
+            headers={"X-Client-ID": "client-b"},
+            json={"model": "hidden-model"},
+        )
+
+        self.assertEqual(updated.status_code, 200)
+        self.assertEqual(updated.json()["provider"], "openai")
+        self.assertEqual(updated.json()["avatar_emoji"], "💻")
+        self.assertEqual(updated.json()["model"], "gpt-5.6-sol")
+        self.assertEqual(updated.json()["system_prompt"], "Use the selected provider.")
+        self.assertEqual(concealed.status_code, 404)
 
     async def test_client_header_is_required(self) -> None:
         response = await self.client.get("/api/v1/agents")

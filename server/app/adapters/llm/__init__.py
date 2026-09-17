@@ -6,6 +6,8 @@ from app.adapters.llm.base import (
     LLMRequest,
     LLMResult,
     LLMStreamChunk,
+    LLMToolCall,
+    LLMToolDefinition,
     LLMUsage,
 )
 from app.adapters.llm.providers import (
@@ -23,6 +25,8 @@ __all__ = [
     "LLMRequest",
     "LLMResult",
     "LLMStreamChunk",
+    "LLMToolCall",
+    "LLMToolDefinition",
     "LLMUsage",
     "MockLLMAdapter",
     "OpenAIAdapter",

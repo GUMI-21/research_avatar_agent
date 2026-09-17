@@ -10,6 +10,7 @@ web/node_modules/
 web/dist/
 web/coverage/
 web/*.tsbuildinfo
+web/vite.*.log
 
 # Unity
 /Packages/
@@ -38,12 +39,14 @@ server/logs/__pycache__/
 server/logs/**/*.log
 server/logs/*.log
 server/runtime/
+server/.playwright-mcp/
 server/data/*.db
 server/data/models/
 
 # Environment and local secrets
 .env
 .env.*
+!web/.env.example
 server/config/debug.yaml
 server/config/prod.yaml
 
@@ -52,6 +55,3 @@ server/config/prod.yaml
 Thumbs.db
 .vscode/
 .idea/
-
-# Local interview review notes
-/docs/zh/interview/

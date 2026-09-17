@@ -11,12 +11,14 @@ import httpx
 import yaml
 from fastapi import FastAPI, status
 from pydantic import SecretStr
+from sqlalchemy import select
 
 from app.adapters.llm import (
     DeepSeekAdapter,
     GeminiAdapter,
     LLMClientConfig,
     LLMRequest,
+    LLMToolDefinition,
     OpenAIAdapter,
 )
 from app.adapters.llm.errors import (
@@ -26,6 +28,7 @@ from app.adapters.llm.errors import (
 )
 from app.api.errors import llm_http_exception
 from app.api.router import api_router
+from app.core.database import Base, Database
 from app.core.llm_catalog import LLM_PROVIDER_CATALOG
 from app.core.settings import (
     LLMProviderSettings,
@@ -33,7 +36,9 @@ from app.core.settings import (
     Settings,
     load_settings,
 )
+from app.models import LLMCredentialRecord
 from app.schemas.llm import LLMConfigRequest, LLMProvider
+from app.services.llm_credentials import LLMCredentialStore
 from app.services.llm_runtime import LLMRuntime
 from logs import log
 
@@ -95,6 +100,28 @@ class LLMRuntimeConfigurationTest(unittest.TestCase):
         self.assertTrue(response.api_key_configured)
         self.assertEqual(response.api_key_source, "environment")
         self.assertNotIn("api_key", response.model_dump())
+
+    def test_client_keeps_separate_provider_credentials(self) -> None:
+        runtime = LLMRuntime(make_llm_settings())
+        runtime.configure(
+            LLMConfigRequest(provider=LLMProvider.OPENAI, api_key="openai-key"),
+            "client-a",
+        )
+        runtime.configure(
+            LLMConfigRequest(provider=LLMProvider.DEEPSEEK, api_key="deepseek-key"),
+            "client-a",
+        )
+        restored = runtime.configure(
+            LLMConfigRequest(provider=LLMProvider.OPENAI), "client-a"
+        )
+
+        self.assertEqual(restored.provider, LLMProvider.OPENAI)
+        self.assertTrue(restored.api_key_configured)
+        self.assertEqual(
+            runtime._config_for("client-a", LLMProvider.DEEPSEEK).provider,
+            LLMProvider.DEEPSEEK,
+        )
+        self.assertEqual(runtime.current_config("client-b").provider, LLMProvider.MOCK)
 
     def test_request_key_is_not_logged_or_returned(self) -> None:
         runtime = LLMRuntime(make_llm_settings())
@@ -174,10 +201,15 @@ class RuntimeAPIIntegrationTest(unittest.IsolatedAsyncioTestCase):
             provider_response = await client.post(
                 "/api/v1/llm/config",
                 json={"provider": "deepseek", "api_key": "test-key"},
+                headers={"X-Client-ID": "client-a"},
+            )
+            current_response = await client.get(
+                "/api/v1/llm/config", headers={"X-Client-ID": "client-a"}
             )
             mock_response = await client.post(
                 "/api/v1/llm/config",
                 json={"provider": "mock"},
+                headers={"X-Client-ID": "client-a"},
             )
             chat_response = await client.post(
                 "/api/v1/unity/chat",
@@ -186,9 +218,78 @@ class RuntimeAPIIntegrationTest(unittest.IsolatedAsyncioTestCase):
 
         self.assertEqual(provider_response.status_code, status.HTTP_200_OK)
         self.assertNotIn("api_key", provider_response.json())
+        self.assertEqual(current_response.json()["provider"], "deepseek")
+        self.assertNotIn("api_key", current_response.json())
         self.assertEqual(mock_response.json()["provider"], "mock")
         self.assertEqual(chat_response.status_code, status.HTTP_200_OK)
         self.assertEqual(chat_response.json()["reply"], "Echo: Hello")
+
+    async def test_runtime_config_is_isolated_by_client_id(self) -> None:
+        app = FastAPI()
+        app.state.llm_runtime = LLMRuntime(make_llm_settings())
+        app.include_router(api_router)
+        transport = httpx.ASGITransport(app=app)
+
+        async with httpx.AsyncClient(
+            transport=transport, base_url="http://testserver"
+        ) as client:
+            await client.post(
+                "/api/v1/llm/config",
+                json={"provider": "deepseek", "api_key": "client-a-secret"},
+                headers={"X-Client-ID": "client-a"},
+            )
+            client_a = await client.get(
+                "/api/v1/llm/config", headers={"X-Client-ID": "client-a"}
+            )
+            client_b = await client.get(
+                "/api/v1/llm/config", headers={"X-Client-ID": "client-b"}
+            )
+
+        self.assertEqual(client_a.json()["provider"], "deepseek")
+        self.assertTrue(client_a.json()["api_key_configured"])
+        self.assertEqual(client_b.json()["provider"], "mock")
+        self.assertFalse(client_b.json()["api_key_configured"])
+        self.assertNotIn("client-a-secret", client_a.text + client_b.text)
+
+    async def test_api_key_is_encrypted_and_restored_by_client_id(self) -> None:
+        database = Database("sqlite+aiosqlite:///:memory:")
+        async with database.engine.begin() as connection:
+            await connection.run_sync(Base.metadata.create_all)
+        key_path = Path(self._testMethodName + ".key")
+        try:
+            store = LLMCredentialStore(database, key_path)
+            app = FastAPI()
+            app.state.llm_runtime = LLMRuntime(make_llm_settings())
+            app.state.llm_credentials = store
+            app.include_router(api_router)
+            transport = httpx.ASGITransport(app=app)
+            async with httpx.AsyncClient(
+                transport=transport, base_url="http://testserver"
+            ) as client:
+                response = await client.post(
+                    "/api/v1/llm/config",
+                    json={"provider": "deepseek", "api_key": "persisted-secret"},
+                    headers={"X-Client-ID": "client-a"},
+                )
+
+            async with database.session() as session:
+                record = (
+                    await session.execute(select(LLMCredentialRecord))
+                ).scalar_one()
+            restored = LLMRuntime(make_llm_settings())
+            await store.restore(restored)
+
+            self.assertEqual(response.status_code, status.HTTP_200_OK)
+            self.assertNotIn("persisted-secret", record.api_key_ciphertext)
+            self.assertEqual(
+                restored.current_config("client-a").provider.value, "deepseek"
+            )
+            self.assertEqual(
+                restored.current_config("client-b").provider.value, "mock"
+            )
+        finally:
+            await database.dispose()
+            key_path.unlink(missing_ok=True)
 
     async def test_provider_presets_are_valid_config_requests(self) -> None:
         app = FastAPI()
@@ -299,6 +400,63 @@ class ProviderAdapterTest(unittest.IsolatedAsyncioTestCase):
         self.assertEqual(usage.cache_read_tokens, 4)
         self.assertEqual(usage.cache_write_tokens, 1)
 
+    async def test_openai_stream_normalizes_function_call(self) -> None:
+        async def handler(request: httpx.Request) -> httpx.Response:
+            payload = json.loads(request.content)
+            tool = payload["tools"][0]
+            self.assertEqual(tool["type"], "function")
+            self.assertEqual(tool["name"], "delegate_to_agent")
+            self.assertTrue(tool["strict"])
+            self.assertFalse(payload["parallel_tool_calls"])
+            body = "\n\n".join(
+                [
+                    'data: {"type":"response.output_item.done","item":'
+                    '{"type":"function_call","name":"delegate_to_agent",'
+                    '"arguments":"{\\"target_agent_id\\":\\"agent-2\\",'
+                    '\\"task_summary\\":\\"Review\\"}"}}',
+                    'data: {"type":"response.completed","response":'
+                    '{"usage":{"input_tokens":9,"output_tokens":4}}}',
+                ]
+            )
+            return httpx.Response(
+                200, text=body, headers={"Content-Type": "text/event-stream"}
+            )
+
+        adapter = OpenAIAdapter(
+            make_client_config(
+                LLMProvider.OPENAI,
+                "https://api.openai.com/v1",
+                "gpt-5.6-luna",
+            ),
+            transport=httpx.MockTransport(handler),
+        )
+        request = make_request()
+        request = LLMRequest(
+            request_id=request.request_id,
+            session_id=request.session_id,
+            message=request.message,
+            instructions=request.instructions,
+            tools=(
+                LLMToolDefinition(
+                    "delegate_to_agent",
+                    "Delegate work",
+                    {"type": "object", "properties": {}},
+                ),
+            ),
+        )
+
+        chunks = [chunk async for chunk in adapter.stream(request)]
+
+        tool_call = chunks[0].tool_call
+        usage = chunks[-1].usage
+        self.assertIsNotNone(tool_call)
+        self.assertIsNotNone(usage)
+        assert tool_call is not None
+        assert usage is not None
+        self.assertEqual(tool_call.name, "delegate_to_agent")
+        self.assertEqual(tool_call.arguments["target_agent_id"], "agent-2")
+        self.assertEqual(usage.input_tokens, 9)
+
     async def test_gemini_generate_content_format(self) -> None:
         async def handler(request: httpx.Request) -> httpx.Response:
             payload = json.loads(request.content)
@@ -353,7 +511,8 @@ class ProviderAdapterTest(unittest.IsolatedAsyncioTestCase):
                     'data: {"candidates":[{"content":{"parts":['
                     '{"text":"reply"}]},"finishReason":"STOP"}],'
                     '"usageMetadata":{"promptTokenCount":8,'
-                    '"candidatesTokenCount":2,"cachedContentTokenCount":3}}',
+                    '"candidatesTokenCount":2,"thoughtsTokenCount":5,'
+                    '"cachedContentTokenCount":3}}',
                 ]
             )
             return httpx.Response(
@@ -380,7 +539,7 @@ class ProviderAdapterTest(unittest.IsolatedAsyncioTestCase):
         self.assertIsNotNone(usage)
         assert usage is not None
         self.assertEqual(usage.input_tokens, 8)
-        self.assertEqual(usage.output_tokens, 2)
+        self.assertEqual(usage.output_tokens, 7)
         self.assertEqual(usage.cache_read_tokens, 3)
 
     async def test_deepseek_chat_completions_format(self) -> None:

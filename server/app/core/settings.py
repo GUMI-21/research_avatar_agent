@@ -74,6 +74,7 @@ class LLMProviderSettings(StrictSettingsModel):
 class LLMSettings(StrictSettingsModel):
     """Provider-independent defaults for runtime LLM selection."""
 
+    credential_key_path: Path = SERVER_ROOT / "runtime" / "credential.key"
     default_provider: LLMProvider
     timeout_seconds: float = Field(gt=0.0, le=300.0)
     max_output_tokens: int = Field(ge=1, le=131_072)
@@ -81,6 +82,36 @@ class LLMSettings(StrictSettingsModel):
     gemini: LLMProviderSettings
     deepseek: LLMProviderSettings
 
+
+class CodexSettings(StrictSettingsModel):
+    """Local Codex CLI execution boundary."""
+
+    executable: str = "codex"
+    workspace_root: Path = SERVER_ROOT.parent
+    timeout_seconds: float = Field(default=300, gt=0.0, le=3600.0)
+
+
+class MCPStdioServerSettings(StrictSettingsModel):
+    name: str = Field(pattern=r"^[a-z][a-z0-9_]{0,31}$")
+    command: str = Field(min_length=1)
+    args: tuple[str, ...] = ()
+    cwd: Path | None = None
+    timeout_seconds: float = Field(default=30, gt=0, le=300)
+    allowed_domains: tuple[str, ...] = ()
+    blocked_tools: tuple[str, ...] = ()
+
+
+class MCPHttpServerSettings(StrictSettingsModel):
+    name: str = Field(pattern=r"^[a-z][a-z0-9_]{0,31}$")
+    url: AnyHttpUrl
+    timeout_seconds: float = Field(default=30, gt=0, le=300)
+    allowed_domains: tuple[str, ...] = ()
+    blocked_tools: tuple[str, ...] = ()
+
+
+class MCPSettings(StrictSettingsModel):
+    stdio_servers: tuple[MCPStdioServerSettings, ...] = ()
+    http_servers: tuple[MCPHttpServerSettings, ...] = ()
 
 class Settings(StrictSettingsModel):
     """Complete server configuration for one runtime environment."""
@@ -91,6 +122,8 @@ class Settings(StrictSettingsModel):
     logging: LoggingSettings
     database: DatabaseSettings
     embedding: EmbeddingSettings = Field(default_factory=EmbeddingSettings)
+    codex: CodexSettings = Field(default_factory=CodexSettings)
+    mcp: MCPSettings = Field(default_factory=MCPSettings)
     llm: LLMSettings
 
 

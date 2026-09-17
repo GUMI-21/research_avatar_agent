@@ -6,6 +6,76 @@ provider. JSON is encoded as UTF-8.
 Annotated examples use JSONC for readability. Remove `//` comments before
 sending them as JSON request bodies.
 
+## Workspace Run Stream
+
+```text
+WS /api/v1/ws?client_id={client_id}
+```
+
+After `send_message`, durable run events can be replayed by sequence. A Native
+Agent with bound knowledge sources emits the following RAG events before model
+execution:
+
+- `retrieval_started`: strategy, source count, per-source result limit, and context budget.
+- `retrieval_result`: strategy, candidate Chunk IDs, and hit count for one bound source.
+- `context_prepared`: Chunk IDs that remain after the shared context budget is
+  applied, actual/budget character counts, truncation status, and a SHA-256 hash
+  of the exact prepared context.
+
+The application uses hybrid keyword/vector retrieval when an Embedding Client is
+available. `RunExecutionService` retains keyword-only fallback for lightweight
+or isolated execution. Each event records which strategy produced its result.
+
+`context_prepared` never contains note text. It means that context was prepared
+for the Runtime; it does not claim that a downstream model received or used it.
+An empty result is recorded with no included Chunk IDs and zero used characters.
+All events and replay queries remain scoped by `client_id`.
+
+### Workspace resources
+
+Register or resolve the local username before loading client-scoped resources:
+
+```text
+POST /api/v1/workspaces
+GET  /api/v1/workspaces/{username}
+```
+
+Usernames are normalized to lowercase and accept letters, numbers, `.`, `_`, and
+`-`. The username becomes the `X-Client-ID` value for subsequent requests. It
+selects a local data scope and is not authentication.
+
+```text
+GET  /api/v1/agents
+POST /api/v1/agents
+GET  /api/v1/sessions
+POST /api/v1/sessions
+GET  /api/v1/sessions/{session_id}/messages?limit=50
+```
+
+Creating a Session requires an Agent from the same client scope. Message history
+is returned in ascending sequence order with `next_cursor` and `has_more` for
+older-page loading.
+
+### Handoff commands and events
+
+`send_message` may include `target_agent_id` for a manual handoff:
+
+```json
+{
+  "type": "send_message",
+  "session_id": "session-id",
+  "content": "Review this implementation",
+  "target_agent_id": "agent-id"
+}
+```
+
+Automatic handoff is initiated by the Native Runtime's restricted
+`delegate_to_agent` tool. The stream emits `handoff_requested`,
+`handoff_started`, and `handoff_finished`, then continues execution with the
+target Agent and task summary. The graph rejects cycles and a third automatic
+delegation. Final Assistant messages retain the ID of the Agent that produced
+the response.
+
 ## Health Check
 
 ```http
@@ -93,7 +163,7 @@ Invalid or missing fields return HTTP 422:
 
 ## Runtime LLM Configuration
 
-Unity and web clients share one process-wide runtime configuration endpoint:
+Unity and web clients share client-scoped runtime configuration endpoints:
 
 ### Provider catalog
 
@@ -138,8 +208,9 @@ POST /api/v1/llm/config
 Content-Type: application/json
 ```
 
-The last successful request becomes active for all clients. The configuration
-is kept only in memory and is reset when the server restarts.
+The last successful request becomes active for the supplied `X-Client-ID`.
+Provider configurations are isolated by `client_id + provider` and restored
+after restart.
 
 Supported providers and defaults:
 
@@ -197,9 +268,10 @@ Response:
 The response summarizes the active runtime configuration without exposing the
 credential itself.
 
-API keys are never returned, persisted, or logged. To prevent a server
-environment key from being forwarded to an arbitrary host, a custom `base_url`
-is accepted only when `api_key` is supplied in the same request.
+API keys are never returned or logged. Submitted keys are encrypted with the
+local Fernet master key before SQLite persistence; environment keys remain in
+the server environment. To prevent an environment key from being forwarded to
+an arbitrary host, a custom `base_url` requires a client-submitted key.
 
 This unauthenticated configuration endpoint is intended only for the local
 demo server bound to `127.0.0.1`. Add authentication and TLS before exposing
