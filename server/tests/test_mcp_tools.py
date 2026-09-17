@@ -88,6 +88,13 @@ class MCPClientTest(unittest.IsolatedAsyncioTestCase):
                 approved=True,
             )
 
+    async def test_skips_blocked_remote_tools(self) -> None:
+        registry = ToolRegistry()
+        names = await MCPClient(
+            "browser", self.transport, blocked_tools=("search-web",),
+        ).register_tools(registry)
+        self.assertEqual(names, ())
+        self.assertEqual(registry.definitions(), ())
 
 if __name__ == "__main__":
     unittest.main()

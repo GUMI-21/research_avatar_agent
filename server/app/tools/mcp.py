@@ -40,12 +40,14 @@ class MCPClient:
         server_name: str,
         transport: MCPTransport,
         allowed_domains: tuple[str, ...] = (),
+        blocked_tools: tuple[str, ...] = (),
     ) -> None:
         self._server_name = server_name
         self._transport = transport
         self._allowed_domains = tuple(
             domain.lower().rstrip(".") for domain in allowed_domains
         )
+        self._blocked_tools = frozenset(blocked_tools)
 
     def _validate_urls(self, value: object, key: str = "") -> None:
         if not self._allowed_domains:
@@ -87,6 +89,8 @@ class MCPClient:
             schema = item.get("inputSchema", {"type": "object"})
             if not isinstance(remote_name, str) or not isinstance(schema, Mapping):
                 raise MCPError("MCP tool name or input schema is invalid")
+            if remote_name in self._blocked_tools:
+                continue
             schema = dict(schema)
             validator_type = validator_for(schema)
             validator_type.check_schema(schema)

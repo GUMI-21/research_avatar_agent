@@ -98,6 +98,7 @@ class MCPStdioServerSettings(StrictSettingsModel):
     cwd: Path | None = None
     timeout_seconds: float = Field(default=30, gt=0, le=300)
     allowed_domains: tuple[str, ...] = ()
+    blocked_tools: tuple[str, ...] = ()
 
 
 class MCPHttpServerSettings(StrictSettingsModel):
@@ -105,6 +106,7 @@ class MCPHttpServerSettings(StrictSettingsModel):
     url: AnyHttpUrl
     timeout_seconds: float = Field(default=30, gt=0, le=300)
     allowed_domains: tuple[str, ...] = ()
+    blocked_tools: tuple[str, ...] = ()
 
 
 class MCPSettings(StrictSettingsModel):

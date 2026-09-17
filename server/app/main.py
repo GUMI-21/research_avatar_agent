@@ -40,7 +40,7 @@ async def lifespan(app: FastAPI) -> AsyncIterator[None]:
                     timeout_seconds=config.timeout_seconds,
                 ))
                 names = await MCPClient(
-                    config.name, transport, config.allowed_domains,
+                    config.name, transport, config.allowed_domains, config.blocked_tools,
                 ).register_tools(
                     app.state.tool_registry
                 )
@@ -56,7 +56,7 @@ async def lifespan(app: FastAPI) -> AsyncIterator[None]:
                     )
                 )
                 names = await MCPClient(
-                    config.name, transport, config.allowed_domains,
+                    config.name, transport, config.allowed_domains, config.blocked_tools,
                 ).register_tools(
                     app.state.tool_registry
                 )

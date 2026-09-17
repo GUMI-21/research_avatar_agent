@@ -39,6 +39,7 @@ server/logs/__pycache__/
 server/logs/**/*.log
 server/logs/*.log
 server/runtime/
+server/.playwright-mcp/
 server/data/*.db
 server/data/models/
 
