@@ -177,7 +177,10 @@ $env:GOOGLE_OAUTH_REDIRECT_URI = "http://127.0.0.1:8000/api/v1/google/oauth/call
 `POST /api/v1/google/oauth/start` with `X-Client-ID` returns the Google
 authorization URL. Google redirects the browser to the callback, where the
 Server validates one-time state and PKCE before encrypting the refresh token.
-The client secret and tokens must never be added to YAML, logs, or Git.
+`GET /api/v1/google/oauth/status` returns only connection metadata for that
+client. `DELETE /api/v1/google/oauth/connection` revokes the token at Google
+before deleting the local ciphertext. The client secret and tokens must never
+be added to YAML, logs, or Git.
 ### macOS / Linux
 
 Install dependencies in a virtual environment, then start the API server from

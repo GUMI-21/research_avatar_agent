@@ -9,3 +9,9 @@ class GoogleOAuthStartResponse(BaseModel):
 
 class GoogleOAuthCallbackResponse(BaseModel):
     connected: bool = True
+
+
+class GoogleOAuthConnectionResponse(BaseModel):
+    connected: bool
+    account_email: str | None = None
+    scopes: tuple[str, ...] = ()

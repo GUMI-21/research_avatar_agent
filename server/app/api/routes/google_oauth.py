@@ -7,6 +7,7 @@ from fastapi import APIRouter, Depends, HTTPException, Query, Request, status
 from app.api.dependencies import ClientID
 from app.schemas.google_oauth import (
     GoogleOAuthCallbackResponse,
+    GoogleOAuthConnectionResponse,
     GoogleOAuthStartResponse,
 )
 from app.services.google_oauth_flow import GoogleOAuthFlow, GoogleOAuthFlowError
@@ -44,4 +45,35 @@ async def complete_google_oauth(
     except GoogleOAuthFlowError as error:
         raise HTTPException(
             status_code=status.HTTP_400_BAD_REQUEST, detail=str(error)
+        ) from error
+
+
+@router.get("/google/oauth/status", response_model=GoogleOAuthConnectionResponse)
+async def get_google_oauth_status(
+    client_id: ClientID,
+    flow: GoogleOAuthFlow = Depends(get_google_oauth_flow),
+) -> GoogleOAuthConnectionResponse:
+    credential = await flow.connection(client_id)
+    if credential is None:
+        return GoogleOAuthConnectionResponse(connected=False)
+    return GoogleOAuthConnectionResponse(
+        connected=True,
+        account_email=credential.account_email,
+        scopes=credential.scopes,
+    )
+
+
+@router.delete(
+    "/google/oauth/connection", response_model=GoogleOAuthConnectionResponse
+)
+async def disconnect_google_oauth(
+    client_id: ClientID,
+    flow: GoogleOAuthFlow = Depends(get_google_oauth_flow),
+) -> GoogleOAuthConnectionResponse:
+    try:
+        await flow.disconnect(client_id)
+        return GoogleOAuthConnectionResponse(connected=False)
+    except GoogleOAuthFlowError as error:
+        raise HTTPException(
+            status_code=status.HTTP_502_BAD_GATEWAY, detail=str(error)
         ) from error

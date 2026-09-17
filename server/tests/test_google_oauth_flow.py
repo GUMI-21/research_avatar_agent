@@ -8,8 +8,10 @@ from fastapi import FastAPI
 from pydantic import SecretStr
 
 from app.api.routes import google_oauth
+from app.services.google_oauth_credentials import GoogleOAuthCredential
 from app.services.google_oauth_flow import (
     GOOGLE_AUTH_URL,
+    GOOGLE_REVOKE_URL,
     GOOGLE_TOKEN_URL,
     GoogleOAuthFlow,
     GoogleOAuthFlowError,
@@ -19,6 +21,7 @@ from app.services.google_oauth_flow import (
 class FakeCredentialStore:
     def __init__(self) -> None:
         self.saved: tuple[str, str, tuple[str, ...]] | None = None
+        self.credentials: dict[str, GoogleOAuthCredential] = {}
 
     async def save(
         self,
@@ -27,10 +30,18 @@ class FakeCredentialStore:
         scopes: tuple[str, ...],
         account_email: str | None = None,
     ) -> None:
-        del account_email
         self.saved = (
             client_id, refresh_token.get_secret_value(), scopes,
         )
+        self.credentials[client_id] = GoogleOAuthCredential(
+            account_email, scopes, refresh_token
+        )
+
+    async def load(self, client_id: str) -> GoogleOAuthCredential | None:
+        return self.credentials.get(client_id)
+
+    async def delete(self, client_id: str) -> bool:
+        return self.credentials.pop(client_id, None) is not None
 
 
 class GoogleOAuthFlowTest(unittest.IsolatedAsyncioTestCase):
@@ -76,14 +87,20 @@ class GoogleOAuthFlowTest(unittest.IsolatedAsyncioTestCase):
         with self.assertRaisesRegex(GoogleOAuthFlowError, "invalid or expired"):
             await flow.complete(state, "replayed-code")
 
-    async def test_routes_start_and_complete_the_flow(self) -> None:
+    async def test_routes_report_and_revoke_only_current_client(self) -> None:
         store = FakeCredentialStore()
+        revoked_tokens: list[str] = []
 
-        async def exchange(_request: httpx.Request) -> httpx.Response:
-            return httpx.Response(200, json={
-                "refresh_token": "route-refresh",
-                "scope": "gmail.readonly",
-            })
+        async def google(request: httpx.Request) -> httpx.Response:
+            if str(request.url) == GOOGLE_TOKEN_URL:
+                return httpx.Response(200, json={
+                    "refresh_token": "route-refresh",
+                    "scope": "gmail.readonly",
+                })
+            if str(request.url).startswith(GOOGLE_REVOKE_URL):
+                revoked_tokens.extend(parse_qs(request.url.query.decode())["token"])
+                return httpx.Response(200)
+            return httpx.Response(500)
 
         app = FastAPI()
         app.state.google_oauth_flow = GoogleOAuthFlow(
@@ -91,15 +108,15 @@ class GoogleOAuthFlowTest(unittest.IsolatedAsyncioTestCase):
             "google-client",
             SecretStr("google-secret"),
             "http://testserver/api/v1/google/oauth/callback",
-            httpx.MockTransport(exchange),
+            httpx.MockTransport(google),
         )
         app.include_router(google_oauth.router, prefix="/api/v1")
         async with httpx.AsyncClient(
             transport=httpx.ASGITransport(app=app), base_url="http://testserver"
         ) as client:
+            headers = {"X-Client-ID": "alice"}
             started = await client.post(
-                "/api/v1/google/oauth/start",
-                headers={"X-Client-ID": "alice"},
+                "/api/v1/google/oauth/start", headers=headers
             )
             state = parse_qs(
                 urlparse(started.json()["authorization_url"]).query
@@ -108,10 +125,26 @@ class GoogleOAuthFlowTest(unittest.IsolatedAsyncioTestCase):
                 "/api/v1/google/oauth/callback",
                 params={"state": state, "code": "route-code"},
             )
+            connected = await client.get(
+                "/api/v1/google/oauth/status", headers=headers
+            )
+            other = await client.get(
+                "/api/v1/google/oauth/status",
+                headers={"X-Client-ID": "bob"},
+            )
+            disconnected = await client.delete(
+                "/api/v1/google/oauth/connection", headers=headers
+            )
 
-        self.assertEqual(started.status_code, 200)
         self.assertEqual(completed.json(), {"connected": True})
-        self.assertEqual(store.saved, ("alice", "route-refresh", ("gmail.readonly",)))
+        self.assertTrue(connected.json()["connected"])
+        self.assertFalse(other.json()["connected"])
+        self.assertEqual(disconnected.json(), {
+            "connected": False, "account_email": None, "scopes": [],
+        })
+        self.assertEqual(revoked_tokens, ["route-refresh"])
+        self.assertNotIn("alice", store.credentials)
+
 
 if __name__ == "__main__":
     unittest.main()

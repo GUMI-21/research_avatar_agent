@@ -11,9 +11,12 @@ from urllib.parse import urlencode
 import httpx
 from pydantic import SecretStr
 
+from app.services.google_oauth_credentials import GoogleOAuthCredential
+
 
 GOOGLE_AUTH_URL = "https://accounts.google.com/o/oauth2/v2/auth"
 GOOGLE_TOKEN_URL = "https://oauth2.googleapis.com/token"
+GOOGLE_REVOKE_URL = "https://oauth2.googleapis.com/revoke"
 GOOGLE_READ_SCOPES = (
     "https://www.googleapis.com/auth/gmail.readonly",
     "https://www.googleapis.com/auth/calendar.readonly",
@@ -24,7 +27,7 @@ class GoogleOAuthFlowError(RuntimeError):
     pass
 
 
-class GoogleCredentialWriter(Protocol):
+class GoogleCredentialStore(Protocol):
     async def save(
         self,
         client_id: str,
@@ -32,6 +35,10 @@ class GoogleCredentialWriter(Protocol):
         scopes: tuple[str, ...],
         account_email: str | None = None,
     ) -> None: ...
+
+    async def load(self, client_id: str) -> GoogleOAuthCredential | None: ...
+
+    async def delete(self, client_id: str) -> bool: ...
 
 
 @dataclass(frozen=True)
@@ -44,7 +51,7 @@ class PendingGoogleAuthorization:
 class GoogleOAuthFlow:
     def __init__(
         self,
-        credential_store: GoogleCredentialWriter,
+        credential_store: GoogleCredentialStore,
         client_id: str,
         client_secret: SecretStr,
         redirect_uri: str,
@@ -114,3 +121,24 @@ class GoogleOAuthFlow:
             pending.client_id, SecretStr(refresh_token), scopes
         )
         return pending.client_id
+
+    async def connection(
+        self, client_id: str,
+    ) -> GoogleOAuthCredential | None:
+        return await self._store.load(client_id)
+
+    async def disconnect(self, client_id: str) -> bool:
+        credential = await self._store.load(client_id)
+        if credential is None:
+            return False
+        async with httpx.AsyncClient(
+            transport=self._transport, timeout=30
+        ) as client:
+            response = await client.post(
+                GOOGLE_REVOKE_URL,
+                params={"token": credential.refresh_token.get_secret_value()},
+                headers={"Content-Type": "application/x-www-form-urlencoded"},
+            )
+        if response.status_code not in {200, 400}:
+            raise GoogleOAuthFlowError("Google OAuth revocation failed")
+        return await self._store.delete(client_id)
