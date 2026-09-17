@@ -52,7 +52,7 @@ MCP 返回内容与网页、邮件内容都视为不可信数据。它们只作�
 3. 已完成：Markdown 修改工具、当前连接内 Run 暂停恢复与前端批准/拒绝。跨进程恢复后续补充。
 4. 已完成：工具发现、JSON Schema 校验、Registry 注册、调用与错误归一化，并用官方 SDK 接入 stdio、Streamable HTTP Transport 和应用生命周期。
 5. 已完成：Playwright MCP 真实握手、工具发现和页面导航验证；支持域名允许列表与高风险工具过滤。
-6. 进行中：已完成按 client_id 隔离的 Google refresh token 加密存储；下一批实现 OAuth 授权流程，再接 Gmail/Calendar 只读工具。
+6. 进行中：已完成按 client_id 隔离的 Google refresh token 加密存储，以及带 state、PKCE 的授权入口和回调；下一批补连接状态/解除授权，再接 Gmail/Calendar 只读工具。
 7. Gmail 草稿/发送与 Calendar 创建/修改工具的审批流程。
 8. Skill 发现、启用、上下文注入和审计展示。
 

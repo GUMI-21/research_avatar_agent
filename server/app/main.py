@@ -2,9 +2,11 @@
 
 from collections.abc import AsyncIterator
 from contextlib import AsyncExitStack, asynccontextmanager
+from os import getenv
 
 from fastapi import FastAPI
 from langgraph.checkpoint.memory import InMemorySaver
+from pydantic import SecretStr
 
 from app.adapters.agent import CodexAgentRuntime, NativeAgentRuntime
 from app.adapters.knowledge import FastEmbedAdapter
@@ -12,6 +14,7 @@ from app.api.router import api_router
 from app.core.database import Database
 from app.core.settings import Settings, get_settings
 from app.services.google_oauth_credentials import GoogleOAuthCredentialStore
+from app.services.google_oauth_flow import GoogleOAuthFlow
 from app.services.llm_credentials import LLMCredentialStore
 from app.services.llm_runtime import LLMRuntime
 from app.services.runtime_registry import RuntimeRegistry
@@ -95,6 +98,21 @@ def create_app(settings: Settings) -> FastAPI:
     )
     app.state.google_oauth_credentials = GoogleOAuthCredentialStore(
         app.state.database, settings.llm.credential_key_path
+    )
+    oauth_client_id = getenv("GOOGLE_OAUTH_CLIENT_ID")
+    oauth_client_secret = getenv("GOOGLE_OAUTH_CLIENT_SECRET")
+    app.state.google_oauth_flow = (
+        GoogleOAuthFlow(
+            app.state.google_oauth_credentials,
+            oauth_client_id,
+            SecretStr(oauth_client_secret),
+            getenv(
+                "GOOGLE_OAUTH_REDIRECT_URI",
+                "http://127.0.0.1:8000/api/v1/google/oauth/callback",
+            ),
+        )
+        if oauth_client_id and oauth_client_secret
+        else None
     )
     runtime_registry = RuntimeRegistry()
     file_tools = create_file_tool_registry()

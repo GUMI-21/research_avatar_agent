@@ -122,7 +122,7 @@ The real symlink-escape test skips on Windows error 1314 when the current user
 lacks symlink privileges; run it with Developer Mode or appropriate privileges
 to cover that filesystem case.
 
-The current backend baseline is 149 tests passing with one optional Windows
+The current backend baseline is 151 tests passing with one optional Windows
 symlink test skipped. OpenAI Responses supports the structured
 `delegate_to_agent` tool. Gemini and DeepSeek continue to support normal streamed
 chat, while their automatic handoff wire formats are deferred until after the
@@ -157,6 +157,27 @@ from `server/`:
 The URL filter protects direct `url` arguments sent through this MCP client.
 It does not inspect redirects or every subresource request, so retain Playwright
 network policy and host-level network restrictions for untrusted sites.
+### Google OAuth on Windows
+
+Create a Google Cloud OAuth client of type **Web application**, enable the Gmail
+and Calendar APIs, and register this exact local redirect URI:
+
+```text
+http://127.0.0.1:8000/api/v1/google/oauth/callback
+```
+
+Provide application credentials only through the Server process environment:
+
+```powershell
+$env:GOOGLE_OAUTH_CLIENT_ID = "your-client-id"
+$env:GOOGLE_OAUTH_CLIENT_SECRET = "your-client-secret"
+$env:GOOGLE_OAUTH_REDIRECT_URI = "http://127.0.0.1:8000/api/v1/google/oauth/callback"
+```
+
+`POST /api/v1/google/oauth/start` with `X-Client-ID` returns the Google
+authorization URL. Google redirects the browser to the callback, where the
+Server validates one-time state and PKCE before encrypting the refresh token.
+The client secret and tokens must never be added to YAML, logs, or Git.
 ### macOS / Linux
 
 Install dependencies in a virtual environment, then start the API server from
