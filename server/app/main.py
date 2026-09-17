@@ -11,6 +11,7 @@ from app.adapters.knowledge import FastEmbedAdapter
 from app.api.router import api_router
 from app.core.database import Database
 from app.core.settings import Settings, get_settings
+from app.services.google_oauth_credentials import GoogleOAuthCredentialStore
 from app.services.llm_credentials import LLMCredentialStore
 from app.services.llm_runtime import LLMRuntime
 from app.services.runtime_registry import RuntimeRegistry
@@ -90,6 +91,9 @@ def create_app(settings: Settings) -> FastAPI:
     )
     llm_runtime = LLMRuntime(settings.llm)
     app.state.llm_credentials = LLMCredentialStore(
+        app.state.database, settings.llm.credential_key_path
+    )
+    app.state.google_oauth_credentials = GoogleOAuthCredentialStore(
         app.state.database, settings.llm.credential_key_path
     )
     runtime_registry = RuntimeRegistry()
