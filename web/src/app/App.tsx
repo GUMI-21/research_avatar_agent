@@ -37,7 +37,7 @@ const AGENT_EMOJIS = ["🤖", "🧠", "🔎", "💻", "🧪", "✍️", "🛠️
 
 function agentMentionPattern(name: string) {
   const escaped = name.replace(/[.*+?^${}()|[\]\\]/g, "\\$&");
-  return new RegExp(`(^|\\s)@${escaped}(?=\\s|$)`);
+  return new RegExp(`(^|[^A-Za-z0-9_])@${escaped}(?=$|\\s|[^A-Za-z0-9_])`);
 }
 
 function formatDate(value: string) {
@@ -258,7 +258,7 @@ export function App() {
     .find((item) =>
       item.id !== sessionAgent?.id && agentMentionPattern(item.name).test(draft)
     );
-  const mentionMatch = draft.match(/(?:^|\s)@([^@\s]*)$/);
+  const mentionMatch = draft.match(/(?:^|[^A-Za-z0-9_])@([^@\s]*)$/);
   const mentionQuery = mentionMatch?.[1].toLocaleLowerCase() ?? null;
   const mentionCandidates = mentionQuery === null ? [] : agents.filter((item) =>
     item.id !== sessionAgent?.id && item.name.toLocaleLowerCase().startsWith(mentionQuery)
@@ -496,14 +496,18 @@ export function App() {
           )}
           <div className="composer-actions">
             <div className="model-control">
-              <span>{mentionedAgent ? `${sessionAgent?.name} → ${mentionedAgent.name}` : executionAgent?.provider || "Agent 模型"}</span>
+              <span>{mentionedAgent
+                ? `${sessionAgent?.name} → ${mentionedAgent.name}`
+                : executionAgent?.runtime === "codex" ? "Agent Runtime" : executionAgent?.provider || "Agent 模型"}</span>
               <select
                 aria-label="当前 Agent 模型"
                 disabled={!executionAgent || !executionProvider || modelMutation.isPending || stream.run.status === "running"}
                 value={executionAgent?.model || ""}
                 onChange={(event) => executionAgent && modelMutation.mutate({ agentId: executionAgent.id, model: event.target.value })}
               >
-                {!executionProvider && <option value={executionAgent?.model || ""}>{executionAgent?.model || "未配置模型"}</option>}
+                {!executionProvider && <option value={executionAgent?.model || ""}>
+                  {executionAgent?.runtime === "codex" ? "Codex CLI" : executionAgent?.model || "未配置模型"}
+                </option>}
                 {executionProvider?.models.map((item) => <option key={item.model} value={item.model}>{item.display_name}</option>)}
               </select>
             </div>

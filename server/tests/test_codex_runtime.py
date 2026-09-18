@@ -1,12 +1,14 @@
 """Tests for Codex CLI JSONL event normalization."""
 
 import json
+import sys
 import unittest
 from collections.abc import AsyncIterator
 from tempfile import TemporaryDirectory
 from pathlib import Path
 
 from app.adapters.agent import CodexAgentRuntime, RuntimeEventType, RuntimeRequest
+from app.adapters.agent.codex import CodexProcessError, _codex_lines
 
 
 def request(
@@ -22,6 +24,17 @@ def request(
 
 
 class CodexRuntimeTest(unittest.IsolatedAsyncioTestCase):
+    async def test_process_bridge_streams_stdout_and_captures_stderr(self) -> None:
+        output = [line async for line in _codex_lines(
+            (sys.executable, "-c", "import sys; print(sys.stdin.read().upper())"),
+            "hello",
+        )]
+        self.assertEqual([line.strip() for line in output], ["HELLO"])
+
+        failing = (sys.executable, "-c", "import sys; print('boom', file=sys.stderr); raise SystemExit(3)")
+        with self.assertRaisesRegex(CodexProcessError, "status 3: boom"):
+            _ = [line async for line in _codex_lines(failing, "")]
+
     async def test_builds_safe_command_and_normalizes_result(self) -> None:
         captured: dict[str, object] = {}
 
@@ -116,7 +129,7 @@ class CodexRuntimeTest(unittest.IsolatedAsyncioTestCase):
             [{"path": "app.py", "kind": "update"}],
         )
 
-    async def test_workspace_is_resolved_under_allowed_root(self) -> None:
+    async def test_workspace_uses_agent_absolute_path_or_default_root(self) -> None:
         with TemporaryDirectory() as directory:
             root = Path(directory)
             child = root / "child"
@@ -126,8 +139,8 @@ class CodexRuntimeTest(unittest.IsolatedAsyncioTestCase):
             command = runtime._command(None, None, "child")
 
             self.assertEqual(command[command.index("--cd") + 1], str(child.resolve()))
-            with self.assertRaises(ValueError):
-                runtime._command(None, None, str(root.parent))
+            external = runtime._command(None, None, str(root.parent))
+            self.assertEqual(external[external.index("--cd") + 1], str(root.parent.resolve()))
 
     async def test_model_override_and_incomplete_stream_fail(self) -> None:
         async def lines(command: tuple[str, ...], prompt: str) -> AsyncIterator[str]:
