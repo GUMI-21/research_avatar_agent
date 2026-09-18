@@ -2,10 +2,13 @@
 
 import asyncio
 import json
+import subprocess
+from tempfile import TemporaryFile
 from collections.abc import AsyncIterator, Callable
 from pathlib import Path
 
 from app.adapters.agent.base import RuntimeEvent, RuntimeEventType, RuntimeRequest
+from logs import log
 
 LineSource = Callable[[tuple[str, ...], str], AsyncIterator[str]]
 _TOOL_ITEM_TYPES = {"command_execution", "file_change", "mcp_tool_call"}
@@ -20,27 +23,34 @@ class CodexWorkspaceError(ValueError):
 
 
 async def _codex_lines(command: tuple[str, ...], prompt: str) -> AsyncIterator[str]:
-    process = await asyncio.create_subprocess_exec(
-        *command,
-        stdin=asyncio.subprocess.PIPE,
-        stdout=asyncio.subprocess.PIPE,
-        stderr=asyncio.subprocess.DEVNULL,
-    )
-    assert process.stdin is not None
-    assert process.stdout is not None
-    process.stdin.write(prompt.encode("utf-8"))
-    await process.stdin.drain()
-    process.stdin.close()
-    try:
-        async for raw_line in process.stdout:
-            yield raw_line.decode("utf-8")
-        return_code = await process.wait()
-        if return_code:
-            raise CodexProcessError(f"Codex exited with status {return_code}")
-    finally:
-        if process.returncode is None:
-            process.terminate()
-            await process.wait()
+    # Uvicorn reload uses SelectorEventLoop on Windows, which has no asyncio
+    # subprocess support. A worker thread keeps JSONL streaming non-blocking.
+    with TemporaryFile() as error_file:
+        process = await asyncio.to_thread(
+            subprocess.Popen, command, stdin=subprocess.PIPE,
+            stdout=subprocess.PIPE, stderr=error_file,
+        )
+        assert process.stdin is not None
+        assert process.stdout is not None
+        try:
+            await asyncio.to_thread(process.stdin.write, prompt.encode("utf-8"))
+            await asyncio.to_thread(process.stdin.close)
+            while raw_line := await asyncio.to_thread(process.stdout.readline):
+                yield raw_line.decode("utf-8")
+            return_code = await asyncio.to_thread(process.wait)
+            if return_code:
+                error_file.seek(0)
+                detail = error_file.read().decode("utf-8", errors="replace").strip()
+                detail = " ".join(detail.split())[:500]
+                suffix = f": {detail}" if detail else ""
+                raise CodexProcessError(
+                    f"Codex exited with status {return_code}{suffix}"
+                )
+        finally:
+            if process.poll() is None:
+                process.terminate()
+                await asyncio.to_thread(process.wait)
+            process.stdout.close()
 
 
 class CodexAgentRuntime:
@@ -82,11 +92,8 @@ class CodexAgentRuntime:
         if not candidate.is_absolute():
             candidate = self._workspace_root / candidate
         workspace = candidate.resolve()
-        if (
-            not workspace.is_dir()
-            or not workspace.is_relative_to(self._workspace_root)
-        ):
-            raise CodexWorkspaceError("Codex workspace is outside the allowed root")
+        if not workspace.is_dir():
+            raise CodexWorkspaceError("Codex workspace directory does not exist")
         return workspace
 
     @staticmethod
@@ -195,6 +202,11 @@ class CodexAgentRuntime:
             if not completed:
                 raise CodexProcessError("Codex stream ended before turn.completed")
         except Exception as error:
+            log.opt(exception=error).error(
+                "codex_runtime_failed business=agent_workspace "
+                "agent_id={} error_type={}",
+                request.agent_id, type(error).__name__,
+            )
             yield RuntimeEvent(
                 type=RuntimeEventType.RUN_FAILED,
                 payload={"error_type": type(error).__name__},

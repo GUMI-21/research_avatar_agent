@@ -365,18 +365,18 @@ describe("Agent workspace resources", () => {
     const composer = screen.getByLabelText("消息");
     await waitFor(() => expect(composer).toBeEnabled());
 
-    fireEvent.change(composer, { target: { value: "@Rev" } });
+    fireEvent.change(composer, { target: { value: "请@Rev" } });
     fireEvent.click(await screen.findByRole("option", { name: /@Reviewer/ }));
-    expect(composer).toHaveValue("@Reviewer ");
+    expect(composer).toHaveValue("请@Reviewer ");
     expect(screen.getByText("Personal → Reviewer")).toBeInTheDocument();
-    fireEvent.change(composer, { target: { value: "@Reviewer 请审查这段实现" } });
+    fireEvent.change(composer, { target: { value: "让@Reviewer 请审查这段实现" } });
     fireEvent.click(screen.getByRole("button", { name: "发送" }));
 
     const socket = FakeWebSocket.instances[0];
     expect(JSON.parse(socket.sent[0])).toEqual({
       type: "send_message",
       session_id: session.id,
-      content: "请审查这段实现",
+      content: "让 请审查这段实现",
       target_agent_id: reviewer.id,
     });
 
@@ -430,6 +430,7 @@ describe("Agent workspace resources", () => {
     renderApp();
     const codexAgent = await screen.findByRole("button", { name: /Reviewer.*Codex CLI/ });
     fireEvent.click(codexAgent);
+    expect(screen.getByRole("combobox", { name: "当前 Agent 模型" })).toHaveTextContent("Codex CLI");
     fireEvent.click(screen.getByRole("button", { name: "Usage" }));
 
     expect(await screen.findByText("Codex 剩余额度")).toBeInTheDocument();
