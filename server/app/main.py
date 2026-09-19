@@ -22,6 +22,7 @@ from app.services.runtime_registry import RuntimeRegistry
 from app.tools import (
     MCPClient, StdioMCPTransport, StreamableHttpMCPTransport,
     ToolApprovalBroker, create_file_tool_registry,
+    register_google_read_tools,
 )
 from logs import configure_logging, log
 
@@ -128,6 +129,8 @@ def create_app(settings: Settings) -> FastAPI:
     )
     runtime_registry = RuntimeRegistry()
     file_tools = create_file_tool_registry()
+    if app.state.google_api_client is not None:
+        register_google_read_tools(file_tools, app.state.google_api_client)
     app.state.tool_registry = file_tools
     approvals = ToolApprovalBroker()
     app.state.tool_approval_broker = approvals

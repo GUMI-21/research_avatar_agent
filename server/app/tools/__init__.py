@@ -2,6 +2,7 @@
 
 from app.tools.approval import ToolApprovalBroker
 from app.tools.filesystem import create_file_tool_registry
+from app.tools.google import register_google_read_tools
 from app.tools.mcp import MCPClient, MCPError, MCPTransport
 from app.tools.mcp_sdk import StdioMCPTransport, StreamableHttpMCPTransport
 from app.tools.registry import (
@@ -31,4 +32,5 @@ __all__ = [
     "ToolRisk",
     "ToolSpec",
     "create_file_tool_registry",
+    "register_google_read_tools",
 ]
