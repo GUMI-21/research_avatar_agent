@@ -1,6 +1,6 @@
 """Relational persistence models."""
 
-from app.models.agent import AgentKnowledgeSourceRecord, AgentRecord
+from app.models.agent import AgentKnowledgeSourceRecord, AgentRecord, AgentSkillRecord
 from app.models.google_oauth import GoogleOAuthCredentialRecord
 from app.models.knowledge import (
     KnowledgeChunkEmbeddingRecord,
@@ -20,6 +20,7 @@ from app.models.workspace import WorkspaceRecord
 __all__ = [
     "AgentRecord",
     "AgentKnowledgeSourceRecord",
+    "AgentSkillRecord",
     "GoogleOAuthCredentialRecord",
     "KnowledgeChunkEmbeddingRecord",
     "KnowledgeChunkRecord",

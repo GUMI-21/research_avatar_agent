@@ -71,6 +71,20 @@ class AgentUpdate(BaseModel):
         return value.strip() if value is not None else None
 
 
+class AgentSkillsUpdate(BaseModel):
+    skill_ids: list[str] = Field(default_factory=list, max_length=20)
+
+    @field_validator("skill_ids")
+    @classmethod
+    def validate_skill_ids(cls, values: list[str]) -> list[str]:
+        normalized = [value.strip() for value in values]
+        if any(not value or len(value) > 64 for value in normalized):
+            raise ValueError("skill id is invalid")
+        if len(normalized) != len(set(normalized)):
+            raise ValueError("skill ids must be unique")
+        return normalized
+
+
 # response 字段
 class AgentRead(BaseModel):
     model_config = ConfigDict(from_attributes=True)
@@ -85,6 +99,7 @@ class AgentRead(BaseModel):
     model: str | None
     workspace_path: str | None
     knowledge_source_ids: list[str]
+    skill_ids: list[str]
     created_at: datetime
     updated_at: datetime
 

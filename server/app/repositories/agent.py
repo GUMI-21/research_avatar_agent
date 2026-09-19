@@ -5,7 +5,12 @@ from collections.abc import Sequence
 from sqlalchemy import select
 from sqlalchemy.ext.asyncio import AsyncSession
 
-from app.models import AgentKnowledgeSourceRecord, AgentRecord, KnowledgeSourceRecord
+from app.models import (
+    AgentKnowledgeSourceRecord,
+    AgentRecord,
+    AgentSkillRecord,
+    KnowledgeSourceRecord,
+)
 
 
 class AgentRepository:
@@ -74,5 +79,22 @@ class AgentRepository:
             return None
         for field, value in changes.items():
             setattr(agent, field, value)
+        await self._session.flush()
+        return agent
+
+    async def replace_skills(
+        self, client_id: str, agent_id: str, skill_ids: list[str]
+    ) -> AgentRecord | None:
+        agent = await self.get(client_id, agent_id)
+        if agent is None:
+            return None
+        agent.skill_links = [
+            AgentSkillRecord(
+                client_id=client_id,
+                agent_id=agent_id,
+                skill_id=skill_id,
+            )
+            for skill_id in skill_ids
+        ]
         await self._session.flush()
         return agent

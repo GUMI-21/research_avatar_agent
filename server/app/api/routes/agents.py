@@ -1,12 +1,22 @@
 """Client-scoped Agent resource routes."""
 
-from fastapi import APIRouter, HTTPException, status
+from typing import Annotated
+
+from fastapi import APIRouter, Depends, HTTPException, status
 from sqlalchemy.exc import IntegrityError
 
 from app.api.dependencies import ClientID, DBSession
 from app.repositories import AgentRepository
-from app.schemas.agent import AgentCreate, AgentListResponse, AgentRead, AgentUpdate
+from app.api.routes.skills import get_skill_catalog
+from app.schemas.agent import (
+    AgentCreate,
+    AgentListResponse,
+    AgentRead,
+    AgentSkillsUpdate,
+    AgentUpdate,
+)
 from app.services import AgentKnowledgeSourceNotFoundError, AgentService
+from app.services.skills import SkillCatalog
 
 router = APIRouter(prefix="/agents")
 
@@ -86,4 +96,27 @@ async def get_agent(
             status_code=status.HTTP_404_NOT_FOUND,
             detail="Agent not found",
         )
+    return AgentRead.model_validate(agent)
+
+
+@router.put("/{agent_id}/skills", response_model=AgentRead)
+async def replace_agent_skills(
+    agent_id: str,
+    request: AgentSkillsUpdate,
+    client_id: ClientID,
+    session: DBSession,
+    catalog: Annotated[SkillCatalog, Depends(get_skill_catalog)],
+) -> AgentRead:
+    missing = next(
+        (skill_id for skill_id in request.skill_ids if catalog.get(skill_id) is None),
+        None,
+    )
+    if missing is not None:
+        raise HTTPException(status_code=404, detail="Skill not found")
+    agent = await AgentRepository(session).replace_skills(
+        client_id, agent_id, request.skill_ids
+    )
+    if agent is None:
+        raise HTTPException(status_code=404, detail="Agent not found")
+    await session.commit()
     return AgentRead.model_validate(agent)

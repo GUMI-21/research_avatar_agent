@@ -29,6 +29,16 @@ class AgentKnowledgeSourceRecord(Base):
     )  # Agent 可以检索的知识库
 
 
+class AgentSkillRecord(Base):
+    __tablename__ = "agent_skills"
+
+    client_id: Mapped[str] = mapped_column(String(64), primary_key=True)
+    agent_id: Mapped[str] = mapped_column(
+        ForeignKey("agents.id", ondelete="CASCADE"), primary_key=True
+    )
+    skill_id: Mapped[str] = mapped_column(String(64), primary_key=True)
+
+
 class AgentRecord(Base):
     __tablename__ = "agents"
     __table_args__ = (
@@ -50,6 +60,10 @@ class AgentRecord(Base):
         cascade="all, delete-orphan",
         lazy="selectin",
     )
+    skill_links: Mapped[list[AgentSkillRecord]] = relationship(
+        cascade="all, delete-orphan",
+        lazy="selectin",
+    )
     created_at: Mapped[datetime] = mapped_column(default=utc_now)
     updated_at: Mapped[datetime] = mapped_column(default=utc_now, onupdate=utc_now)
 
@@ -57,3 +71,8 @@ class AgentRecord(Base):
     def knowledge_source_ids(self) -> list[str]:
         links = self.__dict__.get("knowledge_links", ())
         return [link.source_id for link in links]
+
+    @property
+    def skill_ids(self) -> list[str]:
+        links = self.__dict__.get("skill_links", ())
+        return [link.skill_id for link in links]
