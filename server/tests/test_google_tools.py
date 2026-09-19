@@ -4,6 +4,8 @@ import base64
 import json
 import unittest
 from datetime import datetime, timezone
+from email import policy
+from email.parser import BytesParser
 from typing import Any
 
 import httpx
@@ -22,12 +24,14 @@ class FakeGoogleAPIClient:
     def __init__(self, *responses: httpx.Response | Exception) -> None:
         self.responses = list(responses)
         self.calls: list[tuple[str, str, str, str, dict[str, Any] | None]] = []
+        self.json_bodies: list[Any] = []
 
     async def request(
         self, client_id: str, method: str, service: str, path: str, *,
         params: dict[str, Any] | None = None, json: Any = None,
     ) -> httpx.Response:
         self.calls.append((client_id, method, service, path, params))
+        self.json_bodies.append(json)
         response = self.responses.pop(0)
         if isinstance(response, Exception):
             raise response
@@ -174,6 +178,56 @@ class GoogleToolsTest(unittest.IsolatedAsyncioTestCase):
                         {"time_min": time_min, "time_max": time_max}, approved=True,
                     )
         self.assertEqual(client.calls, [])
+
+    async def test_gmail_draft_and_send_require_safe_write_approval(self) -> None:
+        client = FakeGoogleAPIClient(
+            httpx.Response(200, json={
+                "id": "draft-1", "message": {"id": "message-1"},
+            }),
+            httpx.Response(200, json={"id": "message-2"}),
+        )
+        registry = ToolRegistry()
+        register_google_read_tools(registry, client)  # type: ignore[arg-type]
+        context = ToolContext("client-a", "agent-a")
+        arguments = {
+            "to": ["candidate@example.com"],
+            "cc": ["reviewer@example.com"],
+            "subject": "Interview",
+            "body": "private body",
+        }
+
+        with self.assertRaises(ToolApprovalRequiredError) as pending:
+            await registry.execute("gmail_send_message", context, arguments)
+        self.assertEqual(pending.exception.tool.risk, ToolRisk.EXTERNAL_WRITE)
+        assert pending.exception.tool.approval_summary is not None
+        summary = pending.exception.tool.approval_summary(arguments)
+        self.assertEqual(summary["recipients"], "candidate@example.com")
+        self.assertEqual(summary["cc"], "reviewer@example.com")
+        self.assertEqual(summary["subject"], "Interview")
+        self.assertNotIn("private body", summary.values())
+        self.assertEqual(client.calls, [])
+
+        draft = await registry.execute(
+            "gmail_create_draft", context, arguments, approved=True
+        )
+        sent = await registry.execute(
+            "gmail_send_message", context, arguments, approved=True
+        )
+
+        self.assertEqual(client.calls[0][3], "/gmail/v1/users/me/drafts")
+        self.assertEqual(client.calls[1][3], "/gmail/v1/users/me/messages/send")
+        encoded = client.json_bodies[0]["message"]["raw"]
+        decoded = base64.urlsafe_b64decode(encoded + "=" * (-len(encoded) % 4))
+        message = BytesParser(policy=policy.default).parsebytes(decoded)
+        self.assertEqual(message["To"], "candidate@example.com")
+        self.assertEqual(message["Cc"], "reviewer@example.com")
+        self.assertEqual(message["Subject"], "Interview")
+        self.assertEqual(message.get_content().strip(), "private body")
+        self.assertEqual(draft.metadata, {
+            "draft_id": "draft-1", "message_id": "message-1",
+        })
+        self.assertEqual(sent.metadata, {"message_id": "message-2"})
+        self.assertNotIn("private body", json.dumps(draft.metadata))
 
 
 if __name__ == "__main__":

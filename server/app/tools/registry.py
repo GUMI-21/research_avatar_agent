@@ -40,6 +40,7 @@ class ToolResult:
 
 ToolHandler = Callable[[ToolContext, ToolArguments], Awaitable[ToolResult]]
 ToolValidator = Callable[[Mapping[str, object]], None]
+ApprovalSummarizer = Callable[[Mapping[str, object]], Mapping[str, object]]
 
 
 # Tool Specification 工具规格定义
@@ -52,6 +53,7 @@ class ToolSpec:
     handler: ToolHandler
     input_schema: Mapping[str, object] | None = None
     validator: ToolValidator | None = None
+    approval_summary: ApprovalSummarizer | None = None
 
     def llm_definition(self) -> LLMToolDefinition:
         return LLMToolDefinition(

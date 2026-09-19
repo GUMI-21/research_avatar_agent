@@ -199,6 +199,11 @@ class NativeAgentRuntime:
                         except ToolApprovalRequiredError as approval:
                             if self._approvals is None:
                                 raise
+                            summary = (
+                                approval.tool.approval_summary(arguments)
+                                if approval.tool.approval_summary is not None
+                                else {}
+                            )
                             pending = self._approvals.create(
                                 request.client_id, request.run_id
                             )
@@ -208,6 +213,7 @@ class NativeAgentRuntime:
                                     "approval_id": pending.id,
                                     "tool_name": chunk.tool_call.name,
                                     "risk": approval.tool.risk.value,
+                                    "summary": dict(summary),
                                     "path": arguments.get("path"),
                                     "content_preview": str(
                                         arguments.get("content", "")

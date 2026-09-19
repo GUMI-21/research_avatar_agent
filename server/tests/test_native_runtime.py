@@ -281,6 +281,7 @@ class NativeAgentRuntimeTest(unittest.IsolatedAsyncioTestCase):
                 events.append(event)
                 if event.type is RuntimeEventType.APPROVAL_REQUIRED:
                     self.assertFalse(path.exists())
+                    self.assertEqual(event.payload["summary"], {})
                     approvals.decide(
                         "client-a", "run-1",
                         str(event.payload["approval_id"]), True,

@@ -12,8 +12,10 @@ const terminalEvents = new Set(["run_finished", "run_failed", "run_cancelled"]);
 export type PendingApproval = {
   id: string;
   toolName: string;
+  risk: string;
   path: string;
   contentPreview: string;
+  summary: Record<string, string>;
 };
 
 export type LiveRun = {
@@ -109,8 +111,10 @@ function handleFrame(
     approval: frame.type === "approval_required" ? {
       id: String(frame.payload.approval_id),
       toolName: String(frame.payload.tool_name),
+      risk: String(frame.payload.risk ?? ""),
       path: String(frame.payload.path ?? ""),
       contentPreview: String(frame.payload.content_preview ?? ""),
+      summary: toStringRecord(frame.payload.summary),
     } : frame.type === "tool_finished" ? null : current.approval,
     status: frame.type === "run_finished" ? "completed"
       : frame.type === "run_failed" ? "failed"
@@ -119,4 +123,11 @@ function handleFrame(
     completedAt: terminalEvents.has(frame.type) ? new Date().toISOString() : current.completedAt,
   }));
   if (terminalEvents.has(frame.type)) onTerminal(frame.run_id, sessionId);
+}
+
+function toStringRecord(value: unknown): Record<string, string> {
+  if (!value || typeof value !== "object" || Array.isArray(value)) return {};
+  return Object.fromEntries(
+    Object.entries(value).map(([key, item]) => [key, String(item)]),
+  );
 }

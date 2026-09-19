@@ -73,6 +73,14 @@ class GoogleOAuthFlowTest(unittest.IsolatedAsyncioTestCase):
         )
         self.assertEqual(query["code_challenge_method"], ["S256"])
         self.assertEqual(query["access_type"], ["offline"])
+        self.assertIn(
+            "https://www.googleapis.com/auth/gmail.compose",
+            query["scope"][0].split(),
+        )
+        self.assertIn(
+            "https://www.googleapis.com/auth/gmail.send",
+            query["scope"][0].split(),
+        )
         self.assertNotIn("google-secret", authorization_url)
 
         state = query["state"][0]

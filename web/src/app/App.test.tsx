@@ -360,6 +360,43 @@ describe("Agent workspace resources", () => {
       approved: true,
     });
   });
+  it("shows a safe Gmail approval summary without the message body", async () => {
+    renderApp();
+    const composer = screen.getByLabelText("消息");
+    await waitFor(() => expect(composer).toBeEnabled());
+    fireEvent.change(composer, { target: { value: "发送邮件" } });
+    fireEvent.click(screen.getByRole("button", { name: "发送" }));
+    const socket = FakeWebSocket.instances[0];
+
+    act(() => socket.emit({
+      type: "approval_required",
+      run_id: "run-email",
+      sequence: 2,
+      payload: {
+        approval_id: "approval-email",
+        tool_name: "gmail_send_message",
+        risk: "external_write",
+        summary: {
+          action: "send_message",
+          recipients: "candidate@example.com",
+          cc: "reviewer@example.com",
+          subject: "Interview",
+        },
+      },
+    }));
+
+    expect(screen.getByText("candidate@example.com")).toBeInTheDocument();
+    expect(screen.getByText("reviewer@example.com")).toBeInTheDocument();
+    expect(screen.getByText("Interview")).toBeInTheDocument();
+    expect(screen.queryByText("secret email body")).not.toBeInTheDocument();
+    fireEvent.click(screen.getByRole("button", { name: "批准执行" }));
+    expect(JSON.parse(socket.sent[1])).toEqual({
+      type: "tool_approval",
+      run_id: "run-email",
+      approval_id: "approval-email",
+      approved: true,
+    });
+  });
   it("hands a message to an @mentioned Agent", async () => {
     renderApp();
     const composer = screen.getByLabelText("消息");

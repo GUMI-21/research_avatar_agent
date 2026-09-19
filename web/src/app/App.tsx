@@ -126,14 +126,30 @@ function ToolApprovalCard({
   approval: PendingApproval;
   onDecision: (approved: boolean) => void;
 }) {
+  const isMarkdown = approval.toolName === "write_markdown";
+  const labels: Record<string, string> = {
+    action: "操作",
+    recipients: "收件人",
+    cc: "抄送",
+    subject: "主题",
+  };
   return (
     <article className="approval-card" role="alert">
-      <div><FileText size={16} /><b>批准 Markdown 写入？</b></div>
-      <code>{approval.path}</code>
-      <pre>{approval.contentPreview || "（空文件）"}</pre>
+      <div><FileText size={16} /><b>{isMarkdown ? "批准 Markdown 写入？" : "批准工具执行？"}</b></div>
+      {approval.path && <code>{approval.path}</code>}
+      {approval.contentPreview && <pre>{approval.contentPreview}</pre>}
+      {Object.entries(approval.summary).length > 0 && (
+        <dl>
+          {Object.entries(approval.summary).map(([key, value]) => (
+            <div key={key}><dt>{labels[key] ?? key}</dt><dd>{value}</dd></div>
+          ))}
+        </dl>
+      )}
       <div className="approval-actions">
         <button type="button" onClick={() => onDecision(false)}>拒绝</button>
-        <button type="button" className="primary" onClick={() => onDecision(true)}>批准写入</button>
+        <button type="button" className="primary" onClick={() => onDecision(true)}>
+          {isMarkdown ? "批准写入" : "批准执行"}
+        </button>
       </div>
     </article>
   );

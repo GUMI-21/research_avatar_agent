@@ -17,8 +17,10 @@ from app.services.google_oauth_credentials import GoogleOAuthCredential
 GOOGLE_AUTH_URL = "https://accounts.google.com/o/oauth2/v2/auth"
 GOOGLE_TOKEN_URL = "https://oauth2.googleapis.com/token"
 GOOGLE_REVOKE_URL = "https://oauth2.googleapis.com/revoke"
-GOOGLE_READ_SCOPES = (
+GOOGLE_OAUTH_SCOPES = (
     "https://www.googleapis.com/auth/gmail.readonly",
+    "https://www.googleapis.com/auth/gmail.compose",
+    "https://www.googleapis.com/auth/gmail.send",
     "https://www.googleapis.com/auth/calendar.readonly",
 )
 
@@ -82,7 +84,7 @@ class GoogleOAuthFlow:
             "client_id": self._client_id,
             "redirect_uri": self._redirect_uri,
             "response_type": "code",
-            "scope": " ".join(GOOGLE_READ_SCOPES),
+            "scope": " ".join(GOOGLE_OAUTH_SCOPES),
             "access_type": "offline",
             "include_granted_scopes": "true",
             "prompt": "consent",
@@ -116,7 +118,7 @@ class GoogleOAuthFlow:
         scope = payload.get("scope")
         if not isinstance(refresh_token, str):
             raise GoogleOAuthFlowError("Google did not return a refresh token")
-        scopes = tuple(scope.split()) if isinstance(scope, str) else GOOGLE_READ_SCOPES
+        scopes = tuple(scope.split()) if isinstance(scope, str) else GOOGLE_OAUTH_SCOPES
         await self._store.save(
             pending.client_id, SecretStr(refresh_token), scopes
         )

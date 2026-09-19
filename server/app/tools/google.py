@@ -3,10 +3,11 @@
 import base64
 import json
 from datetime import datetime
+from email.message import EmailMessage
 from typing import Any, Self
 from urllib.parse import quote
 
-from pydantic import Field, model_validator
+from pydantic import Field, field_validator, model_validator
 
 from app.services.google_api_client import GoogleAPIClient, GoogleAPIError
 from app.tools.registry import (
@@ -44,6 +45,31 @@ class CalendarListEventsArguments(ToolArguments):
         if self.time_max <= self.time_min:
             raise ValueError("Calendar time_max must be later than time_min")
         return self
+
+
+class GmailComposeArguments(ToolArguments):
+    to: list[str] = Field(min_length=1, max_length=20)
+    cc: list[str] = Field(default_factory=list, max_length=20)
+    subject: str = Field(default="", max_length=998)
+    body: str = Field(default="", max_length=100_000)
+
+    @field_validator("to", "cc")
+    @classmethod
+    def validate_addresses(cls, values: list[str]) -> list[str]:
+        if any(
+            not value or len(value) > 320 or "@" not in value
+            or "\r" in value or "\n" in value
+            for value in values
+        ):
+            raise ValueError("Email addresses are invalid")
+        return values
+
+    @field_validator("subject")
+    @classmethod
+    def validate_subject(cls, value: str) -> str:
+        if "\r" in value or "\n" in value:
+            raise ValueError("Email subject cannot contain newlines")
+        return value
 
 
 def _plain_text(part: object) -> str:
@@ -101,6 +127,31 @@ def _event_time(value: object) -> dict[str, str]:
 
 def _limited_text(value: object) -> str:
     return value[:500] if isinstance(value, str) else ""
+
+
+def _raw_message(arguments: GmailComposeArguments) -> str:
+    message = EmailMessage()
+    message["To"] = ", ".join(arguments.to)
+    if arguments.cc:
+        message["Cc"] = ", ".join(arguments.cc)
+    message["Subject"] = arguments.subject
+    message.set_content(arguments.body)
+    return base64.urlsafe_b64encode(message.as_bytes()).decode().rstrip("=")
+
+
+def _email_approval(arguments: dict[str, object], action: str) -> dict[str, str]:
+    recipients = arguments.get("to")
+    visible = ", ".join(str(item)[:320] for item in recipients[:20]) \
+        if isinstance(recipients, list) else ""
+    cc = arguments.get("cc")
+    visible_cc = ", ".join(str(item)[:320] for item in cc[:20]) \
+        if isinstance(cc, list) else ""
+    return {
+        "action": action,
+        "recipients": visible[:1_000],
+        "cc": visible_cc[:1_000],
+        "subject": _limited_text(arguments.get("subject")),
+    }
 
 
 def register_google_read_tools(
@@ -203,6 +254,34 @@ def register_google_read_tools(
                 "status": "error", "error_type": type(error).__name__,
             })
 
+    async def write_message(
+        context: ToolContext, raw: ToolArguments, *, draft: bool,
+    ) -> ToolResult:
+        assert isinstance(raw, GmailComposeArguments)
+        try:
+            body = {"message": {"raw": _raw_message(raw)}} if draft \
+                else {"raw": _raw_message(raw)}
+            response = await client.request(
+                context.client_id, "POST", "gmail",
+                "/gmail/v1/users/me/drafts" if draft
+                else "/gmail/v1/users/me/messages/send",
+                json=body,
+            )
+            payload = response.json()
+            if not isinstance(payload, dict):
+                raise GoogleAPIError("Gmail returned an invalid response")
+            message = payload.get("message") if draft else payload
+            message_id = message.get("id") if isinstance(message, dict) else None
+            return ToolResult(
+                "Gmail draft created" if draft else "Gmail message sent",
+                {"draft_id": payload.get("id"), "message_id": message_id}
+                if draft else {"message_id": message_id},
+            )
+        except (GoogleAPIError, ValueError) as error:
+            return ToolResult(str(error), {
+                "status": "error", "error_type": type(error).__name__,
+            })
+
     registry.register(ToolSpec(
         "gmail_list_messages", "List Gmail message IDs matching a Gmail search query.",
         GmailListMessagesArguments, ToolRisk.EXTERNAL_READ, list_messages,
@@ -214,4 +293,16 @@ def register_google_read_tools(
     registry.register(ToolSpec(
         "calendar_list_events", "List calendar events in an explicit RFC3339 time range.",
         CalendarListEventsArguments, ToolRisk.EXTERNAL_READ, list_events,
+    ))
+    registry.register(ToolSpec(
+        "gmail_create_draft", "Create a Gmail draft after explicit user approval.",
+        GmailComposeArguments, ToolRisk.EXTERNAL_WRITE,
+        lambda context, raw: write_message(context, raw, draft=True),
+        approval_summary=lambda args: _email_approval(args, "create_draft"),
+    ))
+    registry.register(ToolSpec(
+        "gmail_send_message", "Send an email through Gmail after explicit user approval.",
+        GmailComposeArguments, ToolRisk.EXTERNAL_WRITE,
+        lambda context, raw: write_message(context, raw, draft=False),
+        approval_summary=lambda args: _email_approval(args, "send_message"),
     ))
