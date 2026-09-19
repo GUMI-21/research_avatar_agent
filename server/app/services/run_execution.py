@@ -216,15 +216,16 @@ class RunExecutionService:
         )
         # 根据表中的 runtime 字段调用已注册的 Factory，创建对应 Runtime 实例
         runtime = self._registry.create(agent.runtime)
-        enabled_skills = (
-            tuple(
+        skills_by_agent = {
+            item.id: tuple(
                 skill
-                for skill_id in agent.skill_ids
+                for skill_id in item.skill_ids
                 if (skill := self._skill_catalog.get(skill_id)) is not None
             )
-            if agent.runtime == "native" and self._skill_catalog is not None
-            else ()
-        )
+            for item in available_agents
+            if item.runtime == "native" and self._skill_catalog is not None
+        }
+        enabled_skills = skills_by_agent.get(agent.id, ())
         # 创建 Agent 执行记录
         run = await self._runs.create_run(
             client_id,
@@ -371,7 +372,9 @@ class RunExecutionService:
                     model=item.model,
                     runtime_thread_id=runtime_thread_ids.get(item.id),
                     workspace_path=item.workspace_path,
-                    system_prompt=item.system_prompt,
+                    system_prompt=_system_prompt_with_skills(
+                        item.system_prompt, skills_by_agent.get(item.id, ())
+                    ),
                     memory_context=memory_contexts.get(item.id, ""),
                     memory_ids=tuple(
                         record.id for record in memory_records.get(item.id, ())
@@ -443,6 +446,21 @@ class RunExecutionService:
                     await thread_repository.set_external_id(
                         client_id, session_id, active_agent.id,
                         active_agent.runtime, thread_id,
+                    )
+            if event.type is RuntimeEventType.HANDOFF_STARTED:
+                target_id = event.payload.get("to_agent_id")
+                target_skills = (
+                    skills_by_agent.get(target_id, ())
+                    if isinstance(target_id, str) else ()
+                )
+                if target_skills:
+                    await self._runs.record_skills(
+                        client_id,
+                        run.id,
+                        [
+                            {"id": skill.id, "version_hash": skill.version_hash}
+                            for skill in target_skills
+                        ],
                     )
             terminal_received = event.type in TERMINAL_EVENTS or terminal_received
             if event.type is RuntimeEventType.HANDOFF_FINISHED:
