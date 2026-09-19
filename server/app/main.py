@@ -13,6 +13,7 @@ from app.adapters.knowledge import FastEmbedAdapter
 from app.api.router import api_router
 from app.core.database import Database
 from app.core.settings import Settings, get_settings
+from app.services.google_api_client import GoogleAPIClient
 from app.services.google_oauth_credentials import GoogleOAuthCredentialStore
 from app.services.google_oauth_flow import GoogleOAuthFlow
 from app.services.llm_credentials import LLMCredentialStore
@@ -71,6 +72,8 @@ async def lifespan(app: FastAPI) -> AsyncIterator[None]:
         yield
     finally:
         await mcp_stack.aclose()
+        if app.state.google_api_client is not None:
+            await app.state.google_api_client.close()
         await app.state.database.dispose()
         log.info("Stopping {}", app.title)
 
@@ -110,6 +113,15 @@ def create_app(settings: Settings) -> FastAPI:
                 "GOOGLE_OAUTH_REDIRECT_URI",
                 "http://127.0.0.1:8000/api/v1/google/oauth/callback",
             ),
+        )
+        if oauth_client_id and oauth_client_secret
+        else None
+    )
+    app.state.google_api_client = (
+        GoogleAPIClient(
+            app.state.google_oauth_credentials,
+            oauth_client_id,
+            SecretStr(oauth_client_secret),
         )
         if oauth_client_id and oauth_client_secret
         else None
