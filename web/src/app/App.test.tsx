@@ -16,6 +16,7 @@ const agent = {
   model: "gpt-5.6-luna",
   workspace_path: null,
   knowledge_source_ids: [],
+  skill_ids: [],
   created_at: now,
   updated_at: now,
 };
@@ -62,7 +63,16 @@ const run = {
   duration_ms: 680,
   time_to_first_token_ms: 120,
   error_type: null,
+  skill_versions: [{ id: "daily-planning", version_hash: "abcdef1234567890" }],
   created_at: now,
+};
+const skill = {
+  id: "daily-planning",
+  name: "每日工作规划",
+  description: "根据日程整理工作计划。",
+  applicable_scenarios: ["每日规划"],
+  recommended_tools: ["calendar_list_events"],
+  version_hash: "abcdef1234567890",
 };
 const memory = {
   id: "memory-1",
@@ -182,6 +192,10 @@ describe("Agent workspace resources", () => {
         });
       }
       if (path === "/api/v1/usage/runs?limit=100") return jsonResponse({ runs: [run] });
+      if (path === "/api/v1/skills") return jsonResponse({ skills: [skill] });
+      if (path === `/api/v1/agents/${agent.id}/skills` && init?.method === "PUT") {
+        return jsonResponse({ ...agent, skill_ids: JSON.parse(String(init.body)).skill_ids });
+      }
       if (path === "/api/v1/usage/summary") {
         return jsonResponse({
           run_count: 1,
@@ -455,6 +469,7 @@ describe("Agent workspace resources", () => {
     fireEvent.click(screen.getByRole("button", { name: "Run" }));
     expect(await screen.findByText("gpt-5.6-luna")).toBeInTheDocument();
     expect(screen.getByText("680 ms / 120 ms")).toBeInTheDocument();
+    expect(screen.getByText("daily-planning · abcdef12")).toBeInTheDocument();
 
     fireEvent.click(screen.getByRole("button", { name: "Usage" }));
     expect(screen.getByText("Workspace 总计")).toBeInTheDocument();
@@ -630,6 +645,21 @@ describe("Agent workspace resources", () => {
       }),
     ));
     expect(await screen.findByText(/当前配置：openai \/ gpt-5.6-luna/)).toBeInTheDocument();
+  });
+
+  it("enables a discovered Skill for a Native Agent", async () => {
+    renderApp();
+    fireEvent.click(screen.getByRole("button", { name: "设置" }));
+
+    const toggle = await screen.findByRole("checkbox", { name: "启用 每日工作规划" });
+    fireEvent.click(toggle);
+    await waitFor(() => expect(fetch).toHaveBeenCalledWith(
+      `/api/v1/agents/${agent.id}/skills`,
+      expect.objectContaining({
+        method: "PUT",
+        body: JSON.stringify({ skill_ids: ["daily-planning"] }),
+      }),
+    ));
   });
 
   it("shows the server Codex login and rate limits", async () => {

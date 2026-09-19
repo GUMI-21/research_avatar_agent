@@ -16,6 +16,7 @@ export type Agent = {
   model: string | null;
   workspace_path: string | null;
   knowledge_source_ids: string[];
+  skill_ids: string[];
   created_at: string;
   updated_at: string;
 };
@@ -58,7 +59,17 @@ export type RunUsage = {
   duration_ms: number | null;
   time_to_first_token_ms: number | null;
   error_type: string | null;
+  skill_versions: { id: string; version_hash: string }[];
   created_at: string;
+};
+
+export type Skill = {
+  id: string;
+  name: string;
+  description: string;
+  applicable_scenarios: string[];
+  recommended_tools: string[];
+  version_hash: string;
 };
 
 export type UsageSummary = {
@@ -172,6 +183,13 @@ export const workspaceApi = {
     request<Agent>(`/api/v1/agents/${encodeURIComponent(agentId)}`, {
       method: "PATCH",
       body: JSON.stringify(input),
+    }),
+  listSkills: async () =>
+    (await request<{ skills: Skill[] }>("/api/v1/skills")).skills,
+  updateAgentSkills: (agentId: string, skillIds: string[]) =>
+    request<Agent>(`/api/v1/agents/${encodeURIComponent(agentId)}/skills`, {
+      method: "PUT",
+      body: JSON.stringify({ skill_ids: skillIds }),
     }),
   listSessions: async () =>
     (await request<{ sessions: WorkspaceSession[] }>("/api/v1/sessions"))

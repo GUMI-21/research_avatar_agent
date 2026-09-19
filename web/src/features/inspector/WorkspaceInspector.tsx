@@ -198,6 +198,9 @@ function RunUsageCard({ run }: { run: RunUsage }) {
         <div><dt>Tokens</dt><dd>{number(run.input_tokens ?? 0)} / {number(run.output_tokens ?? 0)}</dd></div>
         <div><dt><CircleDollarSign size={11} />费用</dt><dd>{cost(run.cost_usd)} <small>{run.cost_status}</small></dd></div>
         <div><dt><Clock3 size={11} />耗时 / 首 Token</dt><dd>{duration(run.duration_ms)} / {duration(run.time_to_first_token_ms)}</dd></div>
+        {run.skill_versions.length > 0 && (
+          <div><dt><Sparkles size={11} />Skills</dt><dd>{run.skill_versions.map((skill) => `${skill.id} · ${skill.version_hash.slice(0, 8)}`).join("，")}</dd></div>
+        )}
         {run.error_type && <div className="run-error"><dt><TriangleAlert size={11} />错误</dt><dd>{run.error_type}</dd></div>}
       </dl>
     </article>

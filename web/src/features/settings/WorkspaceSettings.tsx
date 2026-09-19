@@ -1,12 +1,14 @@
 import { useMutation, useQuery } from "@tanstack/react-query";
-import { Bot, ChevronDown, KeyRound, ServerCog, UserRound, X } from "lucide-react";
+import { Blocks, Bot, ChevronDown, KeyRound, ServerCog, UserRound, X } from "lucide-react";
 import { FormEvent, useEffect, useState } from "react";
 
-import { LLMConfigResponse, workspaceApi } from "../../shared/api/workspace";
+import { Agent, LLMConfigResponse, workspaceApi } from "../../shared/api/workspace";
 
 type Props = {
   clientId: string;
+  agents: Agent[];
   onClose: () => void;
+  onAgentUpdated: (agent: Agent) => void;
   onWorkspaceChange: (clientId: string) => Promise<void>;
 };
 
@@ -20,7 +22,7 @@ function remainingPercent(usedPercent: number) {
   return Math.max(0, Math.min(100, 100 - usedPercent));
 }
 
-export function WorkspaceSettings({ clientId, onClose, onWorkspaceChange }: Props) {
+export function WorkspaceSettings({ clientId, agents, onClose, onAgentUpdated, onWorkspaceChange }: Props) {
   const providersQuery = useQuery({
     queryKey: ["llm-providers"],
     queryFn: workspaceApi.listLLMProviders,
@@ -34,10 +36,14 @@ export function WorkspaceSettings({ clientId, onClose, onWorkspaceChange }: Prop
     queryFn: workspaceApi.getCodexStatus,
     refetchInterval: 60_000,
   });
+  const skillsQuery = useQuery({ queryKey: ["skills"], queryFn: workspaceApi.listSkills });
   const [provider, setProvider] = useState("mock");
   const [model, setModel] = useState("mock-echo");
   const [username, setUsername] = useState(clientId);
   const [configured, setConfigured] = useState<LLMConfigResponse>();
+  const nativeAgents = agents.filter((agent) => agent.runtime === "native");
+  const [skillAgentId, setSkillAgentId] = useState(nativeAgents[0]?.id || "");
+  const skillAgent = nativeAgents.find((agent) => agent.id === skillAgentId);
   const selected = providersQuery.data?.find((item) => item.provider === provider);
   const configMutation = useMutation({
     mutationFn: workspaceApi.configureLLM,
@@ -49,6 +55,11 @@ export function WorkspaceSettings({ clientId, onClose, onWorkspaceChange }: Prop
       if (workspace.username !== clientId) await onWorkspaceChange(workspace.username);
     },
   });
+  const skillsMutation = useMutation({
+    mutationFn: ({ agentId, skillIds }: { agentId: string; skillIds: string[] }) =>
+      workspaceApi.updateAgentSkills(agentId, skillIds),
+    onSuccess: onAgentUpdated,
+  });
 
   useEffect(() => {
     if (!configQuery.data) return;
@@ -56,6 +67,10 @@ export function WorkspaceSettings({ clientId, onClose, onWorkspaceChange }: Prop
     setModel(configQuery.data.model);
     setConfigured(configQuery.data);
   }, [configQuery.data]);
+
+  useEffect(() => {
+    if (!skillAgentId && nativeAgents[0]) setSkillAgentId(nativeAgents[0].id);
+  }, [skillAgentId, nativeAgents]);
 
   function selectProvider(value: string) {
     const option = providersQuery.data?.find((item) => item.provider === value);
@@ -87,6 +102,45 @@ export function WorkspaceSettings({ clientId, onClose, onWorkspaceChange }: Prop
           <div><small>WORKSPACE SETTINGS</small><h2>工作区设置</h2></div>
           <button type="button" aria-label="关闭" onClick={onClose}><X size={18} /></button>
         </div>
+
+        <details className="settings-section" open>
+          <summary>
+            <span><Blocks size={14} />Skills</span>
+            <small>{skillsQuery.data?.length ?? 0} 个已发现</small>
+            <ChevronDown size={14} />
+          </summary>
+          <div className="skill-settings">
+            <p className="settings-note">Skill 只向 Native Agent 注入工作流指令，不会扩大工具权限或绕过审批。</p>
+            <label>Agent
+              <select aria-label="Skill Agent" value={skillAgentId} onChange={(event) => setSkillAgentId(event.target.value)}>
+                {nativeAgents.map((agent) => <option key={agent.id} value={agent.id}>{agent.name}</option>)}
+              </select>
+            </label>
+            {skillsQuery.isLoading && <p className="inspector-muted">正在发现 Skills…</p>}
+            {skillsQuery.error && <p className="form-error">{skillsQuery.error.message}</p>}
+            {skillsQuery.data?.map((skill) => {
+              const enabled = skillAgent?.skill_ids.includes(skill.id) ?? false;
+              return (
+                <label className="skill-option" key={skill.id}>
+                  <input
+                    aria-label={`启用 ${skill.name}`}
+                    type="checkbox"
+                    checked={enabled}
+                    disabled={!skillAgent || skillsMutation.isPending}
+                    onChange={() => skillAgent && skillsMutation.mutate({
+                      agentId: skillAgent.id,
+                      skillIds: enabled
+                        ? skillAgent.skill_ids.filter((id) => id !== skill.id)
+                        : [...skillAgent.skill_ids, skill.id],
+                    })}
+                  />
+                  <span><b>{skill.name}</b><small>{skill.description}</small></span>
+                </label>
+              );
+            })}
+            {skillsMutation.error && <p className="form-error">{skillsMutation.error.message}</p>}
+          </div>
+        </details>
 
         <details className="settings-section" open>
           <summary><span><UserRound size={14} />用户 ID</span><small>{clientId}</small><ChevronDown size={14} /></summary>

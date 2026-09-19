@@ -557,7 +557,11 @@ export function App() {
       {dialog === "settings" && (
         <WorkspaceSettings
           clientId={clientId}
+          agents={agents}
           onClose={() => setDialog(null)}
+          onAgentUpdated={(saved) => queryClient.setQueryData<Agent[]>(["agents"], (old = []) =>
+            old.map((item) => item.id === saved.id ? saved : item)
+          )}
           onWorkspaceChange={changeWorkspace}
         />
       )}
