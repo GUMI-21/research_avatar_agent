@@ -128,6 +128,8 @@ function handleFrame(
 function toStringRecord(value: unknown): Record<string, string> {
   if (!value || typeof value !== "object" || Array.isArray(value)) return {};
   return Object.fromEntries(
-    Object.entries(value).map(([key, item]) => [key, String(item)]),
+    Object.entries(value)
+      .map(([key, item]) => [key, String(item)])
+      .filter(([, item]) => item.length > 0),
   );
 }

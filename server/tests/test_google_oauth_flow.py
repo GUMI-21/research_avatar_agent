@@ -81,6 +81,10 @@ class GoogleOAuthFlowTest(unittest.IsolatedAsyncioTestCase):
             "https://www.googleapis.com/auth/gmail.send",
             query["scope"][0].split(),
         )
+        self.assertIn(
+            "https://www.googleapis.com/auth/calendar.events",
+            query["scope"][0].split(),
+        )
         self.assertNotIn("google-secret", authorization_url)
 
         state = query["state"][0]

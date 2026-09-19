@@ -2,6 +2,7 @@
 
 import base64
 import json
+from collections.abc import Mapping
 from datetime import datetime
 from email.message import EmailMessage
 from typing import Any, Self
@@ -72,6 +73,53 @@ class GmailComposeArguments(ToolArguments):
         return value
 
 
+class CalendarCreateEventArguments(ToolArguments):
+    calendar_id: str = Field(default="primary", min_length=1, max_length=256)
+    summary: str = Field(min_length=1, max_length=500)
+    start: datetime
+    end: datetime
+    location: str = Field(default="", max_length=500)
+    description: str = Field(default="", max_length=100_000)
+
+    @model_validator(mode="after")
+    def validate_time_range(self) -> Self:
+        _validate_calendar_range(self.start, self.end)
+        return self
+
+
+class CalendarUpdateEventArguments(ToolArguments):
+    calendar_id: str = Field(default="primary", min_length=1, max_length=256)
+    event_id: str = Field(min_length=1, max_length=1_024)
+    summary: str | None = Field(default=None, max_length=500)
+    start: datetime | None = None
+    end: datetime | None = None
+    location: str | None = Field(default=None, max_length=500)
+    description: str | None = Field(default=None, max_length=100_000)
+
+    @model_validator(mode="after")
+    def validate_changes(self) -> Self:
+        changes = (self.summary, self.start, self.end, self.location, self.description)
+        if all(value is None for value in changes):
+            raise ValueError("At least one calendar event field must change")
+        if (self.start is None) != (self.end is None):
+            raise ValueError("Calendar start and end must be updated together")
+        if self.start is not None and self.end is not None:
+            _validate_calendar_range(self.start, self.end)
+        return self
+
+
+class CalendarDeleteEventArguments(ToolArguments):
+    calendar_id: str = Field(default="primary", min_length=1, max_length=256)
+    event_id: str = Field(min_length=1, max_length=1_024)
+
+
+def _validate_calendar_range(start: datetime, end: datetime) -> None:
+    if start.tzinfo is None or end.tzinfo is None:
+        raise ValueError("Calendar event times must include a timezone")
+    if end <= start:
+        raise ValueError("Calendar event end must be later than start")
+
+
 def _plain_text(part: object) -> str:
     if not isinstance(part, dict):
         return ""
@@ -139,7 +187,9 @@ def _raw_message(arguments: GmailComposeArguments) -> str:
     return base64.urlsafe_b64encode(message.as_bytes()).decode().rstrip("=")
 
 
-def _email_approval(arguments: dict[str, object], action: str) -> dict[str, str]:
+def _email_approval(
+    arguments: Mapping[str, object], action: str,
+) -> dict[str, str]:
     recipients = arguments.get("to")
     visible = ", ".join(str(item)[:320] for item in recipients[:20]) \
         if isinstance(recipients, list) else ""
@@ -151,6 +201,33 @@ def _email_approval(arguments: dict[str, object], action: str) -> dict[str, str]
         "recipients": visible[:1_000],
         "cc": visible_cc[:1_000],
         "subject": _limited_text(arguments.get("subject")),
+    }
+
+
+def _calendar_event_body(
+    arguments: CalendarCreateEventArguments | CalendarUpdateEventArguments,
+) -> dict[str, object]:
+    body: dict[str, object] = {}
+    for name in ("summary", "location", "description"):
+        value = getattr(arguments, name)
+        if value is not None:
+            body[name] = value
+    if arguments.start is not None and arguments.end is not None:
+        body["start"] = {"dateTime": arguments.start.isoformat()}
+        body["end"] = {"dateTime": arguments.end.isoformat()}
+    return body
+
+
+def _calendar_approval(
+    arguments: Mapping[str, object], action: str,
+) -> dict[str, str]:
+    return {
+        "action": action,
+        "calendar": _limited_text(arguments.get("calendar_id") or "primary"),
+        "event_id": _limited_text(arguments.get("event_id")),
+        "subject": _limited_text(arguments.get("summary")),
+        "start": _limited_text(arguments.get("start")),
+        "end": _limited_text(arguments.get("end")),
     }
 
 
@@ -174,13 +251,14 @@ def register_google_read_tools(
             payload = response.json()
             if not isinstance(payload, dict):
                 raise GoogleAPIError("Gmail returned an invalid response")
-            messages = payload.get("messages", [])
+            raw_messages = payload.get("messages")
+            messages = list(raw_messages) if isinstance(raw_messages, list) else []
             result = {
-                "messages": messages if isinstance(messages, list) else [],
+                "messages": messages,
                 "next_page_token": payload.get("nextPageToken"),
                 "result_size_estimate": payload.get("resultSizeEstimate"),
             }
-            return ToolResult(json.dumps(result), {"message_count": len(result["messages"])})
+            return ToolResult(json.dumps(result), {"message_count": len(messages)})
         except (GoogleAPIError, ValueError) as error:
             return ToolResult(str(error), {
                 "status": "error", "error_type": type(error).__name__,
@@ -282,6 +360,52 @@ def register_google_read_tools(
                 "status": "error", "error_type": type(error).__name__,
             })
 
+    async def mutate_event(
+        context: ToolContext, raw: ToolArguments, *, operation: str,
+    ) -> ToolResult:
+        try:
+            deleted_event_id: str | None = None
+            if operation == "create":
+                assert isinstance(raw, CalendarCreateEventArguments)
+                method, suffix, body = "POST", "", _calendar_event_body(raw)
+            elif operation == "update":
+                assert isinstance(raw, CalendarUpdateEventArguments)
+                method = "PATCH"
+                suffix, body = f"/{quote(raw.event_id, safe='')}", _calendar_event_body(raw)
+            else:
+                assert isinstance(raw, CalendarDeleteEventArguments)
+                method = "DELETE"
+                deleted_event_id = raw.event_id
+                suffix, body = f"/{quote(raw.event_id, safe='')}", None
+            path = (
+                f"/calendar/v3/calendars/{quote(raw.calendar_id, safe='')}/events"
+                f"{suffix}"
+            )
+            response = await client.request(
+                context.client_id, method, "calendar", path, json=body,
+            )
+            if operation == "delete":
+                assert deleted_event_id is not None
+                return ToolResult("Calendar event deleted", {
+                    "event_id": deleted_event_id,
+                })
+            payload = response.json()
+            if not isinstance(payload, dict):
+                raise GoogleAPIError("Google Calendar returned an invalid response")
+            return ToolResult(
+                "Calendar event created" if operation == "create"
+                else "Calendar event updated",
+                {
+                    "event_id": payload.get("id"),
+                    "status": payload.get("status"),
+                    "html_link": payload.get("htmlLink"),
+                },
+            )
+        except (GoogleAPIError, ValueError) as error:
+            return ToolResult(str(error), {
+                "status": "error", "error_type": type(error).__name__,
+            })
+
     registry.register(ToolSpec(
         "gmail_list_messages", "List Gmail message IDs matching a Gmail search query.",
         GmailListMessagesArguments, ToolRisk.EXTERNAL_READ, list_messages,
@@ -305,4 +429,22 @@ def register_google_read_tools(
         GmailComposeArguments, ToolRisk.EXTERNAL_WRITE,
         lambda context, raw: write_message(context, raw, draft=False),
         approval_summary=lambda args: _email_approval(args, "send_message"),
+    ))
+    registry.register(ToolSpec(
+        "calendar_create_event", "Create a calendar event after explicit user approval.",
+        CalendarCreateEventArguments, ToolRisk.EXTERNAL_WRITE,
+        lambda context, raw: mutate_event(context, raw, operation="create"),
+        approval_summary=lambda args: _calendar_approval(args, "create_event"),
+    ))
+    registry.register(ToolSpec(
+        "calendar_update_event", "Update a calendar event after explicit user approval.",
+        CalendarUpdateEventArguments, ToolRisk.EXTERNAL_WRITE,
+        lambda context, raw: mutate_event(context, raw, operation="update"),
+        approval_summary=lambda args: _calendar_approval(args, "update_event"),
+    ))
+    registry.register(ToolSpec(
+        "calendar_delete_event", "Delete a calendar event after explicit user approval.",
+        CalendarDeleteEventArguments, ToolRisk.EXTERNAL_WRITE,
+        lambda context, raw: mutate_event(context, raw, operation="delete"),
+        approval_summary=lambda args: _calendar_approval(args, "delete_event"),
     ))

@@ -229,6 +229,105 @@ class GoogleToolsTest(unittest.IsolatedAsyncioTestCase):
         self.assertEqual(sent.metadata, {"message_id": "message-2"})
         self.assertNotIn("private body", json.dumps(draft.metadata))
 
+    async def test_calendar_writes_require_approval_and_use_safe_payloads(self) -> None:
+        client = FakeGoogleAPIClient(
+            httpx.Response(200, json={
+                "id": "event-1", "status": "confirmed", "htmlLink": "https://event",
+            }),
+            httpx.Response(200, json={
+                "id": "event/1", "status": "confirmed", "htmlLink": "https://event",
+            }),
+            httpx.Response(204),
+        )
+        registry = ToolRegistry()
+        register_google_read_tools(registry, client)  # type: ignore[arg-type]
+        context = ToolContext("client-c", "agent-a")
+        create_arguments = {
+            "calendar_id": "person@example.com",
+            "summary": "Interview",
+            "start": "2026-09-20T10:00:00+09:00",
+            "end": "2026-09-20T11:00:00+09:00",
+            "location": "Tokyo",
+            "description": "private preparation notes",
+        }
+
+        with self.assertRaises(ToolApprovalRequiredError) as pending:
+            await registry.execute(
+                "calendar_create_event", context, create_arguments
+            )
+        assert pending.exception.tool.approval_summary is not None
+        summary = pending.exception.tool.approval_summary(create_arguments)
+        self.assertEqual(summary["calendar"], "person@example.com")
+        self.assertEqual(summary["subject"], "Interview")
+        self.assertNotIn("private preparation notes", summary.values())
+        self.assertEqual(client.calls, [])
+
+        created = await registry.execute(
+            "calendar_create_event", context, create_arguments, approved=True
+        )
+        updated = await registry.execute(
+            "calendar_update_event", context, {
+                "event_id": "event/1",
+                "summary": "Interview updated",
+                "start": "2026-09-20T10:30:00+09:00",
+                "end": "2026-09-20T11:30:00+09:00",
+            }, approved=True,
+        )
+        deleted = await registry.execute(
+            "calendar_delete_event", context,
+            {"event_id": "event/1"}, approved=True,
+        )
+
+        self.assertEqual([call[1] for call in client.calls], ["POST", "PATCH", "DELETE"])
+        self.assertEqual(
+            client.calls[0][3],
+            "/calendar/v3/calendars/person%40example.com/events",
+        )
+        self.assertEqual(
+            client.calls[1][3],
+            "/calendar/v3/calendars/primary/events/event%2F1",
+        )
+        self.assertEqual(client.json_bodies[0]["description"], "private preparation notes")
+        self.assertEqual(client.json_bodies[1], {
+            "summary": "Interview updated",
+            "start": {"dateTime": "2026-09-20T10:30:00+09:00"},
+            "end": {"dateTime": "2026-09-20T11:30:00+09:00"},
+        })
+        self.assertIsNone(client.json_bodies[2])
+        self.assertEqual(created.metadata["event_id"], "event-1")
+        self.assertEqual(updated.metadata["event_id"], "event/1")
+        self.assertEqual(deleted.metadata, {"event_id": "event/1"})
+        self.assertNotIn("private preparation notes", json.dumps(created.metadata))
+
+    async def test_calendar_writes_validate_changes_before_request(self) -> None:
+        client = FakeGoogleAPIClient()
+        registry = ToolRegistry()
+        register_google_read_tools(registry, client)  # type: ignore[arg-type]
+        context = ToolContext("client-a", "agent-a")
+
+        invalid_calls = (
+            (
+                "calendar_create_event",
+                {
+                    "summary": "No timezone",
+                    "start": "2026-09-20T10:00:00",
+                    "end": "2026-09-20T11:00:00",
+                },
+            ),
+            ("calendar_update_event", {"event_id": "event-1"}),
+            (
+                "calendar_update_event",
+                {"event_id": "event-1", "start": "2026-09-20T10:00:00+09:00"},
+            ),
+        )
+        for tool_name, arguments in invalid_calls:
+            with self.subTest(tool_name=tool_name):
+                with self.assertRaises(ValueError):
+                    await registry.execute(
+                        tool_name, context, arguments, approved=True
+                    )
+        self.assertEqual(client.calls, [])
+
 
 if __name__ == "__main__":
     unittest.main()

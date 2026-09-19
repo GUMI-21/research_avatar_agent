@@ -132,6 +132,10 @@ function ToolApprovalCard({
     recipients: "收件人",
     cc: "抄送",
     subject: "主题",
+    calendar: "日历",
+    event_id: "事件 ID",
+    start: "开始",
+    end: "结束",
   };
   return (
     <article className="approval-card" role="alert">
