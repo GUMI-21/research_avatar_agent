@@ -29,6 +29,7 @@ from app.services import (
     RunExecutionService,
 )
 from app.services.runtime_registry import RuntimeNotFoundError, RuntimeRegistry
+from app.services.skills import SkillCatalog
 from app.tools import ToolApprovalBroker
 from logs import log
 
@@ -56,6 +57,9 @@ async def workspace_socket(
         websocket.app.state.graph_checkpointer
     )
     approvals: ToolApprovalBroker = websocket.app.state.tool_approval_broker
+    skill_catalog: SkillCatalog | None = getattr(
+        websocket.app.state, "skill_catalog", None
+    )
     log.info("websocket_connected business=agent_workspace client_id={}", client_id)
     # 异步协程锁，保证发送消息不冲突
     send_lock = asyncio.Lock()
@@ -166,6 +170,7 @@ async def workspace_socket(
                     registry,
                     embedding_client,
                     graph_checkpointer,
+                    skill_catalog,
                     client_id,
                     command.session_id,
                     command.content,
@@ -213,6 +218,7 @@ async def _stream_run(
     registry: RuntimeRegistry,
     embedding_client: EmbeddingClient,
     graph_checkpointer: BaseCheckpointSaver[str],
+    skill_catalog: SkillCatalog | None,
     client_id: str,
     session_id: str,
     content: str,
@@ -222,7 +228,7 @@ async def _stream_run(
     try:
         async with database.session() as session:
             service = RunExecutionService(
-                session, registry, embedding_client, graph_checkpointer
+                session, registry, embedding_client, graph_checkpointer, skill_catalog
             )
             # 异步消费已经拆分好的 Agent 执行事件
             async for item in service.stream(

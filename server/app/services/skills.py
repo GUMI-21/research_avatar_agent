@@ -72,13 +72,31 @@ class SkillCatalog:
         if not isinstance(raw_metadata, dict):
             raise SkillCatalogError("Skill frontmatter must be a mapping")
         metadata = cast(dict[object, object], raw_metadata)
-        skill_id = self._text(metadata, "id", 64)
-        name = self._text(metadata, "name", 100)
+        raw_details = metadata.get("metadata", {})
+        if not isinstance(raw_details, dict):
+            raise SkillCatalogError("Skill metadata is invalid")
+        details = cast(dict[object, object], raw_details)
+        skill_id = (
+            self._text(metadata, "id", 64)
+            if "id" in metadata
+            else self._text(metadata, "name", 64)
+        )
+        name = (
+            self._text(details, "display_name", 100)
+            if "display_name" in details
+            else self._text(metadata, "name", 100)
+        )
         description = self._text(metadata, "description", 1_000)
         if not _IDENTIFIER.fullmatch(skill_id):
             raise SkillCatalogError("Skill id is invalid")
-        scenarios = self._string_list(metadata, "applicable_scenarios", 20)
-        tools = self._string_list(metadata, "recommended_tools", 50)
+        scenarios = self._string_list(
+            metadata if "applicable_scenarios" in metadata else details,
+            "applicable_scenarios", 20,
+        )
+        tools = self._string_list(
+            metadata if "recommended_tools" in metadata else details,
+            "recommended_tools", 50,
+        )
         if any(not _IDENTIFIER.fullmatch(tool) for tool in tools):
             raise SkillCatalogError("Recommended tool name is invalid")
         instructions = instructions.strip()

@@ -45,6 +45,7 @@ class RunRepository:
         runtime: str,
         provider: str | None = None,
         model: str | None = None,
+        skill_versions: list[dict[str, str]] | None = None,
     ) -> RunRecord:
         session_statement = select(SessionRecord.id).where(
             SessionRecord.client_id == client_id,
@@ -67,6 +68,7 @@ class RunRepository:
             runtime=runtime,
             provider=provider,
             model=model,
+            skill_versions=skill_versions or [],
         )
         self._session.add(run)
         await self._session.flush()

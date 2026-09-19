@@ -31,6 +31,7 @@ from app.services.knowledge_retrieval import KnowledgeRetrievalService
 from app.services.run import RunService
 from app.services.run_event import RunEventService
 from app.services.runtime_registry import RuntimeRegistry
+from app.services.skills import SkillCatalog, SkillDefinition
 
 
 RUN_EVENT_STATUSES = {
@@ -50,6 +51,25 @@ MEMORY_CONTEXT_BUDGET_CHARS = 4000
 # 注入最近 12 条、最多 6000 字符的短期会话上下文；装配同客户端 handoff 候选。
 RECENT_MESSAGE_LIMIT = 12
 RECENT_CONTEXT_BUDGET_CHARS = 6000
+
+
+def _system_prompt_with_skills(
+    system_prompt: str, skills: Sequence[SkillDefinition]
+) -> str:
+    if not skills:
+        return system_prompt
+    sections = [
+        system_prompt.rstrip(),
+        "Enabled Skills follow. They are instructions only: use tools through the "
+        "Tool Registry and preserve every permission and approval requirement.",
+    ]
+    for skill in skills:
+        tools = ", ".join(skill.recommended_tools) or "none"
+        sections.append(
+            f"## Skill: {skill.name} ({skill.id})\n"
+            f"Recommended tools: {tools}\n{skill.instructions}"
+        )
+    return "\n\n".join(sections)
 
 
 def _optional_string(value: object) -> str | None:
@@ -125,6 +145,7 @@ class RunExecutionService:
         registry: RuntimeRegistry,
         embedding_client: EmbeddingClient | None = None,
         graph_checkpointer: BaseCheckpointSaver[str] | None = None,
+        skill_catalog: SkillCatalog | None = None,
     ) -> None:
         self._session = session
         self._registry = registry
@@ -134,6 +155,7 @@ class RunExecutionService:
         self._retrieval = KnowledgeRetrievalService(session, embedding_client)
         self._retrieval_strategy = "hybrid" if embedding_client else "keyword"
         self._graph_checkpointer = graph_checkpointer
+        self._skill_catalog = skill_catalog
 
     async def stream(
         self,
@@ -194,6 +216,15 @@ class RunExecutionService:
         )
         # 根据表中的 runtime 字段调用已注册的 Factory，创建对应 Runtime 实例
         runtime = self._registry.create(agent.runtime)
+        enabled_skills = (
+            tuple(
+                skill
+                for skill_id in agent.skill_ids
+                if (skill := self._skill_catalog.get(skill_id)) is not None
+            )
+            if agent.runtime == "native" and self._skill_catalog is not None
+            else ()
+        )
         # 创建 Agent 执行记录
         run = await self._runs.create_run(
             client_id,
@@ -201,6 +232,10 @@ class RunExecutionService:
             agent.id,
             runtime=agent.runtime,
             model=agent.model,
+            skill_versions=[
+                {"id": skill.id, "version_hash": skill.version_hash}
+                for skill in enabled_skills
+            ],
         )
         _ = await self._messages.append(
             client_id,
@@ -316,7 +351,9 @@ class RunExecutionService:
             runtime_thread_id=runtime_thread_ids.get(agent.id),
             workspace_path=agent.workspace_path,
             # 身份、近期会话和 RAG 上下文保持独立边界。
-            system_prompt=agent.system_prompt,
+            system_prompt=_system_prompt_with_skills(
+                agent.system_prompt, enabled_skills
+            ),
             conversation_context=_assemble_recent_context(recent_messages),
             memory_context=memory_contexts.get(agent.id, ""),
             memory_ids=tuple(record.id for record in memory_records.get(agent.id, ())),
