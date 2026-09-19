@@ -19,6 +19,7 @@ from app.services.google_oauth_flow import GoogleOAuthFlow
 from app.services.llm_credentials import LLMCredentialStore
 from app.services.llm_runtime import LLMRuntime
 from app.services.runtime_registry import RuntimeRegistry
+from app.services.skills import SkillCatalog
 from app.tools import (
     MCPClient, StdioMCPTransport, StreamableHttpMCPTransport,
     ToolApprovalBroker, create_file_tool_registry,
@@ -89,6 +90,9 @@ def create_app(settings: Settings) -> FastAPI:
     )
     app.state.settings = settings
     app.state.database = Database(settings.database.url)
+    app.state.skill_catalog = SkillCatalog(
+        settings.skills.directories, settings.skills.max_file_bytes
+    )
     # langGraph检查点存储器,所有请求共享同一个实例。 进程内字典
     app.state.graph_checkpointer = InMemorySaver()
     app.state.embedding_client = FastEmbedAdapter(
