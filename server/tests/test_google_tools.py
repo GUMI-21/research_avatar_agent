@@ -3,6 +3,7 @@
 import base64
 import json
 import unittest
+from datetime import datetime, timezone
 from typing import Any
 
 import httpx
@@ -100,6 +101,79 @@ class GoogleToolsTest(unittest.IsolatedAsyncioTestCase):
         self.assertEqual(result.metadata["status"], "error")
         self.assertEqual(result.metadata["error_type"], "GoogleAuthorizationRequired")
         self.assertIn("revoked", result.content)
+
+    async def test_calendar_events_are_approved_scoped_and_normalized(self) -> None:
+        client = FakeGoogleAPIClient(httpx.Response(200, json={
+            "timeZone": "Asia/Tokyo",
+            "items": [{
+                "id": "event-1",
+                "status": "confirmed",
+                "summary": "Interview",
+                "start": {
+                    "dateTime": "2026-09-20T10:00:00+09:00",
+                    "untrusted": "must not pass through",
+                },
+                "end": {"dateTime": "2026-09-20T11:00:00+09:00"},
+                "location": "Tokyo",
+                "description": "must not be returned by a list operation",
+            }],
+        }))
+        registry = ToolRegistry()
+        register_google_read_tools(registry, client)  # type: ignore[arg-type]
+        context = ToolContext("client-b", "agent-a")
+        arguments = {
+            "time_min": "2026-09-20T00:00:00+09:00",
+            "time_max": "2026-09-21T00:00:00+09:00",
+            "calendar_id": "person@example.com",
+            "max_results": 5,
+        }
+
+        with self.assertRaises(ToolApprovalRequiredError):
+            await registry.execute("calendar_list_events", context, arguments)
+        result = await registry.execute(
+            "calendar_list_events", context, arguments, approved=True
+        )
+
+        self.assertEqual(client.calls[0][0:4], (
+            "client-b", "GET", "calendar",
+            "/calendar/v3/calendars/person%40example.com/events",
+        ))
+        self.assertEqual(client.calls[0][4], {
+            "timeMin": "2026-09-20T00:00:00+09:00",
+            "timeMax": "2026-09-21T00:00:00+09:00",
+            "maxResults": 5,
+            "singleEvents": True,
+            "orderBy": "startTime",
+        })
+        parsed = json.loads(result.content)
+        self.assertEqual(parsed["events"][0]["summary"], "Interview")
+        self.assertNotIn("description", parsed["events"][0])
+        self.assertEqual(parsed["events"][0]["start"], {
+            "dateTime": "2026-09-20T10:00:00+09:00"
+        })
+        self.assertEqual(result.metadata, {"event_count": 1})
+
+    async def test_calendar_rejects_naive_or_reversed_time_ranges(self) -> None:
+        registry = ToolRegistry()
+        client = FakeGoogleAPIClient()
+        register_google_read_tools(registry, client)  # type: ignore[arg-type]
+        context = ToolContext("client-a", "agent-a")
+
+        invalid_ranges = (
+            (datetime(2026, 9, 20), datetime(2026, 9, 21)),
+            (
+                datetime(2026, 9, 21, tzinfo=timezone.utc),
+                datetime(2026, 9, 20, tzinfo=timezone.utc),
+            ),
+        )
+        for time_min, time_max in invalid_ranges:
+            with self.subTest(time_min=time_min):
+                with self.assertRaises(ValueError):
+                    await registry.execute(
+                        "calendar_list_events", context,
+                        {"time_min": time_min, "time_max": time_max}, approved=True,
+                    )
+        self.assertEqual(client.calls, [])
 
 
 if __name__ == "__main__":
