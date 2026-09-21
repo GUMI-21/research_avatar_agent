@@ -10,6 +10,7 @@ from app.repositories import AgentRepository
 from app.api.routes.skills import get_skill_catalog
 from app.schemas.agent import (
     AgentCreate,
+    AgentKnowledgeSourcesUpdate,
     AgentListResponse,
     AgentRead,
     AgentSkillsUpdate,
@@ -118,5 +119,24 @@ async def replace_agent_skills(
     )
     if agent is None:
         raise HTTPException(status_code=404, detail="Agent not found")
+    await session.commit()
+    return AgentRead.model_validate(agent)
+
+
+@router.put("/{agent_id}/knowledge-sources", response_model=AgentRead)
+async def replace_agent_knowledge_sources(
+    agent_id: str,
+    request: AgentKnowledgeSourcesUpdate,
+    client_id: ClientID,
+    session: DBSession,
+) -> AgentRead:
+    try:
+        agent = await AgentService(session).replace_knowledge_sources(
+            client_id, agent_id, request.knowledge_source_ids
+        )
+    except AgentKnowledgeSourceNotFoundError as error:
+        raise HTTPException(404, "Knowledge source not found") from error
+    if agent is None:
+        raise HTTPException(404, "Agent not found")
     await session.commit()
     return AgentRead.model_validate(agent)

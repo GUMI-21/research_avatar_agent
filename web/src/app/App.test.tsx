@@ -74,6 +74,18 @@ const skill = {
   recommended_tools: ["calendar_list_events"],
   version_hash: "abcdef1234567890",
 };
+const knowledgeSource = {
+  id: "source-1",
+  client_id: "local-demo",
+  name: "Project Notes",
+  source_type: "markdown",
+  root_path: "D:\\Notes\\Project",
+  sync_status: "ready",
+  error_message: null,
+  last_synced_at: now,
+  created_at: now,
+  updated_at: now,
+};
 const memory = {
   id: "memory-1",
   agent_id: agent.id,
@@ -193,8 +205,21 @@ describe("Agent workspace resources", () => {
       }
       if (path === "/api/v1/usage/runs?limit=100") return jsonResponse({ runs: [run] });
       if (path === "/api/v1/skills") return jsonResponse({ skills: [skill] });
+      if (path === "/api/v1/knowledge/sources" && init?.method === "POST") {
+        return jsonResponse({ ...knowledgeSource, ...JSON.parse(String(init.body)) });
+      }
+      if (path === "/api/v1/knowledge/sources") return jsonResponse({ sources: [knowledgeSource] });
+      if (path === `/api/v1/knowledge/sources/${knowledgeSource.id}/sync` && init?.method === "POST") {
+        return jsonResponse({ source_id: knowledgeSource.id, status: "ready", scanned: 1, created: 0, updated: 0, deleted: 0, unchanged: 1, chunks: 1 });
+      }
+      if (path === `/api/v1/knowledge/sources/${knowledgeSource.id}/embeddings/index` && init?.method === "POST") {
+        return jsonResponse({ source_id: knowledgeSource.id, provider: "local", model: "test", indexed: 1, unchanged: 0 });
+      }
       if (path === `/api/v1/agents/${agent.id}/skills` && init?.method === "PUT") {
         return jsonResponse({ ...agent, skill_ids: JSON.parse(String(init.body)).skill_ids });
+      }
+      if (path === `/api/v1/agents/${agent.id}/knowledge-sources` && init?.method === "PUT") {
+        return jsonResponse({ ...agent, knowledge_source_ids: JSON.parse(String(init.body)).knowledge_source_ids });
       }
       if (path === "/api/v1/usage/summary") {
         return jsonResponse({
@@ -659,6 +684,37 @@ describe("Agent workspace resources", () => {
         method: "PUT",
         body: JSON.stringify({ skill_ids: ["daily-planning"] }),
       }),
+    ));
+  });
+
+  it("manages the RAG directory lifecycle and Agent binding", async () => {
+    renderApp();
+    fireEvent.click(screen.getByRole("button", { name: "设置" }));
+    expect(await screen.findByRole("button", { name: "同步 Project Notes" })).toBeInTheDocument();
+
+    fireEvent.change(screen.getByPlaceholderText("例如：Obsidian Vault"), { target: { value: "Interview Notes" } });
+    fireEvent.change(screen.getByPlaceholderText("D:\\Notes\\Vault"), { target: { value: "D:\\Notes\\Interview" } });
+    fireEvent.click(screen.getByRole("button", { name: "添加目录" }));
+    await waitFor(() => expect(fetch).toHaveBeenCalledWith(
+      "/api/v1/knowledge/sources",
+      expect.objectContaining({ method: "POST", body: JSON.stringify({ name: "Interview Notes", root_path: "D:\\Notes\\Interview", source_type: "obsidian" }) }),
+    ));
+
+    fireEvent.click(screen.getByRole("button", { name: "同步 Project Notes" }));
+    await waitFor(() => expect(fetch).toHaveBeenCalledWith(
+      `/api/v1/knowledge/sources/${knowledgeSource.id}/sync`, expect.objectContaining({ method: "POST" }),
+    ));
+    await waitFor(() => expect(screen.getByRole("button", { name: "向量化 Project Notes" })).toBeEnabled());
+    fireEvent.click(screen.getByRole("button", { name: "向量化 Project Notes" }));
+    await waitFor(() => expect(fetch).toHaveBeenCalledWith(
+      `/api/v1/knowledge/sources/${knowledgeSource.id}/embeddings/index`, expect.objectContaining({ method: "POST" }),
+    ));
+
+    await waitFor(() => expect(screen.getByRole("checkbox", { name: "绑定 Project Notes" })).toBeEnabled());
+    fireEvent.click(screen.getByRole("checkbox", { name: "绑定 Project Notes" }));
+    await waitFor(() => expect(fetch).toHaveBeenCalledWith(
+      `/api/v1/agents/${agent.id}/knowledge-sources`,
+      expect.objectContaining({ method: "PUT", body: JSON.stringify({ knowledge_source_ids: [knowledgeSource.id] }) }),
     ));
   });
 

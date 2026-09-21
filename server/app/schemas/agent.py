@@ -85,6 +85,15 @@ class AgentSkillsUpdate(BaseModel):
         return normalized
 
 
+class AgentKnowledgeSourcesUpdate(BaseModel):
+    knowledge_source_ids: list[str] = Field(default_factory=list, max_length=20)
+
+    @field_validator("knowledge_source_ids")
+    @classmethod
+    def validate_source_ids(cls, values: list[str]) -> list[str]:
+        return AgentCreate.validate_source_ids(values)
+
+
 # response 字段
 class AgentRead(BaseModel):
     model_config = ConfigDict(from_attributes=True)

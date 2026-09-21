@@ -72,6 +72,19 @@ export type Skill = {
   version_hash: string;
 };
 
+export type KnowledgeSource = {
+  id: string;
+  client_id: string;
+  name: string;
+  source_type: "obsidian" | "markdown";
+  root_path: string;
+  sync_status: "pending" | "syncing" | "ready" | "failed";
+  error_message: string | null;
+  last_synced_at: string | null;
+  created_at: string;
+  updated_at: string;
+};
+
 export type UsageSummary = {
   run_count: number;
   failed_count: number;
@@ -190,6 +203,20 @@ export const workspaceApi = {
     request<Agent>(`/api/v1/agents/${encodeURIComponent(agentId)}/skills`, {
       method: "PUT",
       body: JSON.stringify({ skill_ids: skillIds }),
+    }),
+  listKnowledgeSources: async () =>
+    (await request<{ sources: KnowledgeSource[] }>("/api/v1/knowledge/sources")).sources,
+  createKnowledgeSource: (input: Pick<KnowledgeSource, "name" | "root_path" | "source_type">) =>
+    request<KnowledgeSource>("/api/v1/knowledge/sources", {
+      method: "POST", body: JSON.stringify(input),
+    }),
+  syncKnowledgeSource: (sourceId: string) =>
+    request(`/api/v1/knowledge/sources/${encodeURIComponent(sourceId)}/sync`, { method: "POST" }),
+  indexKnowledgeSource: (sourceId: string) =>
+    request(`/api/v1/knowledge/sources/${encodeURIComponent(sourceId)}/embeddings/index`, { method: "POST" }),
+  updateAgentKnowledgeSources: (agentId: string, sourceIds: string[]) =>
+    request<Agent>(`/api/v1/agents/${encodeURIComponent(agentId)}/knowledge-sources`, {
+      method: "PUT", body: JSON.stringify({ knowledge_source_ids: sourceIds }),
     }),
   listSessions: async () =>
     (await request<{ sessions: WorkspaceSession[] }>("/api/v1/sessions"))

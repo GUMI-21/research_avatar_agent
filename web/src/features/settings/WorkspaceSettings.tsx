@@ -3,6 +3,7 @@ import { Blocks, Bot, ChevronDown, KeyRound, ServerCog, UserRound, X } from "luc
 import { FormEvent, useEffect, useState } from "react";
 
 import { Agent, LLMConfigResponse, workspaceApi } from "../../shared/api/workspace";
+import { KnowledgeSettings } from "./KnowledgeSettings";
 
 type Props = {
   clientId: string;
@@ -102,6 +103,11 @@ export function WorkspaceSettings({ clientId, agents, onClose, onAgentUpdated, o
           <div><small>WORKSPACE SETTINGS</small><h2>工作区设置</h2></div>
           <button type="button" aria-label="关闭" onClick={onClose}><X size={18} /></button>
         </div>
+
+        <details className="settings-section" open>
+          <summary><span><Blocks size={14} />RAG 知识库</span><small>本机目录</small><ChevronDown size={14} /></summary>
+          <KnowledgeSettings agents={agents} onAgentUpdated={onAgentUpdated} />
+        </details>
 
         <details className="settings-section" open>
           <summary>

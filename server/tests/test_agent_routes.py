@@ -190,6 +190,20 @@ class AgentRoutesTest(unittest.IsolatedAsyncioTestCase):
         self.assertEqual(concealed.status_code, 404)
         self.assertEqual(concealed.json()["detail"], "Knowledge source not found")
 
+        replaced = await self.client.put(
+            f"/api/v1/agents/{created.json()['id']}/knowledge-sources",
+            headers={"X-Client-ID": "client-a"},
+            json={"knowledge_source_ids": []},
+        )
+        foreign_binding = await self.client.put(
+            f"/api/v1/agents/{created.json()['id']}/knowledge-sources",
+            headers={"X-Client-ID": "client-a"},
+            json={"knowledge_source_ids": [foreign_source.id]},
+        )
+        self.assertEqual(replaced.status_code, 200)
+        self.assertEqual(replaced.json()["knowledge_source_ids"], [])
+        self.assertEqual(foreign_binding.status_code, 404)
+
 
 if __name__ == "__main__":
     unittest.main()

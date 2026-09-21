@@ -163,6 +163,19 @@ button:disabled { cursor: not-allowed; opacity: .45; }
 .skill-option span { display: grid; gap: 3px; }
 .skill-option b { color: #554b42; font-size: 10px; }
 .skill-option small { color: #8f8074; font-size: 9px; line-height: 1.45; }
+.knowledge-settings { padding: 8px 1px 4px; }
+.knowledge-create { display: grid; grid-template-columns: 1fr 2fr 1fr auto; gap: 7px; align-items: end; }
+.knowledge-create label { margin-top: 0; }
+.knowledge-list { display: grid; gap: 7px; margin: 12px 0; }
+.knowledge-list article { border: 1px solid #e1d4c6; border-radius: 8px; padding: 9px; }
+.knowledge-list article > div:first-child, .knowledge-actions { display: flex; justify-content: space-between; gap: 7px; }
+.knowledge-list p { overflow: hidden; margin: 5px 0; color: #74675c; font-size: 9px; text-overflow: ellipsis; white-space: nowrap; }
+.knowledge-list small { color: #97877a; font-size: 8px; }
+.knowledge-list span { color: #8b796b; font-size: 9px; }
+.knowledge-actions { justify-content: flex-end; margin-top: 7px; }
+.knowledge-actions button { border: 1px solid #d3c3b3; background: #f5eadf; border-radius: 6px; color: #725e50; padding: 5px 7px; font-size: 9px; }
+.knowledge-binding { grid-template-columns: auto 1fr; align-items: center; }
+.knowledge-binding input { width: auto; }
 
 .inspector-muted { color: #928478; font-size: 11px; }
 .memory-panel > form { display: grid; gap: 8px; margin-top: 12px; }

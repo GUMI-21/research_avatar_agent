@@ -98,3 +98,19 @@ class AgentRepository:
         ]
         await self._session.flush()
         return agent
+
+    async def replace_knowledge_sources(
+        self,
+        client_id: str,
+        agent_id: str,
+        sources: Sequence[KnowledgeSourceRecord],
+    ) -> AgentRecord | None:
+        agent = await self.get(client_id, agent_id)
+        if agent is None:
+            return None
+        agent.knowledge_links = [
+            AgentKnowledgeSourceRecord(client_id=client_id, source_id=source.id)
+            for source in sources
+        ]
+        await self._session.flush()
+        return agent
