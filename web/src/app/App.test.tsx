@@ -369,6 +369,31 @@ describe("Agent workspace resources", () => {
       .not.toHaveTextContent("正在输入");
     expect(screen.getAllByText("运行完成")).toHaveLength(2);
   });
+
+  it("shows a failed tool with its safe error type", async () => {
+    renderApp();
+    const composer = screen.getByLabelText("消息");
+    await waitFor(() => expect(composer).toBeEnabled());
+    fireEvent.change(composer, { target: { value: "打开网页" } });
+    fireEvent.click(screen.getByRole("button", { name: "发送" }));
+
+    act(() => {
+      const socket = FakeWebSocket.instances[0];
+      socket.emit({ type: "run_started", run_id: "run-error", sequence: 1, payload: {} });
+      socket.emit({
+        type: "tool_finished", run_id: "run-error", sequence: 2,
+        payload: { tool_name: "mcp_browser_navigate", status: "error", error_type: "MCPError" },
+      });
+      socket.emit({
+        type: "run_failed", run_id: "run-error", sequence: 3,
+        payload: { error_type: "MCPError" },
+      });
+    });
+
+    expect(screen.getByText("工具失败")).toBeInTheDocument();
+    expect(screen.getByText("mcp_browser_navigate · MCPError")).toBeInTheDocument();
+  });
+
   it("reviews and approves a Markdown tool call", async () => {
     renderApp();
     const composer = screen.getByLabelText("消息");

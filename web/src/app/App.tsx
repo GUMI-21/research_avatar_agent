@@ -90,7 +90,14 @@ function eventDetail(type: string, payload: Record<string, unknown>, agents: Age
     return payload.duration_ms == null ? "终态已持久化" : `${payload.duration_ms} ms`;
   }
   if (type === "retrieval_result") return "候选与命中片段已记录";
-  if (type.startsWith("tool_") || type === "approval_required") return String(payload.tool_name || "工具事件");
+  if (type.startsWith("tool_") || type === "approval_required") {
+    const name = String(payload.tool_name || "工具事件");
+    if (payload.status === "error") {
+      return `${name} · ${String(payload.error_type || "执行失败")}`;
+    }
+    if (payload.status === "rejected") return `${name} · 用户已拒绝`;
+    return name;
+  }
   return String(payload.message || payload.status || "事件已记录");
 }
 
@@ -110,7 +117,9 @@ function RunCard({ run, agents }: { run: LiveRun; agents: Agent[] }) {
       {run.events.map((event, index) => (
         <div className="run-event" key={`${event.type}-${event.sequence ?? index}`}>
           <span className="event-dot" />
-          <b>{eventLabels[event.type] || event.type}</b>
+          <b>{event.type === "tool_finished" && event.payload.status === "error"
+            ? "工具失败"
+            : eventLabels[event.type] || event.type}</b>
           <span>{eventDetail(event.type, event.payload, agents)}</span>
           <time>{event.sequence == null ? "live" : `#${event.sequence}`}</time>
         </div>

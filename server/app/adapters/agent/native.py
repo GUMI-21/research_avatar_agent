@@ -193,54 +193,66 @@ class NativeAgentRuntime:
                             payload={"tool_name": chunk.tool_call.name},
                         )
                         try:
-                            result = await self._tools.execute(
-                                chunk.tool_call.name, tool_context, arguments
-                            )
-                        except ToolApprovalRequiredError as approval:
-                            if self._approvals is None:
-                                raise
-                            summary = (
-                                approval.tool.approval_summary(arguments)
-                                if approval.tool.approval_summary is not None
-                                else {}
-                            )
-                            pending = self._approvals.create(
-                                request.client_id, request.run_id
-                            )
+                            try:
+                                result = await self._tools.execute(
+                                    chunk.tool_call.name, tool_context, arguments
+                                )
+                            except ToolApprovalRequiredError as approval:
+                                if self._approvals is None:
+                                    raise
+                                summary = (
+                                    approval.tool.approval_summary(arguments)
+                                    if approval.tool.approval_summary is not None
+                                    else {}
+                                )
+                                pending = self._approvals.create(
+                                    request.client_id, request.run_id
+                                )
+                                yield RuntimeEvent(
+                                    type=RuntimeEventType.APPROVAL_REQUIRED,
+                                    payload={
+                                        "approval_id": pending.id,
+                                        "tool_name": chunk.tool_call.name,
+                                        "risk": approval.tool.risk.value,
+                                        "summary": dict(summary),
+                                        "path": arguments.get("path"),
+                                        "content_preview": str(
+                                            arguments.get("content", "")
+                                        )[:4_000],
+                                    },
+                                )
+                                try:
+                                    approved = await pending.decision
+                                finally:
+                                    self._approvals.discard(pending.id)
+                                result = (
+                                    await self._tools.execute(
+                                        chunk.tool_call.name,
+                                        tool_context,
+                                        arguments,
+                                        approved=True,
+                                    )
+                                    if approved
+                                    else ToolResult(
+                                        "User rejected the tool call",
+                                        {"status": "rejected"},
+                                    )
+                                )
+                        except Exception as error:
                             yield RuntimeEvent(
-                                type=RuntimeEventType.APPROVAL_REQUIRED,
+                                type=RuntimeEventType.TOOL_FINISHED,
                                 payload={
-                                    "approval_id": pending.id,
                                     "tool_name": chunk.tool_call.name,
-                                    "risk": approval.tool.risk.value,
-                                    "summary": dict(summary),
-                                    "path": arguments.get("path"),
-                                    "content_preview": str(
-                                        arguments.get("content", "")
-                                    )[:4_000],
+                                    "status": "error",
+                                    "error_type": type(error).__name__,
                                 },
                             )
-                            try:
-                                approved = await pending.decision
-                            finally:
-                                self._approvals.discard(pending.id)
-                            result = (
-                                await self._tools.execute(
-                                    chunk.tool_call.name,
-                                    tool_context,
-                                    arguments,
-                                    approved=True,
-                                )
-                                if approved
-                                else ToolResult(
-                                    "User rejected the tool call",
-                                    {"status": "rejected"},
-                                )
-                            )
+                            raise
                         yield RuntimeEvent(
                             type=RuntimeEventType.TOOL_FINISHED,
                             payload={
                                 "tool_name": chunk.tool_call.name,
+                                "status": "completed",
                                 **result.metadata,
                             },
                         )

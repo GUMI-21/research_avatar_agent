@@ -83,8 +83,9 @@ class ToolCallingLLMClient(FakeLLMClient):
 
 
 class FileToolCallingLLMClient(FakeLLMClient):
-    def __init__(self) -> None:
+    def __init__(self, path: str = "README.md") -> None:
         super().__init__()
+        self.path = path
         self.requests: list[LLMRequest] = []
 
     async def stream(
@@ -98,7 +99,7 @@ class FileToolCallingLLMClient(FakeLLMClient):
                 model="mock-tools",
                 tool_call=LLMToolCall(
                     name="read_text_file",
-                    arguments={"path": "README.md", "max_chars": 40},
+                    arguments={"path": self.path, "max_chars": 40},
                 ),
             )
             return
@@ -164,7 +165,7 @@ class NativeAgentRuntimeTest(unittest.IsolatedAsyncioTestCase):
                 RuntimeEventType.RUN_FINISHED,
             ],
         )
-        self.assertIn("用户问题:\nHello", events[2].payload["text"])
+        self.assertIn("用户问题:\nHello", str(events[2].payload["text"]))
         self.assertEqual(events[3].payload["cost_status"], "unavailable")
         assert client.last_request is not None
         self.assertEqual(client.last_request.client_id, "client-a")
@@ -266,7 +267,32 @@ class NativeAgentRuntimeTest(unittest.IsolatedAsyncioTestCase):
         self.assertIn(RuntimeEventType.TOOL_FINISHED, event_types)
         self.assertEqual(len(client.requests), 2)
         self.assertIn("<read_text_file>", client.requests[1].message)
+        finished = next(
+            event for event in events
+            if event.type is RuntimeEventType.TOOL_FINISHED
+        )
+        self.assertEqual(finished.payload["status"], "completed")
         self.assertEqual(events[-1].type, RuntimeEventType.RUN_FINISHED)
+
+    async def test_tool_failure_closes_audit_event_before_run_failure(self) -> None:
+        runtime = NativeAgentRuntime(
+            FileToolCallingLLMClient("missing.txt"),
+            create_file_tool_registry(Path(__file__).resolve().parents[1]),
+        )
+        events = []
+
+        with self.assertRaises(ValueError):
+            async for event in runtime.stream(make_request()):
+                events.append(event)
+
+        self.assertEqual(events[-2].type, RuntimeEventType.TOOL_FINISHED)
+        self.assertEqual(events[-2].payload, {
+            "tool_name": "read_text_file",
+            "status": "error",
+            "error_type": "ValueError",
+        })
+        self.assertEqual(events[-1].type, RuntimeEventType.RUN_FAILED)
+
     async def test_markdown_write_pauses_for_approval(self) -> None:
         with tempfile.TemporaryDirectory() as directory:
             path = Path(directory) / "note.md"
@@ -289,6 +315,33 @@ class NativeAgentRuntimeTest(unittest.IsolatedAsyncioTestCase):
 
             self.assertEqual(path.read_text(encoding="utf-8"), "# Approved")
             self.assertIn(RuntimeEventType.TOOL_FINISHED, [item.type for item in events])
+
+    async def test_approved_tool_failure_closes_audit_event(self) -> None:
+        with tempfile.TemporaryDirectory() as directory:
+            approvals = ToolApprovalBroker()
+            runtime = NativeAgentRuntime(
+                WriteToolCallingLLMClient(
+                    str(Path(directory) / "missing" / "note.md")
+                ),
+                create_file_tool_registry(),
+                approvals,
+            )
+            events = []
+
+            with self.assertRaises(ValueError):
+                async for event in runtime.stream(make_request()):
+                    events.append(event)
+                    if event.type is RuntimeEventType.APPROVAL_REQUIRED:
+                        approvals.decide(
+                            "client-a", "run-1",
+                            str(event.payload["approval_id"]), True,
+                        )
+
+            self.assertEqual(events[-2].type, RuntimeEventType.TOOL_FINISHED)
+            self.assertEqual(events[-2].payload["status"], "error")
+            self.assertEqual(events[-2].payload["error_type"], "ValueError")
+            self.assertEqual(events[-1].type, RuntimeEventType.RUN_FAILED)
+
     async def test_delegate_tool_rejects_target_outside_allowlist(self) -> None:
         client = ToolCallingLLMClient("agent-unknown")
         request = replace(
