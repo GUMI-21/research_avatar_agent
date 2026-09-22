@@ -183,6 +183,10 @@ export function App() {
     queryKey: ["workspace", clientId],
     queryFn: () => workspaceApi.ensureWorkspace(clientId),
   });
+  const policyQuery = useQuery({
+    queryKey: ["runtime-policy"],
+    queryFn: workspaceApi.getRuntimePolicy,
+  });
   const agentsQuery = useQuery({
     queryKey: ["agents"],
     queryFn: workspaceApi.listAgents,
@@ -318,10 +322,12 @@ export function App() {
     setDraft("");
   }
 
-  const queryError = workspaceQuery.error || agentsQuery.error || sessionsQuery.error
+  const queryError = workspaceQuery.error || policyQuery.error
+    || agentsQuery.error || sessionsQuery.error
     || messagesQuery.error || runsQuery.error || usageQuery.error
     || providerCatalogQuery.error || modelMutation.error;
-  const resourcesLoading = workspaceQuery.isLoading || agentsQuery.isLoading
+  const resourcesLoading = workspaceQuery.isLoading || policyQuery.isLoading
+    || agentsQuery.isLoading
     || sessionsQuery.isLoading;
 
   return (
@@ -414,6 +420,14 @@ export function App() {
             </p>
           </div>
           <div className="header-actions">
+            {policyQuery.data?.demo_mode && (
+              <span
+                className="demo-badge"
+                title={`禁用风险：${policyQuery.data.blocked_tool_risks.join("、")}`}
+              >
+                Demo · 写入已禁用
+              </span>
+            )}
             {selectedAgent && (
               <button
                 className="icon-action"

@@ -5,6 +5,7 @@ import { beforeEach, describe, expect, it, vi } from "vitest";
 import { App } from "./App";
 
 const now = "2026-09-10T08:00:00Z";
+let demoMode = false;
 const agent = {
   id: "agent-1",
   client_id: "local-demo",
@@ -137,6 +138,7 @@ function renderApp() {
 
 describe("Agent workspace resources", () => {
   beforeEach(() => {
+    demoMode = false;
     window.localStorage.clear();
     FakeWebSocket.instances = [];
     const registeredWorkspaces = new Set(["local-demo"]);
@@ -207,6 +209,12 @@ describe("Agent workspace resources", () => {
       if (path === "/api/v1/skills") return jsonResponse({ skills: [skill] });
       if (path === "/api/v1/knowledge/sources" && init?.method === "POST") {
         return jsonResponse({ ...knowledgeSource, ...JSON.parse(String(init.body)) });
+      }
+      if (path === "/api/v1/runtime/policy") {
+        return jsonResponse({
+          demo_mode: demoMode,
+          blocked_tool_risks: demoMode ? ["local_write", "external_write"] : [],
+        });
       }
       if (path === "/api/v1/knowledge/sources") return jsonResponse({ sources: [knowledgeSource] });
       if (path === `/api/v1/knowledge/sources/${knowledgeSource.id}/sync` && init?.method === "POST") {
@@ -368,6 +376,16 @@ describe("Agent workspace resources", () => {
     expect(screen.getByText("这是流式回答").closest("article")?.querySelector("time"))
       .not.toHaveTextContent("正在输入");
     expect(screen.getAllByText("运行完成")).toHaveLength(2);
+  });
+
+  it("shows when the server is running in restricted demo mode", async () => {
+    demoMode = true;
+    renderApp();
+
+    const badge = await screen.findByText("Demo · 写入已禁用");
+    expect(badge).toHaveAttribute(
+      "title", "禁用风险：local_write、external_write",
+    );
   });
 
   it("shows a failed tool with its safe error type", async () => {

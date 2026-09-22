@@ -63,6 +63,11 @@ export type RunUsage = {
   created_at: string;
 };
 
+export type RuntimePolicy = {
+  demo_mode: boolean;
+  blocked_tool_risks: string[];
+};
+
 export type Skill = {
   id: string;
   name: string;
@@ -171,6 +176,8 @@ async function request<T>(path: string, init?: RequestInit, scoped = true): Prom
 }
 
 export const workspaceApi = {
+  getRuntimePolicy: () =>
+    request<RuntimePolicy>("/api/v1/runtime/policy"),
   ensureWorkspace: async (username: string) => {
     const normalized = username.trim().toLowerCase();
     try {

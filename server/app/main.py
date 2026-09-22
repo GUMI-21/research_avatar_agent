@@ -139,6 +139,7 @@ def create_app(settings: Settings) -> FastAPI:
     )
     file_tools = create_file_tool_registry(blocked_risks=blocked_risks)
     app.state.demo_mode = settings.demo.enabled
+    app.state.blocked_tool_risks = tuple(risk.value for risk in blocked_risks)
     if app.state.google_api_client is not None:
         register_google_read_tools(file_tools, app.state.google_api_client)
     app.state.tool_registry = file_tools

@@ -37,6 +37,7 @@ button:disabled { cursor: not-allowed; opacity: .45; }
 .conversation-header p { margin: 0; color: #887a6e; font-size: 11px; }
 .connection-badge { border: 1px solid #9ab09c; background: #e3ece2; color: #4f7057; border-radius: 999px; padding: 4px 8px; font-size: 10px; }
 .connection-badge.error { border-color: #c58e87; background: #f3dfdb; color: #a45149; }
+.demo-badge { border: 1px solid #d2a261; background: #f8e8c9; color: #8a5b22; border-radius: 999px; padding: 4px 8px; font-size: 10px; font-weight: 700; }
 .status-dot { display: inline-block; width: 6px; height: 6px; border-radius: 50%; background: #6d9a75; box-shadow: 0 0 8px #8db393; }
 .icon-button { border: 1px solid #d3c3b3; background: #f8f0e6; padding: 8px; border-radius: 7px; }
 .messages { min-height: 0; overflow: auto; padding: 30px max(30px, 8vw); }
