@@ -1,6 +1,7 @@
 """File tools that inherit the Server process filesystem permissions."""
 
 import asyncio
+from collections.abc import Collection
 from itertools import islice
 from pathlib import Path
 
@@ -36,10 +37,14 @@ def _resolve_path(base: Path, requested: str) -> Path:
     return (candidate if candidate.is_absolute() else base / candidate).resolve()
 
 
-def create_file_tool_registry(default_directory: Path | None = None) -> ToolRegistry:
+def create_file_tool_registry(
+    default_directory: Path | None = None,
+    *,
+    blocked_risks: Collection[ToolRisk] = (),
+) -> ToolRegistry:
     """Create file tools governed by the Server operating-system identity."""
     base = (default_directory or Path.cwd()).resolve()
-    registry = ToolRegistry()
+    registry = ToolRegistry(blocked_risks=blocked_risks)
 
     async def list_files(
         _context: ToolContext, arguments: ToolArguments

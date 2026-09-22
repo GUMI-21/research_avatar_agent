@@ -2,7 +2,7 @@
 
 import asyncio
 import re
-from collections.abc import Awaitable, Callable, Mapping
+from collections.abc import Awaitable, Callable, Collection, Mapping
 from dataclasses import dataclass, field
 from enum import StrEnum
 
@@ -77,14 +77,25 @@ class ToolApprovalRequiredError(PermissionError):
         self.tool = tool
 
 
+class ToolBlockedError(PermissionError):
+    def __init__(self, tool: ToolSpec) -> None:
+        super().__init__(f"Tool '{tool.name}' is blocked by runtime policy")
+        self.tool = tool
+
+
 # tool call
 class ToolRegistry:
     """Expose registered schemas and execute only approved side effects."""
 
-    def __init__(self, timeout_seconds: float = 30) -> None:
+    def __init__(
+        self,
+        timeout_seconds: float = 30,
+        blocked_risks: Collection[ToolRisk] = (),
+    ) -> None:
         if timeout_seconds <= 0:
             raise ValueError("Tool timeout must be positive")
         self._timeout_seconds = timeout_seconds
+        self._blocked_risks = frozenset(blocked_risks)
         self._tools: dict[str, ToolSpec] = {}
 
     # register tool
@@ -101,7 +112,8 @@ class ToolRegistry:
         return tuple(
             tool.llm_definition()
             for name, tool in self._tools.items()
-            if allowed_names is None or name in allowed_names
+            if tool.risk not in self._blocked_risks
+            and (allowed_names is None or name in allowed_names)
         )
 
     async def execute(
@@ -115,6 +127,8 @@ class ToolRegistry:
         tool = self._tools.get(name)
         if tool is None:
             raise ToolNotFoundError(name)
+        if tool.risk in self._blocked_risks:
+            raise ToolBlockedError(tool)
         if tool.risk is not ToolRisk.READ_ONLY and not approved:
             raise ToolApprovalRequiredError(tool)
         raw_arguments = dict(arguments)

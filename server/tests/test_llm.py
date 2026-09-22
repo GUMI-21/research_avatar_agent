@@ -164,6 +164,7 @@ class LLMRuntimeConfigurationTest(unittest.TestCase):
             "sqlite+aiosqlite:///data/personal_agent.db",
         )
         self.assertEqual(settings.llm.default_provider, LLMProvider.MOCK)
+        self.assertFalse(settings.demo.enabled)
         catalog = {item.provider: item for item in LLM_PROVIDER_CATALOG.providers}
         for provider in (
             LLMProvider.OPENAI,

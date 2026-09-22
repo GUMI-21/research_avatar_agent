@@ -24,6 +24,7 @@ from app.tools import (
     MCPClient, StdioMCPTransport, StreamableHttpMCPTransport,
     ToolApprovalBroker, create_file_tool_registry,
     register_google_read_tools,
+    ToolRisk,
 )
 from logs import configure_logging, log
 
@@ -132,7 +133,12 @@ def create_app(settings: Settings) -> FastAPI:
         else None
     )
     runtime_registry = RuntimeRegistry()
-    file_tools = create_file_tool_registry()
+    blocked_risks = (
+        (ToolRisk.LOCAL_WRITE, ToolRisk.EXTERNAL_WRITE)
+        if settings.demo.enabled else ()
+    )
+    file_tools = create_file_tool_registry(blocked_risks=blocked_risks)
+    app.state.demo_mode = settings.demo.enabled
     if app.state.google_api_client is not None:
         register_google_read_tools(file_tools, app.state.google_api_client)
     app.state.tool_registry = file_tools
