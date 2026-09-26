@@ -68,6 +68,14 @@ export type RuntimePolicy = {
   blocked_tool_risks: string[];
 };
 
+export type MCPServerStatus = {
+  name: string;
+  transport: "stdio" | "http";
+  status: "pending" | "connected" | "unavailable";
+  tool_count: number;
+  error_type: string | null;
+};
+
 export type Skill = {
   id: string;
   name: string;
@@ -178,6 +186,8 @@ async function request<T>(path: string, init?: RequestInit, scoped = true): Prom
 export const workspaceApi = {
   getRuntimePolicy: () =>
     request<RuntimePolicy>("/api/v1/runtime/policy"),
+  getMCPStatus: async () =>
+    (await request<{ servers: MCPServerStatus[] }>("/api/v1/runtime/mcp-status")).servers,
   ensureWorkspace: async (username: string) => {
     const normalized = username.trim().toLowerCase();
     try {

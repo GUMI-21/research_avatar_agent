@@ -177,6 +177,10 @@ button:disabled { cursor: not-allowed; opacity: .45; }
 .knowledge-actions button { border: 1px solid #d3c3b3; background: #f5eadf; border-radius: 6px; color: #725e50; padding: 5px 7px; font-size: 9px; }
 .knowledge-binding { grid-template-columns: auto 1fr; align-items: center; }
 .knowledge-binding input { width: auto; }
+.mcp-status-list { display: grid; gap: 7px; padding: 9px 1px 4px; }
+.mcp-status-list > div { display: flex; justify-content: space-between; border: 1px solid #e1d4c6; border-radius: 8px; padding: 9px; font-size: 10px; }
+.mcp-status-list span.connected { color: #55715a; }
+.mcp-status-list span.unavailable { color: #a45149; }
 
 .inspector-muted { color: #928478; font-size: 11px; }
 .memory-panel > form { display: grid; gap: 8px; margin-top: 12px; }

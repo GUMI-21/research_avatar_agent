@@ -37,6 +37,11 @@ export function WorkspaceSettings({ clientId, agents, onClose, onAgentUpdated, o
     queryFn: workspaceApi.getCodexStatus,
     refetchInterval: 60_000,
   });
+  const mcpQuery = useQuery({
+    queryKey: ["mcp-status"],
+    queryFn: workspaceApi.getMCPStatus,
+    refetchInterval: 60_000,
+  });
   const skillsQuery = useQuery({ queryKey: ["skills"], queryFn: workspaceApi.listSkills });
   const [provider, setProvider] = useState("mock");
   const [model, setModel] = useState("mock-echo");
@@ -145,6 +150,32 @@ export function WorkspaceSettings({ clientId, agents, onClose, onAgentUpdated, o
               );
             })}
             {skillsMutation.error && <p className="form-error">{skillsMutation.error.message}</p>}
+          </div>
+        </details>
+
+        <details className="settings-section" open>
+          <summary>
+            <span><ServerCog size={14} />MCP Servers</span>
+            <small>{mcpQuery.data?.filter((item) => item.status === "connected").length ?? 0}/{mcpQuery.data?.length ?? 0} 已连接</small>
+            <ChevronDown size={14} />
+          </summary>
+          <div className="mcp-status-list">
+            <p className="inspector-muted">这里显示 Server 启动时的连接与工具发现结果；调用期错误记录在 Run 审计中。</p>
+            {mcpQuery.isLoading && <p className="inspector-muted">正在读取 MCP 状态…</p>}
+            {mcpQuery.error && <p className="form-error">无法读取 MCP 状态：{mcpQuery.error.message}</p>}
+            {mcpQuery.data?.map((server) => (
+              <div key={`${server.transport}:${server.name}`}>
+                <b>{server.name} · {server.transport}</b>
+                <span className={server.status}>
+                  {server.status === "connected"
+                    ? `${server.tool_count} tools`
+                    : server.status === "unavailable"
+                      ? server.error_type || "不可用"
+                      : "待连接"}
+                </span>
+              </div>
+            ))}
+            {mcpQuery.data?.length === 0 && <p className="inspector-muted">未配置 MCP Server。</p>}
           </div>
         </details>
 

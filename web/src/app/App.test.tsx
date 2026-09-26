@@ -210,6 +210,12 @@ describe("Agent workspace resources", () => {
       if (path === "/api/v1/knowledge/sources" && init?.method === "POST") {
         return jsonResponse({ ...knowledgeSource, ...JSON.parse(String(init.body)) });
       }
+      if (path === "/api/v1/runtime/mcp-status") {
+        return jsonResponse({ servers: [{
+          name: "playwright", transport: "stdio", status: "connected",
+          tool_count: 3, error_type: null,
+        }] });
+      }
       if (path === "/api/v1/runtime/policy") {
         return jsonResponse({
           demo_mode: demoMode,
@@ -769,5 +775,14 @@ describe("Agent workspace resources", () => {
     expect(screen.getByText("5 小时额度")).toBeInTheDocument();
     expect(screen.getByText("剩余 47%")).toBeInTheDocument();
     expect(screen.getByText("周额度")).toBeInTheDocument();
+  });
+
+  it("shows the safe MCP startup status in settings", async () => {
+    renderApp();
+    fireEvent.click(screen.getByRole("button", { name: "设置" }));
+
+    expect(await screen.findByText("playwright · stdio")).toBeInTheDocument();
+    expect(screen.getByText("3 tools")).toBeInTheDocument();
+    expect(screen.getByText("1/1 已连接")).toBeInTheDocument();
   });
 });

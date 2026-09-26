@@ -52,8 +52,18 @@ async def lifespan(app: FastAPI) -> AsyncIterator[None]:
                 ).register_tools(
                     app.state.tool_registry
                 )
+                app.state.mcp_statuses[("stdio", config.name)] = {
+                    "name": config.name, "transport": "stdio",
+                    "status": "connected", "tool_count": len(names),
+                    "error_type": None,
+                }
                 log.info("Connected MCP server={} tools={}", config.name, len(names))
             except Exception as error:
+                app.state.mcp_statuses[("stdio", config.name)] = {
+                    "name": config.name, "transport": "stdio",
+                    "status": "unavailable", "tool_count": 0,
+                    "error_type": type(error).__name__,
+                }
                 log.warning("MCP server={} unavailable error_type={}",
                             config.name, type(error).__name__)
         for config in app.state.settings.mcp.http_servers:
@@ -68,8 +78,18 @@ async def lifespan(app: FastAPI) -> AsyncIterator[None]:
                 ).register_tools(
                     app.state.tool_registry
                 )
+                app.state.mcp_statuses[("http", config.name)] = {
+                    "name": config.name, "transport": "http",
+                    "status": "connected", "tool_count": len(names),
+                    "error_type": None,
+                }
                 log.info("Connected MCP server={} tools={}", config.name, len(names))
             except Exception as error:
+                app.state.mcp_statuses[("http", config.name)] = {
+                    "name": config.name, "transport": "http",
+                    "status": "unavailable", "tool_count": 0,
+                    "error_type": type(error).__name__,
+                }
                 log.warning("MCP server={} unavailable error_type={}",
                             config.name, type(error).__name__)
         yield
@@ -90,6 +110,20 @@ def create_app(settings: Settings) -> FastAPI:
         lifespan=lifespan,
     )
     app.state.settings = settings
+    app.state.mcp_statuses = {
+        **{
+            ("stdio", config.name): {
+                "name": config.name, "transport": "stdio", "status": "pending",
+            }
+            for config in settings.mcp.stdio_servers
+        },
+        **{
+            ("http", config.name): {
+                "name": config.name, "transport": "http", "status": "pending",
+            }
+            for config in settings.mcp.http_servers
+        },
+    }
     app.state.database = Database(settings.database.url)
     app.state.skill_catalog = SkillCatalog(
         settings.skills.directories, settings.skills.max_file_bytes
