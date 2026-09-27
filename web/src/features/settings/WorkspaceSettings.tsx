@@ -160,7 +160,7 @@ export function WorkspaceSettings({ clientId, agents, onClose, onAgentUpdated, o
             <ChevronDown size={14} />
           </summary>
           <div className="mcp-status-list">
-            <p className="inspector-muted">这里显示 Server 启动时的连接与工具发现结果；调用期错误记录在 Run 审计中。</p>
+            <p className="inspector-muted">显示启动时的工具发现结果和运行期传输状态；调用错误记录在 Run 审计中。断连后需重启 Server 恢复连接。</p>
             {mcpQuery.isLoading && <p className="inspector-muted">正在读取 MCP 状态…</p>}
             {mcpQuery.error && <p className="form-error">无法读取 MCP 状态：{mcpQuery.error.message}</p>}
             {mcpQuery.data?.map((server) => (

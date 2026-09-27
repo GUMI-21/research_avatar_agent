@@ -6,6 +6,8 @@ import httpx
 from fastapi import FastAPI
 
 from app.api.router import api_router
+from app.main import _mark_mcp_unavailable
+from app.tools import MCPError
 
 
 class RuntimePolicyTest(unittest.IsolatedAsyncioTestCase):
@@ -16,11 +18,15 @@ class RuntimePolicyTest(unittest.IsolatedAsyncioTestCase):
         app.state.mcp_statuses = {
             ("stdio", "browser"): {
                 "name": "browser", "transport": "stdio",
-                "status": "unavailable", "tool_count": 0,
-                "error_type": "MCPError",
+                "status": "connected", "tool_count": 3,
+                "error_type": None,
             },
         }
         app.include_router(api_router)
+        try:
+            raise MCPError("safe") from TimeoutError("private URL")
+        except MCPError as error:
+            _mark_mcp_unavailable(app, "stdio", "browser", error)
         client = httpx.AsyncClient(
             transport=httpx.ASGITransport(app=app), base_url="http://testserver",
         )
@@ -44,8 +50,8 @@ class RuntimePolicyTest(unittest.IsolatedAsyncioTestCase):
         })
         self.assertEqual(mcp.json()["servers"], [{
             "name": "browser", "transport": "stdio",
-            "status": "unavailable", "tool_count": 0,
-            "error_type": "MCPError",
+            "status": "unavailable", "tool_count": 3,
+            "error_type": "TimeoutError",
         }])
 
 

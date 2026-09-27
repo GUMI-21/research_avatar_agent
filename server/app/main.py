@@ -29,6 +29,15 @@ from app.tools import (
 from logs import configure_logging, log
 
 
+def _mark_mcp_unavailable(
+    app: FastAPI, transport: str, name: str, error: Exception,
+) -> None:
+    status = app.state.mcp_statuses[(transport, name)]
+    status["status"] = "unavailable"
+    # Upstream messages may contain private data; expose only the class name.
+    status["error_type"] = type(error.__cause__ or error).__name__
+
+
 @asynccontextmanager # 异步协程，由“异步生成器”实现的生命周期上下文。
 async def lifespan(app: FastAPI) -> AsyncIterator[None]:
     """Record the server process lifecycle."""
@@ -49,6 +58,9 @@ async def lifespan(app: FastAPI) -> AsyncIterator[None]:
                 ))
                 names = await MCPClient(
                     config.name, transport, config.allowed_domains, config.blocked_tools,
+                    on_transport_error=lambda error, name=config.name: (
+                        _mark_mcp_unavailable(app, "stdio", name, error)
+                    ),
                 ).register_tools(
                     app.state.tool_registry
                 )
@@ -75,6 +87,9 @@ async def lifespan(app: FastAPI) -> AsyncIterator[None]:
                 )
                 names = await MCPClient(
                     config.name, transport, config.allowed_domains, config.blocked_tools,
+                    on_transport_error=lambda error, name=config.name: (
+                        _mark_mcp_unavailable(app, "http", name, error)
+                    ),
                 ).register_tools(
                     app.state.tool_registry
                 )

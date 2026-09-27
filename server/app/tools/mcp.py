@@ -2,7 +2,7 @@
 
 import json
 import re
-from collections.abc import Mapping
+from collections.abc import Callable, Mapping
 from typing import Protocol, cast
 from urllib.parse import urlsplit
 
@@ -41,6 +41,7 @@ class MCPClient:
         transport: MCPTransport,
         allowed_domains: tuple[str, ...] = (),
         blocked_tools: tuple[str, ...] = (),
+        on_transport_error: Callable[[MCPError], None] | None = None,
     ) -> None:
         self._server_name = server_name
         self._transport = transport
@@ -48,6 +49,7 @@ class MCPClient:
             domain.lower().rstrip(".") for domain in allowed_domains
         )
         self._blocked_tools = frozenset(blocked_tools)
+        self._on_transport_error = on_transport_error
 
     def _validate_urls(self, value: object, key: str = "") -> None:
         if not self._allowed_domains:
@@ -115,10 +117,15 @@ class MCPClient:
         ) -> ToolResult:
             values = arguments.model_dump(exclude_unset=True)
             self._validate_urls(values)
-            response = await self._transport.request("tools/call", {
-                "name": remote_name,
-                "arguments": values,
-            })
+            try:
+                response = await self._transport.request("tools/call", {
+                    "name": remote_name,
+                    "arguments": values,
+                })
+            except MCPError as error:
+                if self._on_transport_error is not None:
+                    self._on_transport_error(error)
+                raise
             if response.get("isError") is True:
                 raise MCPError(f"MCP tool '{remote_name}' failed")
             content = response.get("content", [])

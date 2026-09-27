@@ -12,6 +12,7 @@ class FakeTransport:
     def __init__(self) -> None:
         self.calls: list[tuple[str, Mapping[str, object] | None]] = []
         self.fail = False
+        self.transport_error = False
         self.schema: Mapping[str, object] = {
             "type": "object",
             "properties": {"query": {"type": "string"}},
@@ -27,6 +28,8 @@ class FakeTransport:
                 "description": "Search the web.",
                 "inputSchema": self.schema,
             }]}
+        if self.transport_error:
+            raise MCPError("MCP transport request failed") from TimeoutError("private URL")
         if self.fail:
             return {"isError": True, "content": [{"type": "text", "text": "secret"}]}
         return {"content": [{"type": "text", "text": "result"}]}
@@ -66,6 +69,28 @@ class MCPClientTest(unittest.IsolatedAsyncioTestCase):
             await self.registry.execute(
                 self.names[0], self.context, {"query": "agents"}, approved=True,
             )
+
+    async def test_only_transport_failures_change_server_health(self) -> None:
+        failures: list[MCPError] = []
+        registry = ToolRegistry()
+        names = await MCPClient(
+            "browser", self.transport, on_transport_error=failures.append,
+        ).register_tools(registry)
+        self.transport.fail = True
+        with self.assertRaises(MCPError):
+            await registry.execute(
+                names[0], self.context, {"query": "agents"}, approved=True,
+            )
+        self.assertEqual(failures, [])
+
+        self.transport.fail = False
+        self.transport.transport_error = True
+        with self.assertRaises(MCPError):
+            await registry.execute(
+                names[0], self.context, {"query": "agents"}, approved=True,
+            )
+        self.assertEqual(len(failures), 1)
+        self.assertIsInstance(failures[0].__cause__, TimeoutError)
 
     async def test_browser_url_policy_allows_domains_and_subdomains(self) -> None:
         self.transport.schema = {

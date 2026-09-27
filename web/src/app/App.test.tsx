@@ -784,5 +784,6 @@ describe("Agent workspace resources", () => {
     expect(await screen.findByText("playwright · stdio")).toBeInTheDocument();
     expect(screen.getByText("3 tools")).toBeInTheDocument();
     expect(screen.getByText("1/1 已连接")).toBeInTheDocument();
+    expect(screen.getByText(/运行期传输状态/)).toBeInTheDocument();
   });
 });
