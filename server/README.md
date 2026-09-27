@@ -3,15 +3,17 @@
 This directory contains the backend service for the personal AI workspace and
 emotion-aware avatar assistant.
 
-FastAPI currently owns REST/WebSocket routes, native Agent runs, usage recording,
-and Markdown retrieval backed by SQLite. Services, repositories, and runtime
-adapters remain separate. Workspace runs now pass through LangGraph with a shared
-in-memory checkpointer. Manual handoff and OpenAI tool-driven automatic handoff
-share the same streamed event protocol; automatic routing is client-scoped,
-rejects cycles, and allows at most two delegations. Native runs also receive the
-latest 12 conversation messages within a 6,000-character budget. Durable
-checkpoints, multi-Agent usage aggregation, and long-term memory remain planned. See
-the [active workspace roadmap](../docs/zh/internship_agent_workspace_plan.md).
+FastAPI owns REST/WebSocket APIs, client-scoped persistence, Native Agent runs,
+memory, tools, MCP, Google OAuth connections, usage and Markdown retrieval.
+LangGraph coordinates manual/automatic handoff with an in-memory checkpointer;
+pending tool approvals are also in memory. Event replay does not provide
+cross-process execution recovery. Codex runs use an optional CLI proxy adapter.
+
+Google token refresh, Gmail/Calendar tools and Agent Skills are implemented;
+real-account integration and demo failure-path validation remain.
+See the [workspace roadmap](../docs/zh/internship_agent_workspace_plan.md) for
+the current baseline and the [tool plan](../docs/zh/tool_mcp_skill_plan.md) for
+acceptance criteria. This README owns environment and validation commands.
 
 ## Directory Layout
 
@@ -27,6 +29,7 @@ server/
     api/              FastAPI route layer
     core/             settings, dependency wiring, shared runtime config
     orchestration/    LangGraph run state, routing nodes, and handoff loop
+    tools/            file tools, Registry, approvals and MCP transports
     schemas/          request/response and internal data contracts
     services/         application services used by routes and graph nodes
     repositories/     persistence boundaries for memory, context, and runs
@@ -122,11 +125,11 @@ The real symlink-escape test skips on Windows error 1314 when the current user
 lacks symlink privileges; run it with Developer Mode or appropriate privileges
 to cover that filesystem case.
 
-The current backend baseline is 151 tests passing with one optional Windows
-symlink test skipped. OpenAI Responses supports the structured
+Run the complete suite for each backend batch; use its actual result rather than
+a fixed historical test count. OpenAI Responses supports the structured
 `delegate_to_agent` tool. Gemini and DeepSeek continue to support normal streamed
 chat, while their automatic handoff wire formats are deferred until after the
-first usable workspace.
+current tool-chain milestone.
 
 ### Playwright MCP on Windows
 

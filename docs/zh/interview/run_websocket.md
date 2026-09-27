@@ -1,4 +1,4 @@
-# 2026-08-28 面试复盘：Agent Run 与 WebSocket 事件流
+# 面试复盘：Agent Run 与 WebSocket 事件流
 
 ## 1. 一次 Agent 请求在项目中的完整调用链是什么？
 

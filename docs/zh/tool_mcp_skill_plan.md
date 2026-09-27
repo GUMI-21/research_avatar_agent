@@ -1,66 +1,88 @@
 # Tool、MCP 与 Skill 开发计划
 
-## 目标
+当前基线与总体架构见 [Workspace 路线图](internship_agent_workspace_plan.md)。
+本文只维护 Native 工具边界、实现范围与剩余验收。Codex 工具由其外部 Runtime 管理。
 
-Native Agent 需要在统一的安全边界中读取和修改 Server 文件、访问浏览器、连接 Gmail 和 Google Calendar，并通过 Skill 组合这些能力。Codex Runtime 继续由 Codex 自己管理工具，本计划主要扩展 Native Runtime。
+第一至四部分已实现代码与自动化测试；真实 Google/MCP 外部联调仍待完成。
 
-## 三层职责
+## 职责与执行链
 
-- Tool Registry 统一名称、描述、输入 schema、执行函数、客户端上下文和风险等级。
-- MCP Client 把远程或本地 MCP Server 的 tools/list 与 tools/call 映射到 Tool Registry。
-- Skill 是版本化的 Markdown 指令与资源包，声明适用场景和推荐工具，不持有绕过 Registry 的执行权限。
+- Tool Registry：统一工具名、描述、输入 schema、执行器、客户端上下文和风险。
+- MCP Client：把 `tools/list`、`tools/call` 映射到 Registry，统一错误与结果。
+- Skill：版本化指令与资源，描述适用场景和推荐工具，不获得额外执行权限。
 
-Runtime 只依赖 Tool Registry。内置文件工具与 MCP 工具使用相同的 LLMToolDefinition 和 ToolResult，因此 LangGraph、WebSocket 和前端审计事件无需识别每个厂商协议。
+```text
+允许的工具 schema → 模型选择 → Registry 审批/参数校验 → 执行
+  → 有长度限制的工具结果回填 → 模型继续或回答 → Run 审计
+```
 
-## 风险与审批
+执行前必须通过审批与参数校验，并限制工具步数、超时及结果长度。
+外部返回内容是不可信数据，不能改变系统指令、审批策略或工具权限。
 
-| 风险 | 示例 | 默认策略 |
+| 风险 | 示例 | 策略 |
 | --- | --- | --- |
-| read_only | 读取 Server 进程有权限访问的文件 | 可自动执行 |
-| local_write | 修改或创建 Server 文件 | 每次审批 |
-| external_read | 读取网页、邮件或日程 | 首版每次审批，后续允许用户配置 |
-| external_write | 发邮件、创建日程、提交网页表单 | 每次审批 |
+| read_only | Server 可访问的本地文件读取 | 可自动执行 |
+| local_write | 创建或修改 Markdown | 每次审批 |
+| external_read | 浏览器、邮件、日程读取 | 首版每次审批 |
+| external_write | 发邮件、修改日程、提交表单 | 强制审批 |
 
-所有参数先经过 Pydantic 严格校验。Native 文件工具继承 Server 进程的操作系统权限，可使用任意盘符的绝对路径；相对路径以 Server 启动目录为基准。部署时应使用权限受限的专用系统账号。工具事件只记录工具名、风险、状态、耗时和安全摘要，不记录密钥、邮件正文或完整文件内容。
+当前文件工具受 Server 操作系统权限约束；相对路径基于 Server 启动目录，不能宣称已有目录沙箱。
+审批目前在当前连接/进程中等待与恢复。MCP URL 过滤不等于完整浏览器网络隔离。
+事件只保留工具名、风险、状态、耗时和安全摘要，不保存 token、邮件正文或完整文件正文。
 
-MCP 返回内容与网页、邮件内容都视为不可信数据。它们只作为工具结果提供给模型，不能改变系统指令、审批策略或工具白名单。
+## 一、Google Token 刷新与 API Client
 
-## 执行流程
+- 从按 `client_id` 加密保存的 refresh token 获取 access token。
+- 提供 Gmail/Calendar 共用客户端，按客户端隔离凭据与缓存。
+- 区分过期、撤销、权限不足、网络与刷新失败；需要重新授权时给出明确状态。
+- 日志和错误摘要不泄露 token、授权响应或邮件正文。
 
-1. 根据 Agent 工具策略生成允许工具的 schema。
-2. LLM 返回工具调用。
-3. Registry 校验名称、参数、客户端上下文与风险。
-4. 需要审批时产生 approval_required 并暂停 LangGraph run。
-5. 批准后执行工具，产生 tool_started 和 tool_finished。
-6. 把经过长度限制的工具结果作为 tool message 送回 LLM。
-7. 重复直到生成最终回答，并限制每个 Run 的工具步数。
+验收：有效授权可在 access token 过期后自动刷新并继续调用；撤销或失效时明确提示重新授权，
+不跨客户端复用凭据。OAuth 外部限制仍可能要求重新授权，不能承诺永久有效。
 
-## 集成选择
+## 二、Gmail 与 Calendar 只读工具
 
-- Server 文件：内置 Python 工具。首版提供目录列表、UTF-8 文本读取和受控文本修改。
-- 浏览器：优先使用 Playwright MCP，保留浏览器域名允许列表、超时和下载禁用策略。
-  每个 MCP Server 可配置 `allowed_domains`；配置后仅允许 HTTP(S) 的精确域名及其子域名，空列表表示暂不启用 URL 过滤。
-- Gmail：评估可审计的社区 Google Workspace MCP；不满足安全要求时直接使用官方 Gmail REST API 实现。
-- Calendar：可与 Gmail 共用社区 Workspace MCP，也可直接使用官方 Calendar REST API；接入前以 `tools/list` 核对真实能力。
-- Google OAuth：按 client_id 隔离令牌，Server 加密保存 refresh token；前端只处理授权跳转和状态，不接触持久凭据。
-- Skill：从管理员允许目录加载 SKILL.md，限制文件大小和引用范围，记录 Skill ID 与版本哈希。
+- 实现 `gmail_list_messages`、`gmail_get_message`、`calendar_list_events`。
+- 使用官方 REST API 与共用客户端，接入现有 Registry；风险为 `external_read`。
+- 支持必要的查询范围、分页/数量限制和结果裁剪。
 
-## 开发批次
+验收：用户询问“今天有哪些日程”“最近有没有面试相关邮件”时，模型自行选择工具，
+经过审批调用 API，把结果放回上下文并生成回答；拒绝与 API 错误也进入工具结果链路。
+邮件正文仅按任务需要进入上下文，不写入普通日志和审计摘要。
 
-1. 已完成：工具契约、注册表、严格参数校验和风险审批拦截。
-2. 已完成：Server 文件只读工具与 Native Agent 多轮工具循环。
-3. 已完成：Markdown 修改工具、当前连接内 Run 暂停恢复与前端批准/拒绝。跨进程恢复后续补充。
-4. 已完成：工具发现、JSON Schema 校验、Registry 注册、调用与错误归一化，并用官方 SDK 接入 stdio、Streamable HTTP Transport 和应用生命周期。
-5. 已完成：Playwright MCP 真实握手、工具发现和页面导航验证；支持域名允许列表与高风险工具过滤。
-6. 进行中：已完成按 client_id 隔离的 Google OAuth 授权、连接状态与远程撤销；下一批实现 access token 刷新并接入 Gmail/Calendar 只读工具。
-7. Gmail 草稿/发送与 Calendar 创建/修改工具的审批流程。
-8. Skill 发现、启用、上下文注入和审计展示。
+## 三、Gmail 与 Calendar 写入工具
 
-## 验收标准
+- 创建邮件草稿、发送邮件；创建、修改和删除日程。
+- OAuth 已申请 Gmail/Calendar 读写 scope；旧连接缺少权限时需重新授权。
+- 所有外部写入强制审批；摘要显示收件人、主题或日程时间等必要信息，不暴露凭据。
+- 审批绑定本次客户端、工具与参数；发送等不可重复副作用不能因重试而重复执行。
 
-- Native Agent 能读写允许目录，路径或软链接不能越界。
-- 每个副作用工具都能在执行前暂停并由当前 client 批准或拒绝。
-- MCP 断连、超时和错误不会使 Run 卡死。
-- Gmail 和 Calendar 凭据、数据及工具结果按 client_id 隔离。
-- 前端能看到工具名称、审批、状态和安全结果摘要。
-- Skill 只能组合 Agent 已获准的工具，不能扩大权限。
+验收：批准前无外部副作用；拒绝后 Agent 获得拒绝结果并继续回答。
+权限不足、请求失败与结果不确定均有可理解的前端反馈。
+
+## 四、Skill 系统
+
+后端与前端已分批交付：
+
+- 从管理员允许目录发现 `SKILL.md`，限制大小与资源引用范围。
+- 解析名称、描述、适用场景和推荐工具；支持按 Agent 启用。
+- 将启用指令注入 Native 上下文，Run 记录 Skill ID 与版本哈希。
+- 设置页展示 Skills、Agent 启停选项，Run 详情展示实际加载的 Skill。
+- Skill 不能绕过 Registry、审批或扩大 Agent 权限；不作为独立执行器。
+
+演示候选：“每日工作规划”（读取日程、整理任务、审批后创建时间块）、
+“Obsidian 日记助手”（读取当天 Markdown、整理内容、审批后修改）。
+
+验收：启停影响上下文，版本可追溯，Skill 推荐未授权工具时仍被现有权限边界拦截。
+
+## 五、面试版本收口
+
+- 验证 MCP 断连、超时、取消及异常不会使 Run 卡住。
+- 验证 Tool、MCP、Google 和 Codex 错误均在前端展示。
+- 受限 Demo mode 已拦截写入风险工具；演示数据与真实配置仍待验收。
+- 更新架构与启动说明，准备两分钟演示、项目亮点、技术取舍及简历描述。
+- 运行后端全量 unittest、前端测试、类型检查和构建。
+- 用授权测试账号验收真实 Google/MCP 链路；测试替身通过不代表外部集成验证完成。
+
+功能批次约 100 行，可按工具或前后端继续拆分；测试、文档与收口不受该行数限制。
+每批完成后报告结果和剩余计划，暂停 Review。不在此阶段扩展 RAG 研究，也不自动新增面试问答。

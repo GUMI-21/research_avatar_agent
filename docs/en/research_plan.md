@@ -1,5 +1,7 @@
 # Research Plan
 
+Research implementation is deferred. Follow the [Workspace roadmap](internship_agent_workspace_plan.md) for active work and the [Avatar integration plan](avatar_integration_plan.md) for future module boundaries and contracts.
+
 ## Core Question
 
 Can an emotion-model-driven 3D pedagogical avatar improve learner engagement,

@@ -42,9 +42,15 @@ all REST and WebSocket requests.
 
 `X-Client-ID` is a development scope header and is not authentication.
 
-Agents can be created and edited with their own provider and model. Selecting a
-cloud provider may require its API key after each Server restart because provider
-credentials are kept only in process memory.
+Agents can be created and edited with their own provider and model. Submitted
+provider keys are encrypted and persisted by the Server under client/provider
+scope; the UI never reads them back. Retain the Server's local master key together
+with its database. Environment keys remain outside the database.
+
+The UI includes conversation streaming, handoff, memory and knowledge management,
+tool approvals, Google connection status, Agent Skill settings, MCP status and
+Run/Usage inspection. See the [workspace roadmap](../docs/zh/internship_agent_workspace_plan.md)
+for integration validation still to be completed.
 
 A Codex CLI Agent instead selects a project below the Server's configured
 `codex.workspace_root`. Its browser conversation resumes one Server-side Codex

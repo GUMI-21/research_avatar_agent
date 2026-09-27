@@ -1,4 +1,4 @@
-# 2026-08-25 面试复盘：Runtime Registry 与 Session
+# 面试复盘：Runtime Registry 与 Session
 
 ## 1. 为什么需要 Runtime Adapter 和 Runtime Registry？
 

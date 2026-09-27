@@ -1,4 +1,4 @@
-# 2026-08-14 面试复盘：Agent Workspace 架构
+# 面试复盘：Agent Workspace 架构
 
 ## 1. 为什么同时使用 REST 和 WebSocket？
 

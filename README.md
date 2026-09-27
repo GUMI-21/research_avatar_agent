@@ -1,66 +1,57 @@
-# Emotion-Aware Pedagogical Avatar Agent
+# Personal Agent Workspace
 
-This repository is for a master's research and portfolio project focused on an
-emotion-aware 3D pedagogical avatar system.
+A local-first AI Agent portfolio project with a React workspace, FastAPI service
+boundary, and native runtime orchestrated by LangGraph. The longer-term research
+direction is an emotion-aware teaching avatar; Unity APIs remain compatible.
 
-The goal is to build an AI teaching agent that combines:
+The current milestone is a reliable, auditable tool execution loop:
 
-- LLM-based tutoring dialogue
-- An emotion model for student and teacher state estimation
-- Expression and motion generation for a 3D avatar
-- Unity/VRM-based avatar rendering
-- Evaluation against baseline avatar and real teaching conditions
+> Natural-language task → model selects tools → approval when required →
+> execution → result → visible run and tool audit.
 
-## Research Theme
+## Current scope
 
-Emotion-model-based expression and motion generation for 3D pedagogical avatars,
-and its impact on learning experience.
+Implemented: workspace conversations, memory, manual/automatic handoff, optional
+Codex CLI adapter, file and MCP tools, approval pause/resume, Google OAuth with
+token refresh and Gmail/Calendar read/write tools, Agent Skills, Markdown hybrid
+RAG, restricted demo mode, and run/usage inspection.
 
-## Planned Architecture
+Next: validate real Google/MCP integrations with test accounts, finish failure-path
+checks and demo materials. Further retrieval and avatar research are deferred.
 
-1. Student input through text or speech
-2. AI tutoring agent generates teaching responses
-3. Emotion model estimates student state and teacher affective response
-4. Expression and motion planner outputs avatar control JSON
-5. Unity client renders facial expressions, gaze, nodding, gestures, and voice
+## Repository layout
 
-## Initial Technical Direction
+| Path | Responsibility |
+| --- | --- |
+| `server/` | FastAPI routes, services, repositories, LangGraph, runtime adapters and tools |
+| `web/` | React/TypeScript workspace, conversations, settings and Run/Usage views |
+| `avatar-unity/` | Unity/VRM client; further development deferred |
+| `shared/` | Reserved for shared contracts and generated types |
+| `docs/zh/`, `docs/en/` | Roadmaps and research design |
+| `server/docs/` | Backend API and logging reference |
 
-- Agent framework: OpenAI Agents SDK for the first prototype, LangGraph for
-  stateful workflow experiments
-- Backend: Python for rapid AI prototyping, with possible Go services for
-  production-style APIs and realtime infrastructure
-- Avatar client: Unity with VRM models
-- Emotion model: PAD/VAD-based representation, assisted by LLM-based state
-  estimation
+## Start and validate
 
-## Repository Layout
-
-```text
-docs/          Bilingual project documents
-server/        FastAPI service boundary and LangGraph agent workflow
-web/           Future web workspace frontend
-avatar-unity/  Future Unity/VRM avatar client
-shared/        Future shared API contracts and generated types
-```
+Follow the [Server README](server/README.md) for configuration, migrations,
+backend tests, MCP and OAuth setup, then the [Web README](web/README.md) for
+frontend startup, tests and build. Mock chat does not require a cloud API key.
+Local client IDs scope data; they are not authentication.
 
 ## Documentation
 
-All project documents should be maintained in both English and Chinese. Use the
-same filename under `docs/en/` and `docs/zh/` when adding or updating docs.
-Concise backend implementation documents are maintained in English under
-`server/docs/`.
+| Topic | 中文 | English |
+| --- | --- | --- |
+| Current baseline and architecture | [Workspace 路线图](docs/zh/internship_agent_workspace_plan.md) | [Workspace roadmap](docs/en/internship_agent_workspace_plan.md) |
+| Next batches and acceptance | [Tool/MCP/Skill 计划](docs/zh/tool_mcp_skill_plan.md) | [Tool/MCP/Skill plan](docs/en/tool_mcp_skill_plan.md) |
+| Deferred research | [研究计划](docs/zh/research_plan.md) | [Research plan](docs/en/research_plan.md) |
+| Future avatar integration | [Avatar 集成计划](docs/zh/avatar_integration_plan.md) | [Avatar integration plan](docs/en/avatar_integration_plan.md) |
 
-- English:
-  - [Internship agent workspace plan](docs/en/internship_agent_workspace_plan.md)
-  - [Research plan](docs/en/research_plan.md)
-  - [July 21 development kickoff plan](docs/en/july21_demo_plan.md)
-- 中文：
-  - [实习作品集 Agent Workspace 计划](docs/zh/internship_agent_workspace_plan.md)
-  - [项目面试复盘](docs/zh/interview/)
-  - [研究计划](docs/zh/research_plan.md)
-  - [7 月 21 日开发启动计划](docs/zh/july21_demo_plan.md)
+[协作规则](AGENTS.md) · [现有面试笔记](docs/zh/interview/) · [Unity setup](avatar-unity/README.md)
+
+Keep project documents aligned in Chinese and English. Maintain current state and
+acceptance criteria rather than dated progress logs; put operational commands in
+component READMEs. Preserve existing interview notes and add Q&A only on request.
 
 ## License
 
-This project is licensed under the [MIT License](LICENSE).
+[MIT](LICENSE).
