@@ -106,6 +106,65 @@ class GoogleToolsTest(unittest.IsolatedAsyncioTestCase):
         self.assertEqual(result.metadata["error_type"], "GoogleAuthorizationRequired")
         self.assertIn("revoked", result.content)
 
+    async def test_unread_digest_reads_bounded_messages_after_one_approval(self) -> None:
+        body = base64.urlsafe_b64encode("interview schedule".encode()).decode()
+        client = FakeGoogleAPIClient(
+            httpx.Response(200, json={
+                "messages": [{"id": "msg-1"}, {"id": "msg-2"}],
+                "nextPageToken": "another-page", "resultSizeEstimate": 5,
+            }),
+            httpx.Response(200, json={
+                "id": "msg-1", "snippet": "Interview",
+                "payload": {"headers": [
+                    {"name": "Subject", "value": "Interview time"},
+                    {"name": "From", "value": "team@example.com"},
+                ], "body": {"data": body}, "mimeType": "text/plain"},
+            }),
+            httpx.Response(200, json={
+                "id": "msg-2", "snippet": "Reminder",
+                "payload": {"headers": [
+                    {"name": "Subject", "value": "Reminder"},
+                ]},
+            }),
+        )
+        registry = ToolRegistry()
+        register_google_read_tools(registry, client)  # type: ignore[arg-type]
+        context = ToolContext("client-a", "agent-a")
+        with self.assertRaises(ToolApprovalRequiredError):
+            await registry.execute("gmail_read_unread_messages", context, {})
+        self.assertEqual(client.calls, [])
+
+        result = await registry.execute(
+            "gmail_read_unread_messages", context,
+            {"max_results": 2, "max_body_chars": 9}, approved=True,
+        )
+        parsed = json.loads(result.content)
+        self.assertEqual(client.calls[0][4], {"q": "is:unread", "maxResults": 2})
+        self.assertTrue(all(call[0] == "client-a" and call[1] == "GET"
+                            for call in client.calls))
+        self.assertEqual(parsed["messages"][0]["subject"], "Interview time")
+        self.assertEqual(parsed["messages"][0]["body"], "interview")
+        self.assertTrue(parsed["messages"][0]["body_truncated"])
+        self.assertEqual(parsed["messages"][1]["subject"], "Reminder")
+        self.assertTrue(parsed["has_more"])
+        self.assertEqual(result.metadata, {"message_count": 2, "has_more": True})
+        self.assertNotIn("interview", str(result.metadata))
+
+    async def test_unread_digest_handles_empty_mailbox(self) -> None:
+        client = FakeGoogleAPIClient(httpx.Response(200, json={
+            "resultSizeEstimate": 0,
+        }))
+        registry = ToolRegistry()
+        register_google_read_tools(registry, client)  # type: ignore[arg-type]
+        result = await registry.execute(
+            "gmail_read_unread_messages", ToolContext("client-a", "agent-a"),
+            {}, approved=True,
+        )
+        self.assertEqual(len(client.calls), 1)
+        self.assertEqual(client.calls[0][4], {"q": "is:unread", "maxResults": 8})
+        self.assertEqual(json.loads(result.content)["messages"], [])
+        self.assertEqual(result.metadata["message_count"], 0)
+
     async def test_calendar_events_are_approved_scoped_and_normalized(self) -> None:
         client = FakeGoogleAPIClient(httpx.Response(200, json={
             "timeZone": "Asia/Tokyo",

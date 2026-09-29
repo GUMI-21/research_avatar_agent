@@ -1,7 +1,9 @@
 """Approved Gmail read tools backed by the shared Google API client."""
 
+import asyncio
 import base64
 import json
+import re
 from collections.abc import Mapping
 from datetime import datetime
 from email.message import EmailMessage
@@ -30,6 +32,11 @@ class GmailListMessagesArguments(ToolArguments):
 class GmailGetMessageArguments(ToolArguments):
     message_id: str = Field(min_length=1, max_length=256, pattern=r"^[A-Za-z0-9_-]+$")
     max_body_chars: int = Field(default=12_000, ge=1, le=16_000)
+
+
+class GmailReadUnreadArguments(ToolArguments):
+    max_results: int = Field(default=8, ge=1, le=8)
+    max_body_chars: int = Field(default=800, ge=0, le=1_000)
 
 
 class CalendarListEventsArguments(ToolArguments):
@@ -287,6 +294,63 @@ def register_google_read_tools(
                 "status": "error", "error_type": type(error).__name__,
             })
 
+    async def read_unread(
+        context: ToolContext, raw: ToolArguments,
+    ) -> ToolResult:
+        assert isinstance(raw, GmailReadUnreadArguments)
+        try:
+            response = await client.request(
+                context.client_id, "GET", "gmail", "/gmail/v1/users/me/messages",
+                params={"q": "is:unread", "maxResults": raw.max_results},
+            )
+            payload = response.json()
+            if not isinstance(payload, dict):
+                raise GoogleAPIError("Gmail returned an invalid response")
+            listed = payload.get("messages", [])
+            if not isinstance(listed, list):
+                raise GoogleAPIError("Gmail returned an invalid response")
+            ids = [
+                item["id"] for item in listed
+                if isinstance(item, dict)
+                and isinstance(item.get("id"), str)
+                and re.fullmatch(r"[A-Za-z0-9_-]{1,256}", item["id"])
+            ][:raw.max_results]
+
+            async def fetch(message_id: str) -> dict[str, object]:
+                detail = await client.request(
+                    context.client_id, "GET", "gmail",
+                    f"/gmail/v1/users/me/messages/{quote(message_id, safe='')}",
+                    params={"format": "full"},
+                )
+                message = detail.json()
+                if not isinstance(message, dict):
+                    raise GoogleAPIError("Gmail returned an invalid response")
+                summary = _message_summary(message, raw.max_body_chars)
+                headers = summary["headers"]
+                return {
+                    "id": message_id,
+                    "from": headers.get("from", "")[:200],
+                    "subject": headers.get("subject", "")[:200],
+                    "date": headers.get("date", "")[:100],
+                    "snippet": _limited_text(summary["snippet"])[:200],
+                    "body": summary["body"],
+                    "body_truncated": summary["body_truncated"],
+                }
+
+            messages = await asyncio.gather(*(fetch(message_id) for message_id in ids))
+            has_more = bool(payload.get("nextPageToken"))
+            return ToolResult(json.dumps({
+                "messages": messages,
+                "has_more": has_more,
+                "result_size_estimate": payload.get("resultSizeEstimate"),
+            }, ensure_ascii=False), {
+                "message_count": len(messages), "has_more": has_more,
+            })
+        except (GoogleAPIError, ValueError) as error:
+            return ToolResult(str(error), {
+                "status": "error", "error_type": type(error).__name__,
+            })
+
     async def list_events(
         context: ToolContext, raw: ToolArguments
     ) -> ToolResult:
@@ -413,6 +477,11 @@ def register_google_read_tools(
     registry.register(ToolSpec(
         "gmail_get_message", "Read one Gmail message, including selected headers and plain text.",
         GmailGetMessageArguments, ToolRisk.EXTERNAL_READ, get_message,
+    ))
+    registry.register(ToolSpec(
+        "gmail_read_unread_messages",
+        "Read up to 8 newest unread Gmail messages for a summary without marking them read. Mention has_more and truncated bodies in the answer.",
+        GmailReadUnreadArguments, ToolRisk.EXTERNAL_READ, read_unread,
     ))
     registry.register(ToolSpec(
         "calendar_list_events", "List calendar events in an explicit RFC3339 time range.",

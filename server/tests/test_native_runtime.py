@@ -2,6 +2,7 @@
 
 import tempfile
 import unittest
+import httpx
 from pathlib import Path
 from collections.abc import AsyncIterator
 from dataclasses import replace
@@ -22,7 +23,8 @@ from app.adapters.llm import (
     LLMUsage,
 )
 from app.schemas.llm import LLMProvider
-from app.tools import ToolApprovalBroker, create_file_tool_registry
+from app.tools import ToolApprovalBroker, ToolRegistry, create_file_tool_registry
+from app.tools.google import register_google_read_tools
 
 
 class FakeLLMClient(LLMClient):
@@ -128,6 +130,27 @@ class WriteToolCallingLLMClient(FakeLLMClient):
                 arguments={"path": self.path, "content": "# Approved"},
             ),
         )
+
+class UnreadToolCallingLLMClient(FakeLLMClient):
+    def __init__(self) -> None:
+        super().__init__()
+        self.requests: list[LLMRequest] = []
+
+    async def stream(
+        self, request: LLMRequest,
+    ) -> AsyncIterator[LLMStreamChunk]:
+        self.requests.append(request)
+        if len(self.requests) == 1:
+            yield LLMStreamChunk(
+                text="", provider=LLMProvider.MOCK, model="mock-tools",
+                tool_call=LLMToolCall("gmail_read_unread_messages", {}),
+            )
+        else:
+            yield LLMStreamChunk(
+                text="未读邮件：Interview time",
+                provider=LLMProvider.MOCK, model="mock-tools",
+            )
+
 
 def make_request(knowledge_context: str = "") -> RuntimeRequest:
     return RuntimeRequest(
@@ -315,6 +338,48 @@ class NativeAgentRuntimeTest(unittest.IsolatedAsyncioTestCase):
 
             self.assertEqual(path.read_text(encoding="utf-8"), "# Approved")
             self.assertIn(RuntimeEventType.TOOL_FINISHED, [item.type for item in events])
+
+    async def test_unread_mail_reaches_model_after_approval(self) -> None:
+        class FakeGoogle:
+            def __init__(self) -> None:
+                self.calls: list[str] = []
+
+            async def request(self, client_id, method, service, path, **_kwargs):
+                self.calls.append(f"{client_id}:{method}:{service}:{path}")
+                if path.endswith("/messages"):
+                    return httpx.Response(200, json={"messages": [{"id": "msg-1"}]})
+                return httpx.Response(200, json={
+                    "id": "msg-1", "snippet": "Interview",
+                    "payload": {"headers": [
+                        {"name": "Subject", "value": "Interview time"},
+                    ]},
+                })
+
+        google = FakeGoogle()
+        registry = ToolRegistry()
+        register_google_read_tools(registry, google)  # type: ignore[arg-type]
+        llm = UnreadToolCallingLLMClient()
+        approvals = ToolApprovalBroker()
+        runtime = NativeAgentRuntime(llm, registry, approvals)
+        events = []
+        async for event in runtime.stream(replace(
+            make_request(), message="总结当前未读邮件",
+        )):
+            events.append(event)
+            if event.type is RuntimeEventType.APPROVAL_REQUIRED:
+                self.assertEqual(google.calls, [])
+                approvals.decide(
+                    "client-a", "run-1", str(event.payload["approval_id"]), True,
+                )
+
+        self.assertEqual(len(llm.requests), 2)
+        self.assertIn(
+            "gmail_read_unread_messages",
+            [tool.name for tool in llm.requests[0].tools],
+        )
+        self.assertIn("Interview time", llm.requests[1].message)
+        self.assertEqual(events[-1].type, RuntimeEventType.RUN_FINISHED)
+        self.assertTrue(all(call.startswith("client-a:GET:gmail:") for call in google.calls))
 
     async def test_approved_tool_failure_closes_audit_event(self) -> None:
         with tempfile.TemporaryDirectory() as directory:

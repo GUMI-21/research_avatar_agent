@@ -184,6 +184,43 @@ Server validates one-time state and PKCE before encrypting the refresh token.
 client. `DELETE /api/v1/google/oauth/connection` revokes the token at Google
 before deleting the local ciphertext. The client secret and tokens must never
 be added to YAML, logs, or Git.
+
+#### Unread Gmail summary smoke test
+
+Create a Google Cloud project, enable the Gmail API, and configure the OAuth
+consent screen. For a personal Gmail test account, select an External audience
+in Testing and add that account as a test user. Create an OAuth client of type
+**Web application** with the exact redirect URI above. See Google's
+[Gmail setup](https://developers.google.com/workspace/gmail/api/quickstart/python)
+and [web-server OAuth guide](https://developers.google.com/identity/protocols/oauth2/web-server).
+The current consent request includes Gmail read/compose/send and Calendar
+read/events scopes; use a dedicated test account.
+
+Start Server with the OAuth environment variables above in the same PowerShell
+session. Set `$clientId` to the user ID selected in the Web settings, then run:
+
+```powershell
+$clientId = "local-demo"
+$headers = @{ "X-Client-ID" = $clientId }
+$auth = Invoke-RestMethod -Method Post -Headers $headers -Uri http://127.0.0.1:8000/api/v1/google/oauth/start
+Start-Process $auth.authorization_url
+```
+
+Complete consent in the browser, then check status in the same terminal:
+
+```powershell
+Invoke-RestMethod -Headers $headers -Uri http://127.0.0.1:8000/api/v1/google/oauth/status
+```
+
+It should report
+`connected: true`. Configure a real tool-capable Native Agent model in Web
+(Mock does not select tools). Ask it to “总结当前未读邮件，并注明是否还有更多邮件”.
+Approve the `external_read` request for `gmail_read_unread_messages` in the
+Run. The tool reads up to eight newest unread messages without marking them
+read; the answer should say when more messages or truncated bodies remain.
+The callback shows a small JSON success response, and no mail body should appear
+in ordinary Server logs or Run audit metadata.
+
 ### macOS / Linux
 
 Install dependencies in a virtual environment, then start the API server from
