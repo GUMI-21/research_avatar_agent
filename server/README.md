@@ -5,6 +5,10 @@ emotion-aware avatar assistant.
 
 FastAPI owns REST/WebSocket APIs, client-scoped persistence, Native Agent runs,
 memory, tools, MCP, Google OAuth connections, usage and Markdown retrieval.
+Native tool calling is wired through OpenAI, Gemini, and DeepSeek adapters;
+Mock is a deterministic echo for tests and cannot select tools. Provider tool
+requests are covered by adapter tests, but live-account end-to-end validation
+remains outstanding.
 LangGraph coordinates manual/automatic handoff with an in-memory checkpointer;
 pending tool approvals are also in memory. Event replay does not provide
 cross-process execution recovery. Codex runs use an optional CLI proxy adapter.
@@ -282,7 +286,8 @@ curl -X POST http://127.0.0.1:8000/api/v1/llm/config \
   -d '{"provider":"openai"}'
 ```
 
-Unity and web clients use this shared endpoint. Submitted provider keys are
+The web UI submits this configuration from the Agent create/edit dialog only;
+Unity and API clients can still use the endpoint directly. Submitted provider keys are
 scoped by `client_id + provider`, encrypted before SQLite persistence, and
 never returned by the API. The local Fernet master key is generated at
 `runtime/credential.key`; keep that ignored runtime file when retaining the

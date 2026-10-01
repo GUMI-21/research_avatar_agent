@@ -16,6 +16,7 @@ from app.adapters.agent import (
     RuntimeRequest,
 )
 from app.adapters.knowledge import EmbeddingClient
+from app.core.intent import is_simple_greeting
 from app.models import MessageRecord
 from app.orchestration import AgentRunTarget, LangGraphRunOrchestrator
 from app.repositories import (
@@ -259,7 +260,7 @@ class RunExecutionService:
         try:
             source_ids = (
                 sorted(set(agent.knowledge_source_ids))
-                if agent.runtime == "native"
+                if agent.runtime == "native" and not is_simple_greeting(message)
                 else []
             )
             if source_ids:

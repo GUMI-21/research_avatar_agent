@@ -85,6 +85,17 @@ def make_request() -> LLMRequest:
     )
 
 
+def make_tool_request() -> LLMRequest:
+    return LLMRequest(
+        request_id="req_tool", session_id="agent-demo", message="List files",
+        tools=(LLMToolDefinition(
+            "list_files", "List accessible files",
+            {"type": "object", "properties": {"path": {"type": "string"}},
+             "required": ["path"]},
+        ),),
+    )
+
+
 class LLMRuntimeConfigurationTest(unittest.TestCase):
     """Verify defaults, secret handling, and safe endpoint overrides."""
 
@@ -543,6 +554,22 @@ class ProviderAdapterTest(unittest.IsolatedAsyncioTestCase):
         self.assertEqual(usage.output_tokens, 7)
         self.assertEqual(usage.cache_read_tokens, 3)
 
+    async def test_gemini_stream_normalizes_tool_call(self) -> None:
+        async def handler(request: httpx.Request) -> httpx.Response:
+            declaration = json.loads(request.content)["tools"][0]["functionDeclarations"][0]
+            self.assertEqual(declaration["name"], "list_files")
+            self.assertEqual(declaration["parametersJsonSchema"]["required"], ["path"])
+            return httpx.Response(200, text='data: {"candidates":[{"content":{"parts":['
+                                  '{"functionCall":{"name":"list_files","args":{"path":"."}}}'
+                                  ']}}]}\n\n', headers={"Content-Type": "text/event-stream"})
+
+        adapter = GeminiAdapter(make_client_config(
+            LLMProvider.GEMINI, "https://generativelanguage.googleapis.com/v1beta",
+            "gemini-3.5-flash"), transport=httpx.MockTransport(handler))
+        chunks = [chunk async for chunk in adapter.stream(make_tool_request())]
+        self.assertEqual(chunks[0].tool_call.name, "list_files")
+        self.assertEqual(chunks[0].tool_call.arguments, {"path": "."})
+
     async def test_deepseek_chat_completions_format(self) -> None:
         async def handler(request: httpx.Request) -> httpx.Response:
             payload = json.loads(request.content)
@@ -617,6 +644,28 @@ class ProviderAdapterTest(unittest.IsolatedAsyncioTestCase):
         self.assertEqual(usage.input_tokens, 10)
         self.assertEqual(usage.output_tokens, 2)
         self.assertEqual(usage.cache_read_tokens, 6)
+
+    async def test_deepseek_stream_assembles_tool_call(self) -> None:
+        async def handler(request: httpx.Request) -> httpx.Response:
+            tool = json.loads(request.content)["tools"][0]["function"]
+            self.assertEqual(tool["name"], "list_files")
+            body = "\n\n".join([
+                'data: {"choices":[{"delta":{"tool_calls":[{"index":0,'
+                '"function":{"name":"list_files","arguments":"{\\"path\\":"}}]}}]}',
+                'data: {"choices":[{"delta":{"tool_calls":[{"index":0,'
+                '"function":{"arguments":"\\".\\"}"}}]}}]}',
+                'data: {"choices":[],"usage":{"prompt_tokens":7,"completion_tokens":4}}',
+                'data: [DONE]',
+            ])
+            return httpx.Response(200, text=body, headers={"Content-Type": "text/event-stream"})
+
+        adapter = DeepSeekAdapter(make_client_config(
+            LLMProvider.DEEPSEEK, "https://api.deepseek.com", "deepseek-v4-flash"),
+            transport=httpx.MockTransport(handler))
+        chunks = [chunk async for chunk in adapter.stream(make_tool_request())]
+        self.assertEqual(chunks[0].tool_call.name, "list_files")
+        self.assertEqual(chunks[0].tool_call.arguments, {"path": "."})
+        self.assertEqual(chunks[-1].usage.input_tokens, 7)
 
     async def test_timeout_is_converted(self) -> None:
         async def handler(request: httpx.Request) -> httpx.Response:

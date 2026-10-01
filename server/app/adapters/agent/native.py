@@ -1,5 +1,6 @@
 """Native Personal Agent runtime backed by the configured LLM API."""
 
+import json
 from collections.abc import AsyncIterator
 
 from app.adapters.agent.base import (
@@ -15,6 +16,7 @@ from app.adapters.llm import (
     LLMUsage,
 )
 from app.schemas.llm import LLMProvider
+from app.core.intent import is_simple_greeting
 from app.tools import (
     ToolApprovalBroker,
     ToolApprovalRequiredError,
@@ -69,6 +71,9 @@ def _handoff_tools(
             },
         ),
     )
+
+
+MAX_TOOL_CALLS = 6
 
 # 符合 AgentRuntimeAdapter 协议的具体实现
 class NativeAgentRuntime:
@@ -128,12 +133,16 @@ class NativeAgentRuntime:
             message = "\n\n".join(
                 [*context_parts, f"用户问题:\n{request.message}"]
             )
+        greeting = is_simple_greeting(request.message)
         tool_definitions = (
-            self._tools.definitions() if self._tools is not None else ()
+            self._tools.definitions() if self._tools is not None and not greeting else ()
         )
         tool_context = ToolContext(request.client_id, request.agent_id)
+        last_tool_call: tuple[str, str] | None = None
+        force_final = False
         try:
-            for _step in range(4):
+            for step in range(MAX_TOOL_CALLS + 1):
+                final_only = greeting or force_final or step == MAX_TOOL_CALLS
                 requested_tool = False
                 async for chunk in self._llm_client.stream(
                     LLMRequest(
@@ -145,8 +154,17 @@ class NativeAgentRuntime:
                             LLMProvider(request.provider) if request.provider else None
                         ),
                         model=request.model,
-                        instructions=instructions,
-                        tools=(
+                        instructions=(
+                            (instructions or "") + (
+                                "\nThe current message is only a greeting. Reply briefly; "
+                                "do not resume earlier tasks."
+                                if greeting else
+                                "\nAnswer the current user request now. Do not call tools; "
+                                "say if the task remains incomplete."
+                            )
+                            if final_only else instructions
+                        ),
+                        tools=() if final_only else (
                             *_handoff_tools(request.handoff_targets),
                             *tool_definitions,
                         ),
@@ -156,6 +174,8 @@ class NativeAgentRuntime:
                     model = chunk.model
                     usage = _add_usage(usage, chunk.usage)
                     if chunk.tool_call is not None:
+                        if final_only:
+                            raise RuntimeError("Provider called a tool after tools were disabled")
                         arguments = chunk.tool_call.arguments
                         if chunk.tool_call.name == "delegate_to_agent":
                             target_id = arguments.get("target_agent_id")
@@ -188,6 +208,28 @@ class NativeAgentRuntime:
                             continue
                         if self._tools is None:
                             raise ValueError("Requested tool is not available")
+                        call_key = (
+                            chunk.tool_call.name,
+                            json.dumps(dict(arguments), sort_keys=True, ensure_ascii=False),
+                        )
+                        if call_key == last_tool_call:
+                            # Avoid repeating an identical side effect or read in one Run.
+                            yield RuntimeEvent(
+                                type=RuntimeEventType.TOOL_STARTED,
+                                payload={"tool_name": chunk.tool_call.name},
+                            )
+                            yield RuntimeEvent(
+                                type=RuntimeEventType.TOOL_FINISHED,
+                                payload={
+                                    "tool_name": chunk.tool_call.name,
+                                    "status": "skipped", "reason": "duplicate_call",
+                                },
+                            )
+                            message += "\n\nThe previous tool call already used these arguments. Use its result and answer now."
+                            force_final = True
+                            requested_tool = True
+                            break
+                        last_tool_call = call_key
                         yield RuntimeEvent(
                             type=RuntimeEventType.TOOL_STARTED,
                             payload={"tool_name": chunk.tool_call.name},
@@ -272,8 +314,6 @@ class NativeAgentRuntime:
                         )
                 if not requested_tool:
                     break
-            else:
-                raise RuntimeError("Tool call limit exceeded")
             if not emitted_text and not emitted_action:
                 raise RuntimeError("LLM stream ended without text")
         except Exception as error:

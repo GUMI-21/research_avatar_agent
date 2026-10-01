@@ -152,6 +152,24 @@ class UnreadToolCallingLLMClient(FakeLLMClient):
             )
 
 
+class RepeatingFileLLMClient(FakeLLMClient):
+    def __init__(self, vary_arguments: bool = False) -> None:
+        super().__init__()
+        self.vary_arguments = vary_arguments
+        self.requests: list[LLMRequest] = []
+
+    async def stream(self, request: LLMRequest) -> AsyncIterator[LLMStreamChunk]:
+        self.requests.append(request)
+        if not request.tools:
+            yield LLMStreamChunk("Final answer", LLMProvider.MOCK, "mock-tools")
+            return
+        max_entries = len(self.requests) if self.vary_arguments else 1
+        yield LLMStreamChunk(
+            "", LLMProvider.MOCK, "mock-tools",
+            tool_call=LLMToolCall("list_files", {"path": ".", "max_entries": max_entries}),
+        )
+
+
 def make_request(knowledge_context: str = "") -> RuntimeRequest:
     return RuntimeRequest(
         run_id="run-1",
@@ -167,6 +185,48 @@ def make_request(knowledge_context: str = "") -> RuntimeRequest:
 
 
 class NativeAgentRuntimeTest(unittest.IsolatedAsyncioTestCase):
+    async def test_greeting_does_not_offer_tools_or_resume_old_task(self) -> None:
+        client = FakeLLMClient()
+        runtime = NativeAgentRuntime(
+            client, create_file_tool_registry(Path(__file__).resolve().parents[1])
+        )
+        request = replace(make_request(), message="你好", conversation_context="user: 修改日记")
+
+        events = [event async for event in runtime.stream(request)]
+
+        self.assertEqual(events[-1].type, RuntimeEventType.RUN_FINISHED)
+        assert client.last_request is not None
+        self.assertEqual(client.last_request.tools, ())
+        self.assertIn("do not resume earlier tasks", client.last_request.instructions)
+
+    async def test_duplicate_tool_call_is_skipped_then_model_answers(self) -> None:
+        client = RepeatingFileLLMClient()
+        runtime = NativeAgentRuntime(
+            client, create_file_tool_registry(Path(__file__).resolve().parents[1])
+        )
+
+        events = [event async for event in runtime.stream(make_request())]
+
+        finished = [event.payload for event in events if event.type is RuntimeEventType.TOOL_FINISHED]
+        self.assertEqual([item["status"] for item in finished], ["completed", "skipped"])
+        self.assertEqual(finished[-1]["reason"], "duplicate_call")
+        self.assertEqual(len(client.requests), 3)
+        self.assertEqual(client.requests[-1].tools, ())
+        self.assertEqual(events[-1].type, RuntimeEventType.RUN_FINISHED)
+
+    async def test_budget_gets_one_final_answer_without_tools(self) -> None:
+        client = RepeatingFileLLMClient(vary_arguments=True)
+        runtime = NativeAgentRuntime(
+            client, create_file_tool_registry(Path(__file__).resolve().parents[1])
+        )
+
+        events = [event async for event in runtime.stream(make_request())]
+
+        self.assertEqual(len([e for e in events if e.type is RuntimeEventType.TOOL_FINISHED]), 6)
+        self.assertEqual(len(client.requests), 7)
+        self.assertEqual(client.requests[-1].tools, ())
+        self.assertEqual(events[-1].type, RuntimeEventType.RUN_FINISHED)
+
     async def test_success_is_normalized_to_runtime_events(self) -> None:
         client = FakeLLMClient()
         runtime = NativeAgentRuntime(client)

@@ -15,7 +15,7 @@ Go 后端经验作为补充；本阶段不增加 Go 微服务。Avatar 教学、
 | 能力 | 当前实现 |
 | --- | --- |
 | Workspace | Agent、用户、Session、消息、Provider/Model 设置与持久化，按 `client_id` 隔离 |
-| Native Runtime | 流式回复、多轮工具执行、短期上下文与可管理的长期记忆 |
+| Native Runtime | OpenAI、Gemini、DeepSeek 的流式工具选择与多轮执行，短期上下文与可管理的长期记忆；Mock 仅固定回显 |
 | 编排 | LangGraph 状态图、手动及自动 handoff，最多两次转交并拒绝循环 |
 | Web | 真实 REST/WebSocket 流程，取消、重连与持久事件补发 |
 | Codex | CLI 纯代理 Adapter，隔离的 thread 绑定、项目目录约束、事件和 Usage 归一化 |
@@ -55,7 +55,7 @@ REST 管资源，WebSocket 传递 AG-UI-compatible 运行事件与项目扩展�
 ## 已知边界
 
 - LangGraph checkpoint 与待审批状态保存在进程内；事件重放不等于跨进程继续执行。
-- 自动 handoff 已接入 OpenAI 工具协议；其他 Provider 的同等支持不能默认视为已完成。
+- OpenAI、Gemini、DeepSeek 已接入工具 schema 和调用解析；真实账号端到端验证仍待完成。Mock 不具备模型工具选择能力。
 - Native 文件工具继承 Server 系统权限，并未限制在知识库或 Codex 允许目录中。
 - MCP 域名过滤检查工具 URL 参数，不覆盖重定向和所有子资源；空列表不启用过滤。
 - Google 工具和 Skill 已实现，但尚未使用授权测试账号完成真实外部链路验收。

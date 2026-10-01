@@ -169,6 +169,19 @@ class NativeKnowledgeRunTest(unittest.IsolatedAsyncioTestCase):
                 )
                 self.assertLess(streamed.index(prepared[0]), streamed.index(agent_started))
 
+                greeting_events = [
+                    item async for item in service.stream(
+                        "client-a", conversation.id, "你好"
+                    )
+                ]
+                self.assertFalse(any(
+                    item.event.type in {
+                        RuntimeEventType.RETRIEVAL_STARTED,
+                        RuntimeEventType.RETRIEVAL_RESULT,
+                    }
+                    for item in greeting_events
+                ))
+
                 no_context_agent = await AgentRepository(session).create(
                     "client-a", name="NoContext", system_prompt="Plain."
                 )

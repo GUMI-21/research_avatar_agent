@@ -96,6 +96,9 @@ function eventDetail(type: string, payload: Record<string, unknown>, agents: Age
       return `${name} · ${String(payload.error_type || "执行失败")}`;
     }
     if (payload.status === "rejected") return `${name} · 用户已拒绝`;
+    if (payload.status === "skipped" && payload.reason === "duplicate_call") {
+      return `${name} · 重复参数调用已跳过`;
+    }
     return name;
   }
   return String(payload.message || payload.status || "事件已记录");
@@ -119,7 +122,9 @@ function RunCard({ run, agents }: { run: LiveRun; agents: Agent[] }) {
           <span className="event-dot" />
           <b>{event.type === "tool_finished" && event.payload.status === "error"
             ? "工具失败"
-            : eventLabels[event.type] || event.type}</b>
+            : event.type === "tool_finished" && event.payload.status === "skipped"
+              ? "工具跳过"
+              : eventLabels[event.type] || event.type}</b>
           <span>{eventDetail(event.type, event.payload, agents)}</span>
           <time>{event.sequence == null ? "live" : `#${event.sequence}`}</time>
         </div>
@@ -590,6 +595,7 @@ export function App() {
       )}
       {dialog === "agent" && (
         <AgentDialog
+          clientId={clientId}
           agent={editingAgent}
           onClose={() => setDialog(null)}
           onSaved={(saved) => {
@@ -616,13 +622,14 @@ export function App() {
   );
 }
 
-function AgentDialog({ agent, onClose, onSaved }: {
+function AgentDialog({ clientId, agent, onClose, onSaved }: {
+  clientId: string;
   agent: Agent | null;
   onClose: () => void;
   onSaved: (agent: Agent) => void;
 }) {
   const providersQuery = useQuery({ queryKey: ["llm-providers"], queryFn: workspaceApi.listLLMProviders });
-  const configQuery = useQuery({ queryKey: ["llm-config"], queryFn: workspaceApi.getLLMConfig });
+  const configQuery = useQuery({ queryKey: ["llm-config", clientId], queryFn: workspaceApi.getLLMConfig });
   const [runtime, setRuntime] = useState(agent?.runtime || "native");
   const [providerId, setProviderId] = useState("");
   const [model, setModel] = useState("");
@@ -730,8 +737,9 @@ function AgentDialog({ agent, onClose, onSaved }: {
               </select>
             </label>
             {providerId !== "mock" && (
-              <label>API Key（首次使用该厂商时填写）<input name="api_key" type="password" autoComplete="off" /></label>
+              <label>API Key（留空复用该用户已配置的厂商凭据或环境变量）<input name="api_key" type="password" autoComplete="off" /></label>
             )}
+            {providerId === "mock" && <small className="field-hint">Mock 只固定回显，用于测试；不会选择 Tool/MCP。</small>}
             <small className="field-hint">凭据按用户加密保存在本地 Server；已配置过该厂商时可留空。</small>
           </>
         )}

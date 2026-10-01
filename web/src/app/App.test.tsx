@@ -418,6 +418,26 @@ describe("Agent workspace resources", () => {
     expect(screen.getByText("mcp_browser_navigate · MCPError")).toBeInTheDocument();
   });
 
+  it("shows when a duplicate tool call was skipped", async () => {
+    renderApp();
+    const composer = screen.getByLabelText("消息");
+    await waitFor(() => expect(composer).toBeEnabled());
+    fireEvent.change(composer, { target: { value: "列出文件" } });
+    fireEvent.click(screen.getByRole("button", { name: "发送" }));
+
+    act(() => {
+      const socket = FakeWebSocket.instances[0];
+      socket.emit({ type: "run_started", run_id: "run-repeat", sequence: 1, payload: {} });
+      socket.emit({
+        type: "tool_finished", run_id: "run-repeat", sequence: 2,
+        payload: { tool_name: "list_files", status: "skipped", reason: "duplicate_call" },
+      });
+    });
+
+    expect(screen.getByText("工具跳过")).toBeInTheDocument();
+    expect(screen.getByText("list_files · 重复参数调用已跳过")).toBeInTheDocument();
+  });
+
   it("reviews and approves a Markdown tool call", async () => {
     renderApp();
     const composer = screen.getByLabelText("消息");
@@ -646,7 +666,7 @@ describe("Agent workspace resources", () => {
     fireEvent.change(screen.getByRole("combobox", { name: "Agent 头像 Emoji" }), {
       target: { value: "🐙" },
     });
-    fireEvent.change(screen.getByLabelText("API Key（首次使用该厂商时填写）"), {
+    fireEvent.change(screen.getByLabelText("API Key（留空复用该用户已配置的厂商凭据或环境变量）"), {
       target: { value: "agent-key" },
     });
     await waitFor(() => expect(screen.getByRole("button", { name: "保存" })).toBeEnabled());
@@ -699,26 +719,15 @@ describe("Agent workspace resources", () => {
     expect(screen.queryByRole("heading", { name: "工作区设置" })).not.toBeInTheDocument();
   });
 
-  it("configures the real server runtime from settings", async () => {
+  it("configures provider keys only from the Agent editor", async () => {
     renderApp();
     fireEvent.click(screen.getByRole("button", { name: "设置" }));
-
-    const provider = await screen.findByLabelText("Provider");
-    await screen.findByText(/当前配置：mock \/ mock-echo/);
-    fireEvent.change(provider, { target: { value: "openai" } });
-    fireEvent.change(screen.getByLabelText("API Key（留空则使用 Server 环境变量）"), {
-      target: { value: "test-key" },
-    });
-    fireEvent.click(screen.getByRole("button", { name: "应用配置" }));
-
-    await waitFor(() => expect(fetch).toHaveBeenCalledWith(
-      "/api/v1/llm/config",
-      expect.objectContaining({
-        method: "POST",
-        body: JSON.stringify({ provider: "openai", model: "gpt-5.6-luna", api_key: "test-key" }),
-      }),
-    ));
-    expect(await screen.findByText(/当前配置：openai \/ gpt-5.6-luna/)).toBeInTheDocument();
+    expect(screen.queryByText("模型运行时")).not.toBeInTheDocument();
+    expect(screen.queryByLabelText(/API Key/)).not.toBeInTheDocument();
+    fireEvent.click(screen.getAllByRole("button", { name: "关闭" })[0]);
+    fireEvent.click(await screen.findByRole("button", { name: "编辑 Agent" }));
+    await waitFor(() => expect(screen.getByLabelText("Agent 厂商")).toHaveValue("openai"));
+    expect(screen.getByLabelText("API Key（留空复用该用户已配置的厂商凭据或环境变量）")).toBeInTheDocument();
   });
 
   it("enables a discovered Skill for a Native Agent", async () => {

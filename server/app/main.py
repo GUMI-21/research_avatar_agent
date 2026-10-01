@@ -38,7 +38,8 @@ def _mark_mcp_unavailable(
     status["error_type"] = type(error.__cause__ or error).__name__
 
 
-@asynccontextmanager # 异步协程，由“异步生成器”实现的生命周期上下文。
+# 由“异步生成器”实现的生命周期上下文。 fastapi启动和关闭时的资源管理
+@asynccontextmanager
 async def lifespan(app: FastAPI) -> AsyncIterator[None]:
     """Record the server process lifecycle."""
     await app.state.llm_credentials.restore(app.state.llm_runtime)
@@ -126,19 +127,25 @@ def create_app(settings: Settings) -> FastAPI:
     )
     app.state.settings = settings
     app.state.mcp_statuses = {
+        # stdio_server 本地npx程序; dict推导式语法
         **{
             ("stdio", config.name): {
-                "name": config.name, "transport": "stdio", "status": "pending",
+                "name": config.name,
+                "transport": "stdio",
+                "status": "pending",
             }
             for config in settings.mcp.stdio_servers
         },
         **{
             ("http", config.name): {
-                "name": config.name, "transport": "http", "status": "pending",
+                "name": config.name,
+                "transport": "http",
+                "status": "pending",
             }
             for config in settings.mcp.http_servers
         },
     }
+    # default - url: sqlite+aiosqlite:///data/personal_agent.db
     app.state.database = Database(settings.database.url)
     app.state.skill_catalog = SkillCatalog(
         settings.skills.directories, settings.skills.max_file_bytes

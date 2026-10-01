@@ -44,6 +44,23 @@ def _openai_tools(request: LLMRequest) -> list[dict[str, object]]:
     ]
 
 
+def _chat_tools(request: LLMRequest) -> list[dict[str, object]]:
+    return [
+        {"type": "function", "function": {
+            "name": tool.name, "description": tool.description,
+            "parameters": dict(tool.input_schema),
+        }} for tool in request.tools
+    ]
+
+
+def _gemini_tools(request: LLMRequest) -> list[dict[str, object]]:
+    return [{"functionDeclarations": [
+        {"name": tool.name, "description": tool.description,
+         "parametersJsonSchema": dict(tool.input_schema)}
+        for tool in request.tools
+    ]}]
+
+
 # 继承LLMclient抽象基
 class MockLLMAdapter(LLMClient):
     """Deterministic local adapter used before configuration and in tests."""
@@ -330,6 +347,7 @@ class DeepSeekAdapter(_HTTPAdapter):
     ) -> AsyncIterator[LLMStreamChunk]:
         emitted = False
         reported_usage: LLMUsage | None = None
+        pending_calls: dict[int, dict[str, str]] = {}
         async for event in self._stream_json(
             "chat/completions",
             headers={
@@ -346,6 +364,7 @@ class DeepSeekAdapter(_HTTPAdapter):
                 "max_tokens": self.config.max_output_tokens,
                 "stream": True,
                 "stream_options": {"include_usage": True},
+                **({"tools": _chat_tools(request)} if request.tools else {}),
             },
         ):
             if "error" in event:
@@ -370,6 +389,18 @@ class DeepSeekAdapter(_HTTPAdapter):
             delta = choice.get("delta")
             if not isinstance(delta, dict):
                 continue
+            tool_calls = delta.get("tool_calls")
+            if isinstance(tool_calls, list):
+                for call in tool_calls:
+                    if not isinstance(call, dict) or not isinstance(call.get("index"), int):
+                        raise LLMResponseError(self.config.provider)
+                    pending = pending_calls.setdefault(call["index"], {"name": "", "arguments": ""})
+                    function = call.get("function")
+                    if isinstance(function, dict):
+                        for field in ("name", "arguments"):
+                            value = function.get(field)
+                            if isinstance(value, str):
+                                pending[field] += value
             text = delta.get("content")
             if isinstance(text, str) and text:
                 emitted = True
@@ -378,6 +409,19 @@ class DeepSeekAdapter(_HTTPAdapter):
                     provider=self.config.provider,
                     model=self.config.model,
                 )
+        for index in sorted(pending_calls):
+            call = pending_calls[index]
+            try:
+                arguments = json.loads(call["arguments"])
+            except ValueError as error:
+                raise LLMResponseError(self.config.provider) from error
+            if not call["name"] or not isinstance(arguments, dict):
+                raise LLMResponseError(self.config.provider)
+            emitted = True
+            yield LLMStreamChunk(
+                text="", provider=self.config.provider, model=self.config.model,
+                tool_call=LLMToolCall(name=call["name"], arguments=arguments),
+            )
         if not emitted:
             raise LLMResponseError(self.config.provider)
         if reported_usage is not None:
@@ -412,6 +456,7 @@ class GeminiAdapter(_HTTPAdapter):
                 "generationConfig": {
                     "maxOutputTokens": self.config.max_output_tokens
                 },
+                **({"tools": _gemini_tools(request)} if request.tools else {}),
             },
         )
         try:
@@ -452,6 +497,7 @@ class GeminiAdapter(_HTTPAdapter):
                 "generationConfig": {
                     "maxOutputTokens": self.config.max_output_tokens
                 },
+                **({"tools": _gemini_tools(request)} if request.tools else {}),
             },
         ):
             if "error" in event:
@@ -484,6 +530,16 @@ class GeminiAdapter(_HTTPAdapter):
             for part in parts:
                 if not isinstance(part, dict) or part.get("thought") is True:
                     continue
+                function_call = part.get("functionCall")
+                if isinstance(function_call, dict):
+                    name, arguments = function_call.get("name"), function_call.get("args", {})
+                    if not isinstance(name, str) or not name or not isinstance(arguments, dict):
+                        raise LLMResponseError(self.config.provider)
+                    emitted = True
+                    yield LLMStreamChunk(
+                        text="", provider=self.config.provider, model=self.config.model,
+                        tool_call=LLMToolCall(name=name, arguments=arguments),
+                    )
                 text = part.get("text")
                 if isinstance(text, str) and text:
                     emitted = True
