@@ -6,6 +6,7 @@ from sqlalchemy.ext.asyncio import AsyncSession
 from app.models import RuntimeThreadRecord
 
 
+# 外部线程ID
 class RuntimeThreadRepository:
     def __init__(self, session: AsyncSession) -> None:
         self._session = session

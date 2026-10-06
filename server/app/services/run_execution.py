@@ -158,6 +158,7 @@ class RunExecutionService:
         self._graph_checkpointer = graph_checkpointer
         self._skill_catalog = skill_catalog
 
+    # 处理agent事件
     async def stream(
         self,
         client_id: str,
@@ -180,16 +181,20 @@ class RunExecutionService:
         )
         if agent is None:
             raise RunExecutionParentNotFoundError("Agent not found")
+        # 装配最近的上下文，暂定12条
         recent_messages = await MessageRepository(self._session).list_messages(
             client_id, session_id, limit=RECENT_MESSAGE_LIMIT
         )
+        # 已注册的llm runtime_id -> 当前：native / codex
         available_runtime_ids = set(self._registry.available())
+        # 只获取runtime当前可用的agent
         available_agents = [
             item
             for item in await agent_repository.list_agents(client_id)
             if item.runtime in available_runtime_ids
         ]
         agents_by_id = {item.id: item for item in available_agents}
+        # 读写外部 Runtime 的 thread ID （codex线程ID）
         thread_repository = RuntimeThreadRepository(self._session)
         runtime_thread_ids = {
             item.id: await thread_repository.get_external_id(
@@ -197,6 +202,7 @@ class RunExecutionService:
             )
             for item in available_agents if item.runtime == "codex"
         }
+        # 长期记忆
         memory_repository = MemoryRepository(self._session)
         memory_records = {
             item.id: await memory_repository.list_for_agent(
@@ -247,6 +253,7 @@ class RunExecutionService:
             content=message,
             run_id=run.id,
         )
+        # 计时
         execution_started = perf_counter()
         run_started = await self._process(
             client_id,
@@ -291,6 +298,7 @@ class RunExecutionService:
                         limit=KNOWLEDGE_PER_SOURCE_LIMIT,
                     )
                     hits.extend(source_hits)
+                    # event落库
                     result = await self._process(
                         client_id,
                         run.id,
@@ -365,6 +373,7 @@ class RunExecutionService:
         graph_targets = {
             item.id: AgentRunTarget(
                 self._registry.create(item.runtime),
+                # replace: 复制原来的request，只修改部分片段
                 replace(
                     request,
                     agent_id=item.id,
@@ -387,9 +396,11 @@ class RunExecutionService:
                     ) + (HandoffTarget(agent.id, agent.name),),
                 ),
             )
+            # 除了当前agent的其他可用agent
             for item in available_agents
             if item.id != agent.id
         }
+        # 控制由哪个agent执行以及是否进行handoff
         orchestrator = LangGraphRunOrchestrator(
             runtime, self._graph_checkpointer, graph_targets
         )

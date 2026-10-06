@@ -14,7 +14,7 @@ class RunEventRunNotFoundError(LookupError):
     pass
 
 
-# agent执行状态event记录
+# run_events CURD
 class RunEventRepository:
     def __init__(self, session: AsyncSession) -> None:
         self._session = session
