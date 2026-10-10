@@ -22,20 +22,26 @@ class CodexWorkspaceError(ValueError):
     pass
 
 
+# 启动codex cli子进程，prompt写进stdin，把stdout的每一行json往外面yeid
 async def _codex_lines(command: tuple[str, ...], prompt: str) -> AsyncIterator[str]:
     # Uvicorn reload uses SelectorEventLoop on Windows, which has no asyncio
     # subprocess support. A worker thread keeps JSONL streaming non-blocking.
+    # 接codex子进程的stderr
     with TemporaryFile() as error_file:
+        # 启动codex子进程，获取子进程对象
         process = await asyncio.to_thread(
             subprocess.Popen, command, stdin=subprocess.PIPE,
             stdout=subprocess.PIPE, stderr=error_file,
         )
+        # 条件不成立就报错
         assert process.stdin is not None
         assert process.stdout is not None
         try:
             await asyncio.to_thread(process.stdin.write, prompt.encode("utf-8"))
             await asyncio.to_thread(process.stdin.close)
+            # := 判断条件时顺便赋值
             while raw_line := await asyncio.to_thread(process.stdout.readline):
+                # 在线程中阻塞等待并读取 Codex stdout 的下一行
                 yield raw_line.decode("utf-8")
             return_code = await asyncio.to_thread(process.wait)
             if return_code:
@@ -46,6 +52,7 @@ async def _codex_lines(command: tuple[str, ...], prompt: str) -> AsyncIterator[s
                 raise CodexProcessError(
                     f"Codex exited with status {return_code}{suffix}"
                 )
+        # 关闭codex子进程
         finally:
             if process.poll() is None:
                 process.terminate()
@@ -69,6 +76,7 @@ class CodexAgentRuntime:
         self._timeout_seconds = timeout_seconds
         self._line_source = line_source
 
+    # 启动codex进程命令
     def _command(
         self, model: str | None, runtime_thread_id: str | None,
         workspace_path: str | None,
@@ -81,10 +89,12 @@ class CodexAgentRuntime:
         if model:
             command.extend(("--model", model))
         if runtime_thread_id:
+            # 通过thread_id恢复codex上下文，thread_id是codex自己的上下文id
             command.extend(("resume", runtime_thread_id))
         command.append("-")
         return tuple(command)
 
+    # 解析、检查并返回工作目录的绝对路径
     def _resolve_workspace(self, requested: str | None) -> Path:
         candidate = (
             Path(requested).expanduser() if requested else self._workspace_root
@@ -136,6 +146,7 @@ class CodexAgentRuntime:
             payload=payload,
         )
 
+    # codex adpater实例化stream
     async def stream(self, request: RuntimeRequest) -> AsyncIterator[RuntimeEvent]:
         yield RuntimeEvent(type=RuntimeEventType.RUN_STARTED)
         yield RuntimeEvent(
@@ -144,7 +155,9 @@ class CodexAgentRuntime:
         )
         completed = False
         try:
+            # 超时限制300s
             async with asyncio.timeout(self._timeout_seconds):
+                # 启动codex获取输出
                 async for line in self._line_source(
                     self._command(
                         request.model, request.runtime_thread_id,
@@ -172,6 +185,7 @@ class CodexAgentRuntime:
                             item.get("type") == "agent_message"
                             and isinstance(item.get("text"), str)
                         ):
+                            # codex输出文本 非流式
                             yield RuntimeEvent(
                                 type=RuntimeEventType.ASSISTANT_DELTA,
                                 payload={"text": item["text"]},
