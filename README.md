@@ -1,10 +1,11 @@
 # Personal Agent Workspace
 
 A local-first AI Agent portfolio project with a React workspace, FastAPI service
-boundary, and native runtime orchestrated by LangGraph. The longer-term research
-direction is an emotion-aware teaching avatar; Unity APIs remain compatible.
+boundary, and native runtime orchestrated by LangGraph. The active backend work
+is English-led Japanese kana teaching from local course Skills, with validated
+model expression suggestions for a future Unity avatar. Legacy Unity APIs remain compatible.
 
-The current milestone is a reliable, auditable tool execution loop:
+The retained Workspace baseline provides an auditable tool execution loop:
 
 > Natural-language task → model selects tools → approval when required →
 > execution → result → visible run and tool audit.
@@ -16,8 +17,13 @@ Codex CLI adapter, file and MCP tools, approval pause/resume, Google OAuth with
 token refresh and Gmail/Calendar read/write tools, Agent Skills, Markdown hybrid
 RAG, restricted demo mode, and run/usage inspection.
 
-Next: validate real Google/MCP integrations with test accounts, finish failure-path
-checks and demo materials. Further retrieval and avatar research are deferred.
+Workspace closeout covers the local engineering baseline, with real isolated
+Playwright transport checks and scripted-model tool-loop validation. Live Google
+accounts and autonomous cloud-model tool selection remain deferred. After
+closeout review, Avatar development reuses the existing backend. Course/output
+contracts and optional speech/emotion ports are implemented; runtime course loading
+and teaching APIs are next. See the [demo/handoff guide](docs/en/workspace_demo.md) for
+the reproducible presentation scope and remaining validation boundaries.
 
 ## Repository layout
 
@@ -25,6 +31,7 @@ checks and demo materials. Further retrieval and avatar research are deferred.
 | --- | --- |
 | `server/` | FastAPI routes, services, repositories, LangGraph, runtime adapters and tools |
 | `web/` | React/TypeScript workspace, conversations, settings and Run/Usage views |
+| `courses/` | Local Markdown Skill teaching scripts; English-led Japanese kana is the initial course |
 | `avatar-unity/` | Unity/VRM client; further development deferred |
 | `shared/` | Reserved for shared contracts and generated types |
 | `docs/zh/`, `docs/en/` | Roadmaps and research design |
@@ -44,7 +51,7 @@ Local client IDs scope data; they are not authentication.
 | Current baseline and architecture | [Workspace 路线图](docs/zh/internship_agent_workspace_plan.md) | [Workspace roadmap](docs/en/internship_agent_workspace_plan.md) |
 | Next batches and acceptance | [Tool/MCP/Skill 计划](docs/zh/tool_mcp_skill_plan.md) | [Tool/MCP/Skill plan](docs/en/tool_mcp_skill_plan.md) |
 | Deferred research | [研究计划](docs/zh/research_plan.md) | [Research plan](docs/en/research_plan.md) |
-| Future avatar integration | [Avatar 集成计划](docs/zh/avatar_integration_plan.md) | [Avatar integration plan](docs/en/avatar_integration_plan.md) |
+| Active Avatar backend plan | [Avatar 后端计划](docs/zh/avatar_integration_plan.md) | [Avatar backend plan](docs/en/avatar_integration_plan.md) |
 
 [协作规则](AGENTS.md) · [现有面试笔记](docs/zh/interview/) · [Unity setup](avatar-unity/README.md)
 

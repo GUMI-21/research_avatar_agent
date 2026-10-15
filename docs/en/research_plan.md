@@ -1,6 +1,11 @@
 # Research Plan
 
-Research implementation is deferred. Follow the [Workspace roadmap](internship_agent_workspace_plan.md) for active work and the [Avatar integration plan](avatar_integration_plan.md) for future module boundaries and contracts.
+The backend now targets English-led Japanese gojuon text teaching from local
+courses/ Skill scripts. One teaching-model call suggests reply/expressions for
+validation and future Unity presentation; see the [backend plan](avatar_integration_plan.md).
+Speech and independent emotion models have interfaces only; live Unity and
+participant studies are not implemented. See the [Workspace roadmap](internship_agent_workspace_plan.md)
+for the retained engineering baseline.
 
 ## Core Question
 
@@ -23,8 +28,10 @@ gestures, and voice-related behavior.
 - LLM-assisted estimation: useful for extracting structured affective state from
   dialogue context
 
-The first implementation will likely use PAD/VAD as the core representation and
-LLM output as an estimation method.
+Version one validates the teaching model's expression/action suggestions without
+a separate emotion-model call. Retain EmotionState and a replaceable analyzer
+interface; model selection/evaluation are future research. Presentation intensity
+is neither the third PAD/VAD dimension nor a measurement of student emotion.
 
 ## Baseline Conditions
 
@@ -49,4 +56,3 @@ LLM output as an estimation method.
 The implementation should also serve as an AI agent portfolio project. The
 system should show tool calling, memory, workflow orchestration, tracing, and
 integration with a realtime 3D client.
-

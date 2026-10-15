@@ -2,16 +2,24 @@
 
 ## Goal
 
+This document retains the reusable Workspace baseline. Active work follows the
+[Avatar backend plan](avatar_integration_plan.md): English-led Japanese gojuon
+text teaching from local courses/ Skills and validated teaching-model expression
+suggestions. Speech and independent emotion modules have interfaces only.
+
 Deliver a stable Native Agent tool loop suitable for an AI Agent internship demo:
 
 > Natural-language task → model selects built-in/MCP tools (optionally guided by
 > Skills) → approval when needed → file, browser, mail or calendar operation →
 > result → visible audit trail.
 
-Mail/calendar tools and Skills are implemented; real-account integration remains to be validated. Use the Python Agent ecosystem
-with clear backend boundaries; existing Go experience is a complementary strength,
-not a reason to add another service. Avatar, emotion and voice work is deferred;
-keep Unity APIs compatible.
+Current closeout covers the existing Workspace engineering baseline: runs,
+approvals, cancellation, reconnection, tool auditing and cross-platform checks.
+Mail/calendar tools and Skills are implemented. Live Google-account validation
+is deferred, and autonomous cloud-model tool selection still requires a real key.
+Use the Python Agent ecosystem with clear backend boundaries; Go experience is
+a complementary strength. The first Avatar batch adds a course seed and contracts,
+not a working teaching pipeline. Unity still uses the legacy ChatService.
 
 ## Implemented baseline
 
@@ -65,7 +73,8 @@ clients without distributed infrastructure.
 - MCP filtering checks tool URL arguments, not redirects or all subresources; an empty domain list disables filtering.
 - Google tools and Skills are implemented, but the real external flow still needs validation with authorized test accounts.
 - Vectors live in SQLite with exact cosine search. Qdrant and WAL configuration are not implemented.
-- Restricted demo mode blocks write-risk tools; directory sandboxing, automatic reconnection and complete failure-path acceptance remain pending.
+- Restricted demo mode blocks tools marked with write risks; directory sandboxing, cross-process execution recovery and complete external failure-path acceptance remain pending.
+  WebSocket automatic reconnection and durable replay are implemented and tested; disconnecting cancels the current Run.
   Missing usage must be labeled honestly; estimates are not billed cost. Audits must exclude credentials,
   full sensitive content and hidden chain-of-thought.
 
@@ -73,9 +82,9 @@ clients without distributed infrastructure.
 
 The [Tool/MCP/Skill plan](tool_mcp_skill_plan.md) owns detailed scope and acceptance:
 
-1. Validate Google reads, writes, approvals, revocation and missing scopes with an authorized test account.
-2. Validate real MCP disconnection, timeout and frontend status; fix failure paths found.
-3. Update startup/architecture docs and demo materials, then complete milestone acceptance.
+1. Review the closeout fixes, startup instructions and [demo/handoff guide](workspace_demo.md) to confirm the Workspace engineering baseline.
+2. Follow the [Avatar backend plan](avatar_integration_plan.md): course discovery, Session/Native integration, then same-call reply/expression parsing.
+3. Defer live Google-account validation and autonomous cloud-model tool-selection acceptance until configuration is available; neither is marked as accepted.
 
 These are remaining acceptance areas, not a fixed batch count or delivery deadline. Split
 implementation into roughly 100 functional lines per reviewed batch; backend and

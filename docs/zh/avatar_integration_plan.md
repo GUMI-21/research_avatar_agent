@@ -1,56 +1,176 @@
-# Avatar 集成计划（后置）
+# Avatar 后端开发计划：英语五十音教学
 
-本文保留早期启动计划中的长期设计，替代已过时的日历排期，不作为当前开发待办。
-近期优先级以 [Workspace 路线图](internship_agent_workspace_plan.md) 为准；
-研究假设、对照条件和评估指标见 [研究计划](research_plan.md)。
+## 当前目标与状态
 
-## 系统边界
+目标已确定：用英语讲解日语五十音，依据本地 Markdown Skill 脚本进行教学演示及引导式对话。
+首版采用文本输入/输出，由教学大模型同一次调用返回回复和表情建议，后端校验后转换为 Unity 可消费的语义参数。
+语音和独立情绪模块只预留可替换接口，本阶段不接入实际服务。
 
-- Web Workspace 是 Agent、会话、记忆和工具的操作中心。
-- FastAPI 连接 Web、Unity、LLM、情绪模块及未来语音模块。
-- LangGraph 只协调状态转移，各模块保留独立服务与适配器边界。
-- Unity/VRM 是可选呈现端；教学脚本界面与当前个人 Workspace 分开。
-- 情绪状态采用结构化契约，不绑定某个 LLM；语音模块负责识别与合成。
+当前为 Mac、没有 Unity Editor。通过 HTTP、WebSocket 和 JSON 预览验证后端，真实动画另行验收。
+Workspace 工程基线见 [路线图](internship_agent_workspace_plan.md)，研究方向见 [研究计划](research_plan.md)。
 
-## 目标流程（未实现）
+已实现的第一批：
 
-```text
-用户输入 → 读取对话/记忆/教学上下文 → 分析学生状态
-  → LLM 生成回复 → 分析回复情绪 → 生成 Avatar 控制参数
-  → Unity 显示文本、表情、视线、动作与后续语音
-```
+- 仓库根目录 courses/gojuon-en/SKILL.md：英文教学脚本，覆盖平假名元音、其余行及片假名复习。
+- CourseSelection：课程/课节 ID、英语讲解和日语学习目标的契约。
+- TeachingTurn / AvatarControl：版本化回复与模型表情参数的严格校验，缺省使用 neutral/idle。
+- SpeechRecognizer、SpeechSynthesizer、EmotionAnalyzer：协议接口，无实际 Provider 或自动调用。
 
-情绪模块可从 PAD/VAD 加规则或 LLM 估计开始，再通过研究评估选择模型。
-不要求先训练独立模型，也不把提示词风格当作完整情绪状态管理。
+尚未实现课程运行时发现、教学 API、教学数据库状态、模型结构化生成或 Unity 播放。
+第一批测试使用现有 SkillCatalog 验证真实课程文件可解析，不代表课程已注册到运行中的 Agent。
+下一批先完成课程目录与课节发现。
 
-## 候选数据契约
+## 一、课程体验与首版范围
 
-以下只是未来模块设计，不替换现有 Unity API：
+学习者通过英文对话认识、回忆和练习日语假名。首个演示从 あ/い/う/え/お 开始，
+之后按行练习平假名，再进行片假名配对复习；浊音、拗音、语法与听说评测后置。
 
-```json
-{
-  "student_state": {
-    "valence": 0.1, "arousal": 0.4,
-    "confidence": 0.3, "confusion": 0.6
-  },
-  "assistant_affect": {
-    "valence": 0.6, "arousal": 0.35,
-    "stance": "encouraging", "intent": "clarify_and_support"
-  },
-  "avatar_control": {
-    "expression": "gentle_smile", "gaze": "attentive",
-    "gesture": "small_nod", "motion_intensity": 0.35,
-    "voice_style": "calm"
-  }
-}
-```
+每轮使用“简短讲解 → 示范 → 一个问题 → 等待回答 → 提示/反馈/复习”的流程。
+课程脚本提供教学方法；课节选择和已确认进度由服务端维护，不因模型声称完成而自动认定掌握。
+只根据文本回答提供反馈，不声称已听到发音、识别笔迹或测量学生真实情绪。
 
-## 恢复研究后的顺序与验收
+| 阶段 | 目标 | 验收 |
+| --- | --- | --- |
+| A：课程文本链 | 发现本地课程、绑定 Session、复用 Native、多轮英文引导 | 课程/课节版本、上下文、client 隔离、消息与 Run |
+| B：表情控制链 | 解析同轮模型表情、映射参数、持久事件与 JSON 预览 | 范围校验、中性回退、取消、去重与过期动作规则 |
+| C：收口与交接 | 完整异常回归、Mac 演示、后续 Unity 接口说明 | 可重复文本教学、Usage/耗时、协议样例与边界 |
 
-1. 固化情绪输入/输出契约与状态管理，补充模块测试。
-2. 将情绪状态映射为 Avatar 参数，提供无 Unity 的状态预览。
-3. 接入现有 Unity/VRM 客户端，验证表情、视线与脚本动作。
-4. 按需接入语音，再设计教学场景和研究对照实验。
+Unity C#、场景、语音服务、独立情绪模型、课程编辑 Web 页面和用户研究均不属于本阶段。
+保留旧 Unity API 和普通 Workspace；Google 真实账号联调继续后置。
 
-验收关注：同一对话能生成可解释的状态与呈现结果；模型失败有明确降级；
-API 保持兼容；记录模块延迟并按研究计划评估自然度、参与度和学习效果。
+## 二、本地课程目录
+
+    courses/
+      gojuon-en/
+        SKILL.md
+
+课程文件使用 YAML frontmatter 和 Markdown 正文，格式兼容现有 SkillCatalog。
+name 作为 course_id；metadata 包含展示名、instruction_language=en、target_language=ja、
+lesson_ids、适用场景及空 recommended_tools。正文用对应课节 ID 标题组织，例如 hiragana-vowels。
+
+- 后续 CourseCatalog 复用现有 Skill 解析能力，额外校验课程语言、课节、大小和版本；不复制整套 Skill 系统。
+- courses 是项目教学资源目录，不是给 Codex 安装全局 Skill，也不自动加入所有 Workspace Agent。
+- 服务端仅接受 ID，通过管理员允许的根目录解析文件；禁止路径穿越、符号链接逃逸及任意文件读取。
+- 服务器维护课程可用列表，绑定已有 Session；当前 ID 契约只验证格式，真实存在性由后续 Catalog 验证。
+- 每轮固定脚本内容及版本哈希，运行中编辑文件不改变该轮；后续轮次更新规则需明确记录，不静默覆盖进度。
+- 初版课程为公开的管理员提供内容；学生消息和教学状态仍按 client_id 隔离。
+- Skill 只提供教学指令，不扩大工具权限，也不能覆盖服务端输出契约。
+
+字表已参考 [文部科学省假名字表](https://www.nihongo-ews.mext.go.jp/contents_files/download/?cfid=106&content_id=421)
+与 [国际交流基金资源](https://www.erin.jpf.go.jp/en/extra/syllabary/) 核对；教学流程和提示为项目自行编写。
+
+## 三、架构与职责
+
+    Avatar API → CourseCatalog / TeachingService → 已有 RunExecutionService
+      → 课程快照、近期对话、现有记忆/RAG → Native / LangGraph
+      → 同一次 LLM 生成 {reply, avatar}
+      → TeachingTurnParser → 校验/映射 → 保存结果与教学状态
+      → assistant_delta（仅 reply）、avatar_control → 最终 Run 终态
+
+- CourseCatalog 负责脚本/课节发现和版本，不承担对话执行。
+- TeachingService 管课程绑定、当前课节及进度；Repository 管查询，Service 管事务。
+- Native/LLM Adapter 负责生成回复；教学继续使用 runtime=native，不新增重复的教学 Runtime。
+- TeachingTurnParser 校验结构化输出，AvatarPolicy 负责限制和映射，不预测学生心理状态。
+- 首版教学默认禁用工具及自动 handoff；模型若产生未授权调用，执行边界也必须拒绝。
+- LangGraph 保留已有编排职责，普通 Workspace 不启用教学专属完成步骤。
+- 不自动把教学进度或模型猜测写入 Agent 长期记忆；课程正文也不能绕过系统权限。
+
+### 首版文本传输取舍
+
+TeachingTurn 是一个完整 JSON 对象。首版先在服务端完整接收、解析，再发送纯 reply；
+可能只产生一个回复片段，暂不承诺教学文本逐字出现。WebSocket 仍传递 Run 状态和最终结果。
+禁止把原始 JSON、表情内部字段或后续独立模块输出直接混入用户聊天。
+普通 Workspace 的既有逐段流式回复不受影响，增量结构化解析可以后续优化。
+
+## 四、已固定的第一批契约
+
+| 契约 | 当前字段与约束 |
+| --- | --- |
+| CourseSelection | course_id 默认 gojuon-en；lesson_id 默认 hiragana-vowels；instruction_language=en、target_language=ja；拒绝额外字段 |
+| TeachingTurn | schema_version=1；非空 reply，最长 10,000 字符；avatar 默认中性控制 |
+| AvatarControl | 沿用 AvatarCommand 的 expression/action；intensity 为有限数值且在 [0,1]；duration_ms 为整数且在 [0,60000]；拒绝额外字段 |
+| SynthesizedSpeech | 将来语音合成端口返回的音频字节及 media_type，仅内部数据类型 |
+| 可选模块协议 | ASR transcribe、TTS synthesize、EmotionAnalyzer analyze；显式传入语言，无具体实现 |
+
+表达沿用 neutral/happy/sad/angry/relaxed/surprised，动作沿用 idle/nod/wave。
+实际教学可使用较小集合，例如 neutral、happy 和轻微 nod；这是教师呈现建议，不是学生情绪识别。
+强度不代表 PAD/VAD 的第三维；不要求首版输出 valence/arousal 或 confidence 推测。
+
+模型输出示例（课程脚本中同样保留）：
+
+    {"schema_version":1,"reply":"That's right! い is i. Which character is u?","avatar":{"expression":"happy","action":"nod","intensity":0.35,"duration_ms":800}}
+
+语音/独立情绪模块未来通过依赖注入可选接入，默认不注册、不调用，不要求 API Key。
+独立情绪接口可返回现有 EmotionState，再由策略决定是否采用；不得直接驱动任意客户端代码。
+本阶段不为这些接口增加额外模型请求、音频存储或服务依赖。
+
+## 五、计划中的资源与接口
+
+复用现有 Agent、Session、Message、Run、RunEvent；所有持久资源按 client_id 与 ID 过滤。
+
+- GET /api/v1/avatar/courses：返回允许课程及课节的安全元数据，不公开服务器绝对路径。
+- GET/PUT /api/v1/avatar/sessions/{session_id}/teaching：绑定 course_id/lesson_id，读取或修改教学配置。
+- POST /api/v1/avatar/chat：针对已绑定的 Native Session 执行文本教学，返回 reply、Run 与呈现结果。
+- 复用 /api/v1/ws?client_id=...：依据 Session 配置进入教学链，避免重复流式服务。
+- POST /api/v1/avatar/preview：只验证和映射表情建议，无模型调用或会话修改。
+- GET /api/v1/avatar/runs/{run_id}/presentation：查询已保存的呈现结果。
+
+这些新接口均未实现。REST 沿用 X-Client-ID，WebSocket 沿用现有作用域，仍不是正式认证。
+旧 POST /api/v1/unity/chat 继续兼容；后续 Unity 客户端明确迁移到新链，不自动改变旧 neutral/idle 行为。
+
+拟新增教学 Session 扩展表与 Run 呈现表，保存课程/课节/脚本版本、已提交进度、
+表情建议、最终控制、降级原因和耗时；不复制聊天全文、不逐帧写库。
+课程内容只读，教学对话不通过工具修改服务器脚本。
+
+## 六、运行与验收规则
+
+- **语言与教学质量**：脚本和系统指令约束英语讲解；仍允许展示日语字符和罗马字。
+  语言字段的校验不等于保证自然语言输出合格，实际模型质量需单独验收。
+- **联合生成**：回复与表情来自同一次 LLM 调用，Usage 使用现有 Provider 报告，不存在默认第二次情绪计费。
+- **解析与降级**：先验证可用 reply；只有 avatar 非法时保留回复并回退中性，记录原因。
+  整体 JSON 损坏、reply 缺失/空白或生成失败则失败，不伪造教学回答。服务级降级在后续解析批次实现。
+- **终态**：课程进度与呈现结果完成处理后才发布唯一 run_finished；普通 Workspace 保持原路径。
+- **取消与并发**：同教学 Session 的 HTTP/WS 共用活跃 Run 守卫。取消终止剩余工作，
+  不提交新的有效动作或已完成进度，过期状态不能覆盖更新版本。
+- **补发与动作**：计划增加 avatar_control 扩展事件、command_id 和有效期限。
+  事件重放恢复状态展示，不应再次播放过期的一次性动作；Unity 端实现仍需实机验证。
+- **数据与权限**：课件、用户回答和模型建议不能扩大权限；不记录隐藏思维链、密钥或完整敏感内容到普通日志。
+- **可追溯**：记录课程/课节/脚本与输出版本、模型、Usage 状态、耗时及降级来源。
+  工程测试、真实模型教学效果和 Unity 呈现验收分别报告。
+
+## 七、开发批次
+
+每批约 100 行功能代码；测试、重复声明、注释与文档不计入。必要时继续拆分，不设固定日期。
+每批必要测试、后端完整 unittest 和 Review 后再进行下一批；以下不是一次性实现清单。
+
+| 批次 | 完整改动 | 主要目录 | 验收 |
+| --- | --- | --- | --- |
+| 1（本批） | 课程种子、课程/回复/表情契约、可选模块端口 | courses/、schemas/、adapters/avatar/ | 真实脚本可解析、示例契约一致、参数校验、旧契约兼容 |
+| 2 | CourseCatalog 与课节发现、根目录配置 | services/courses.py、core/settings.py | 允许目录、语言/课节、大小、版本、逃逸拒绝 |
+| 3 | 教学会话扩展模型、迁移、Repository | models/、migrations/、repositories/ | client 隔离、Session 关联、课程版本及进度 |
+| 4 | 课程查询与教学绑定 REST | services/teaching.py、api/ | 课程真实存在、Native 绑定、跨客户端资源拒绝 |
+| 5 | 教学执行配置、脚本上下文与权限约束 | services/run_execution.py、adapters/agent/ | 课程预算、记忆/RAG 复用、禁用工具/handoff、Workspace 回归 |
+| 6 | 联合输出解析、纯文本提取及表情回退 | adapters/agent/、services/avatar_policy.py | 不外泄原始 JSON；非法表情回退、坏回复失败 |
+| 7 | HTTP Native 桥接与会话守卫 | services/teaching.py、api/ | 多轮英文引导、同 Session 忙碌保护、消息/Run；阶段 A |
+| 8 | 呈现持久化与成功终态前状态提交 | models/、repositories/、services/ | 每轮一份、课程快照、状态版本、取消不提交 |
+| 9 | Avatar 事件、查询与 JSON 预览 | schemas/run_stream.py、services/run_event.py、api/ | 字段、有效期限、持久补发、去重契约 |
+| 10 | 客户端事件兼容与后端流式整合 | web/src/shared/api/、server/app/ | 教学仅显示 reply、普通聊天不变；阶段 B |
+| 11 | 错误、取消、断连、用量专项回归 | tests/、必要 Service 小修复 | 完整终态、无重复计费/状态/动作、端口未启用无影响 |
+| 12 | Mac 文本教学演示及 Unity 交接 | server/scripts/、server/docs/、中英文文档 | 公开课程、多轮案例、结构化参数、明确待 Unity 验收项；阶段 C |
+
+语音和独立情绪 Provider 不在上述批次中实现；后续有明确需求时再单独规划。
+批次 10 如有前后端变化，拆成可独立 Review 的子批次。
+
+## 八、验收环境与后置范围
+
+[Server README](../../server/README.md) 维护命令：Mac 使用 .venv/bin/python，
+Windows 使用 .venv/Scripts/python.exe；启动前迁移，每批跑后端完整 unittest。
+Mock/可控模型可验证管线，不证明英语教学内容或真实模型的准确性。
+
+后端案例包括：元音入门、正确回答、错误回答重试、请求提示/复习/暂停、切换课节、
+课程文件变更的版本处理、跨 client 拒绝、非法模型 JSON/表情、取消和事件补发。
+真实模型配置可用后，另外检查英语讲解、假名/罗马字、一次一问和反馈质量。
+
+没有 Unity 时不能验收 Unity 编译、场景绑定、UniVRM API、实际表情、动画去重与停止、
+骨骼坐标、插值、自然度及音画同步。语音/独立情绪模块当前只验收接口边界。
+用户研究和完整情绪模型选择仍见研究计划，不以模型表情参数代替学生情绪测量。

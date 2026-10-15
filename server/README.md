@@ -19,6 +19,19 @@ See the [workspace roadmap](../docs/zh/internship_agent_workspace_plan.md) for
 the current baseline and the [tool plan](../docs/zh/tool_mcp_skill_plan.md) for
 acceptance criteria. This README owns environment and validation commands.
 
+## Avatar teaching backend
+
+The active Avatar scope is English-led Japanese kana teaching. Project-root
+`courses/gojuon-en/SKILL.md` provides the initial lesson script. The first batch
+adds CourseSelection, TeachingTurn and validated AvatarControl contracts plus
+optional speech/independent-emotion ports. Providers, course discovery and
+teaching routes are not wired yet; the legacy Unity API remains unchanged.
+
+Teaching will generate reply and expression suggestions in one model call,
+without a separate emotion-model request. The current Skills configuration does
+not automatically load `courses/`. See the [Avatar backend plan](../docs/zh/avatar_integration_plan.md)
+for implemented scope, subsequent batches and Unity-free acceptance.
+
 ## Directory Layout
 
 ```text
@@ -228,15 +241,27 @@ in ordinary Server logs or Run audit metadata.
 ### macOS / Linux
 
 Install dependencies in a virtual environment, then start the API server from
-the `server/` directory:
+the `server/` directory. Use the Unix interpreter path rather than the Windows
+`.venv/Scripts/python.exe` path:
 
 ```bash
 python3 -m venv .venv
-source .venv/bin/activate
-python -m pip install -r requirements.txt
-APP_ENV=debug python -m alembic upgrade head
-python run_avatar_server.py --env debug
+./.venv/bin/python -m pip install -r requirements.txt
+if [ ! -f config/debug.yaml ]; then
+    cp config/config_example.yaml config/debug.yaml
+fi
+APP_ENV=debug ./.venv/bin/python -m alembic upgrade head
+./.venv/bin/python -m pip check
+APP_ENV=debug ./.venv/bin/python -m unittest discover -s tests -v
+./.venv/bin/python run_avatar_server.py --env debug
 ```
+
+The complete suite uses the default OS temporary directory; file-tool assertions
+compare canonical paths, so macOS `/var` aliases do not require a TMPDIR override.
+For Playwright MCP, use the Windows configuration above with `command: npx`
+instead of `npx.cmd`, then run the checks with `./.venv/bin/python` and
+`scripts/check_mcp.py`. Use an isolated headless profile and test pages without
+private accounts. These checks validate browser transport, not model selection.
 
 Production-mode configuration:
 

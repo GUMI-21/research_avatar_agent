@@ -3,7 +3,7 @@
 - 用简洁中文沟通。先确认架构和边界，编辑前说明目标与涉及文件。
 - 每批交付一个完整改动，功能代码约 100 行；测试、生成代码、重复声明、注释及文档不计入。用户可调整节奏。
 - 每批补充并运行必要测试，报告结果和剩余计划改动，暂停等待用户 Review 后再开始下一批。
-- 后端批次使用 `server/.venv/Scripts/python.exe` 运行完整 unittest；启动前执行 Alembic 迁移。环境与命令统一维护在 `server/README.md`。
+- 后端批次运行完整 unittest；Mac 使用 `server/.venv/bin/python`，Windows 使用 `server/.venv/Scripts/python.exe`。启动前执行 Alembic 迁移，环境与命令统一维护在 `server/README.md`。
 - 为非显然逻辑、Unity 生命周期和坐标假设添加简短注释。必要时用 Go 服务端概念解释 Python/FastAPI 行为。
 - 保留现有面试笔记；仅在用户明确要求时新增项目面试问答，放在 `docs/zh/interview/`。
 
@@ -15,11 +15,11 @@
 
 ## 当前目标与文档
 
-- 当前目标：形成稳定、可用于 AI Agent 实习面试演示的 Native Agent 工具执行链；Go 后端经验作为补充优势。
-- [Workspace 路线图](docs/zh/internship_agent_workspace_plan.md) 是进度与优先级入口；[Tool/MCP/Skill 计划](docs/zh/tool_mcp_skill_plan.md) 维护后续批次与验收，避免重复进度流水账。
-- 优先顺序：Google Token 刷新与共用客户端 → Gmail/Calendar 只读工具 → 写入工具及审批 → Skill → 演示与测试收口。
+- 当前目标：使用英语进行日语五十音文本教学，依据本地 `courses/` Markdown Skill 脚本进行引导对话，并校验大模型表情参数供后续 Unity 使用。
+- [Avatar 后端计划](docs/zh/avatar_integration_plan.md) 是当前批次入口；[Workspace 路线图](docs/zh/internship_agent_workspace_plan.md) 与 [Tool/MCP/Skill 计划](docs/zh/tool_mcp_skill_plan.md) 保留既有基线和验收边界。
+- 优先顺序：课程契约与脚本 → 安全课程发现 → 教学会话与 Native 接入 → 联合回复/表情解析 → 事件预览与验收。Google 真实账号联调后置。
 - 已有文本 RAG 维持可用；真实 Vault 调优、图片关系、OCR、Qdrant 与完整 Context Inspector 后置。
-- Avatar、情绪模型和语音研究暂缓，保留 Unity API 兼容性；详见研究计划。
+- 当前 Mac 未安装 Unity，仅验收后端；保留 Unity API 兼容性。语音和独立情绪模块只预留接口，不接入实际 Provider；详见研究计划。
 - 文档区分已实现、限制和计划，不写具体日历日期、固定工期或易过时的提交号、测试数量。中英文项目文档保持一致。
 
 ## 架构与安全边界
