@@ -4,8 +4,9 @@ See the [Workspace roadmap](internship_agent_workspace_plan.md) for the baseline
 and architecture. This document owns Native tool boundaries and remaining
 acceptance criteria. Codex manages tools through its external runtime.
 
-Sections 1–4 have code and automated tests; real Google/MCP integration remains
-to be validated.
+Sections 1–4 have code and automated tests. Real Playwright MCP was validated
+against an isolated local page. Live Google accounts and autonomous cloud-model
+tool selection are deferred and are not counted as accepted.
 
 ## Responsibilities and execution
 
@@ -86,12 +87,24 @@ unauthorized tools remain blocked by existing permission boundaries.
 
 ## 5. Interview demo closeout
 
-- Verify MCP disconnects, timeouts, cancellation and failures cannot leave Runs stuck.
-- Surface Tool, MCP, Google and Codex failures in the frontend.
-- Restricted demo mode already blocks write-risk tools; validate demo fixtures and real configuration.
-- Update architecture/startup docs; prepare a two-minute demo, highlights, tradeoffs and resume wording.
-- Run the complete backend unittest suite and frontend tests, typecheck and build.
-- Validate real Google/MCP integration with authorized test accounts; mocks do not prove external integration.
+Engineering acceptance coverage:
+
+- Real Playwright stdio handshake and discovery, isolated Chrome local navigation/snapshot, approval and URL-argument domain filtering.
+- A scripted model and real MCP test subprocess exercise Native, LangGraph, WebSocket and persistence through approval, rejection, timeout, MCP disconnection and cancellation.
+- Real network WebSocket disconnection persists cancellation; reconnection replays the terminal event. Other clients cannot grant approval or read the Run.
+- Actual browser verification of approval, replies and Usage. Completion, failure, cancellation and error frames clear pending approval cards while retaining audit events.
+- File-write tests compare canonical paths, including macOS temporary-directory aliases. Full backend tests and frontend tests/typecheck/build verify closeout.
+- The [demo/handoff guide](workspace_demo.md) separates key-free infrastructure demos from real-model tool demos.
+
+Deferred acceptance:
+
+- Autonomous cloud-model selection and interpretation of tool results; scripted models validate the engineering pipeline only.
+- Live Google reads/writes, approvals, revocation and missing scopes, currently deferred.
+- Third-party website tasks, complete deployment failure paths, authentication and directory sandboxing.
+
+Restricted demo mode enforces registered risks; it is not complete browser or
+filesystem isolation. This closeout confirms the engineering baseline, not
+end-to-end acceptance of every external account or interview demo.
 
 Split functional work into roughly 100-line batches as needed; tests, docs and
 closeout are exempt. Report results and remaining work, then pause for review.

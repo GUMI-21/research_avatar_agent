@@ -468,6 +468,60 @@ describe("Agent workspace resources", () => {
       approved: true,
     });
   });
+
+  it.each(["run_cancelled", "run_failed", "run_finished"] as const)(
+    "clears pending approval on %s without a tool_finished event",
+    async (terminalType) => {
+      renderApp();
+      const composer = screen.getByLabelText("消息");
+      await waitFor(() => expect(composer).toBeEnabled());
+      fireEvent.change(composer, { target: { value: "打开网页" } });
+      fireEvent.click(screen.getByRole("button", { name: "发送" }));
+      const socket = FakeWebSocket.instances[0];
+      act(() => socket.emit({
+        type: "approval_required", run_id: "run-pending", sequence: 2,
+        payload: { approval_id: "approval-pending", tool_name: "mcp_browser_navigate" },
+      }));
+      expect(screen.getByRole("button", { name: "批准执行" })).toBeInTheDocument();
+
+      if (terminalType === "run_cancelled") {
+        fireEvent.click(screen.getByRole("button", { name: "停止运行" }));
+        expect(JSON.parse(socket.sent[1])).toEqual({
+          type: "cancel_run", run_id: "run-pending",
+        });
+      }
+      act(() => socket.emit({
+        type: terminalType, run_id: "run-pending", sequence: 3, payload: {},
+      }));
+
+      expect(screen.queryByRole("button", { name: "批准执行" })).not.toBeInTheDocument();
+      expect(screen.queryByRole("button", { name: "拒绝" })).not.toBeInTheDocument();
+      expect(screen.queryByRole("button", { name: "停止运行" })).not.toBeInTheDocument();
+      expect(composer).toBeEnabled();
+      expect(screen.getByText("mcp_browser_navigate")).toBeInTheDocument();
+    },
+  );
+
+  it("clears pending approval when the server reports a run error", async () => {
+    renderApp();
+    const composer = screen.getByLabelText("消息");
+    await waitFor(() => expect(composer).toBeEnabled());
+    fireEvent.change(composer, { target: { value: "打开网页" } });
+    fireEvent.click(screen.getByRole("button", { name: "发送" }));
+    const socket = FakeWebSocket.instances[0];
+    act(() => socket.emit({
+      type: "approval_required", run_id: "run-error", sequence: 2,
+      payload: { approval_id: "approval-error", tool_name: "mcp_browser_navigate" },
+    }));
+    expect(screen.getByRole("button", { name: "批准执行" })).toBeInTheDocument();
+
+    act(() => socket.emit({ type: "error", code: "run_failed", message: "Agent run failed" }));
+
+    expect(screen.queryByRole("button", { name: "批准执行" })).not.toBeInTheDocument();
+    expect(screen.getByText("Agent run failed")).toBeInTheDocument();
+    expect(composer).toBeEnabled();
+  });
+
   it("shows a safe Gmail approval summary without the message body", async () => {
     renderApp();
     const composer = screen.getByLabelText("消息");

@@ -97,7 +97,7 @@ function handleFrame(
   sessionId: string,
 ) {
   if (frame.type === "error") {
-    setRun((current) => ({ ...current, status: "failed", error: frame.message }));
+    setRun((current) => ({ ...current, status: "failed", error: frame.message, approval: null }));
     return;
   }
   if (frame.type === "replay_complete") return;
@@ -108,6 +108,7 @@ function handleFrame(
       ? current.assistantText + String(frame.payload.text ?? "")
       : current.assistantText,
     events: frame.type === "assistant_delta" ? current.events : [...current.events, frame],
+    // Cancellation can end a Run before the pending tool emits tool_finished.
     approval: frame.type === "approval_required" ? {
       id: String(frame.payload.approval_id),
       toolName: String(frame.payload.tool_name),
@@ -115,7 +116,7 @@ function handleFrame(
       path: String(frame.payload.path ?? ""),
       contentPreview: String(frame.payload.content_preview ?? ""),
       summary: toStringRecord(frame.payload.summary),
-    } : frame.type === "tool_finished" ? null : current.approval,
+    } : frame.type === "tool_finished" || terminalEvents.has(frame.type) ? null : current.approval,
     status: frame.type === "run_finished" ? "completed"
       : frame.type === "run_failed" ? "failed"
       : frame.type === "run_cancelled" ? "cancelled"

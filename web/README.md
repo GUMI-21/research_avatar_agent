@@ -15,9 +15,11 @@ The interface is conversation-first. It borrows the dense usage hierarchy of
 CC Switch and the visible Agent/run/memory concepts of Octopus, while keeping
 the first milestone focused on one usable chat workspace.
 
-## Local development on Windows
+## Local development
 
 Use Node.js 22.12 or newer. From the repository root:
+
+### Windows PowerShell
 
 ```powershell
 cd web
@@ -26,8 +28,19 @@ Copy-Item .env.example .env.local
 npm run dev
 ```
 
+### macOS / Linux
+
+```bash
+cd web
+npm ci
+if [ ! -f .env.local ]; then
+    cp .env.example .env.local
+fi
+npm run dev
+```
+
 Start the backend separately from `server/` after applying Alembic migrations.
-Vite proxies `/api` and `/ws` to `http://127.0.0.1:8000`, so browser requests
+Vite proxies `/api`, including `/api/v1/ws`, to `http://127.0.0.1:8000`, so browser requests
 remain same-origin during development.
 
 `.env.local` selects the local client scope:

@@ -60,7 +60,8 @@ class FileToolsTest(unittest.IsolatedAsyncioTestCase):
                 "write_markdown", context, arguments, approved=True
             )
             self.assertEqual(path.read_text(encoding="utf-8"), "# Updated")
-            self.assertEqual(result.metadata["path"], str(path))
+            # macOS /var can alias /private/var; tools return the resolved path.
+            self.assertEqual(result.metadata["path"], str(path.resolve()))
 
 if __name__ == "__main__":
     unittest.main()
