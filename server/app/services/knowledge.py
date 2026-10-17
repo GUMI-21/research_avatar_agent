@@ -124,6 +124,7 @@ class KnowledgeSourceService:
             raise KnowledgeSourceNotFoundError("Knowledge source not found")
         source.sync_status = "syncing"
         source.error_message = None
+        # 更新source状态
         await self._session.commit()
 
         documents = KnowledgeDocumentRepository(self._session)
