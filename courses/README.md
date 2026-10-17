@@ -5,17 +5,19 @@ instructions. The initial `gojuon-en` course teaches Japanese hiragana and
 katakana through English text guidance.
 
 The format is compatible with the existing SkillCatalog. Courses are project
-resources, not installed Codex Skills. They are not automatically registered by
-the Server's ordinary Skills directory or injected into Workspace conversations.
+resources, not installed Codex Skills. Server app creation loads a separate
+CourseCatalog, not the ordinary Agent Skill catalog or model context.
 
-The first backend batch provides the course fixture and validates its example
-against CourseSelection, TeachingTurn and AvatarControl. Runtime course/lesson
-discovery, Session binding and teaching generation are planned next; no course
-API is available yet.
+CourseCatalog now validates English/Japanese language metadata, declared lessons,
+allowed roots and file size, and exposes immutable content/hash snapshots through
+internal list/get/resolve methods. Explicit refresh replaces the catalog only
+after all files validate. Failed refresh retains the previous snapshot.
+Session binding, teaching generation and public course APIs are not available yet.
 
-Declare selectable lessons in metadata.lesson_ids with matching stable headings. Keep supporting sections
-such as teaching behavior and output format separate. The future course catalog
-will explicitly validate lesson IDs instead of treating every Markdown heading
+Declare selectable lessons in metadata.lesson_ids with matching unindented
+level-two headings (## lesson-id) outside code fences. Keep supporting sections
+such as teaching behavior and output format separate. The course catalog
+explicitly validates lesson IDs instead of treating every Markdown heading
 as a lesson. Scripts describe instruction only and cannot grant tools or change
 server validation and approval policies.
 

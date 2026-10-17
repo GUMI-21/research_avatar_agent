@@ -63,6 +63,7 @@ class SkillCatalogTest(unittest.IsolatedAsyncioTestCase):
             self.assertEqual(public["id"], "daily_planning")
             self.assertNotIn("instructions", public)
             self.assertNotIn("path", public)
+            self.assertNotIn("metadata", public)
 
             path.write_text(path.read_text(encoding="utf-8") + "\nNew rule.", encoding="utf-8")
             catalog.refresh()

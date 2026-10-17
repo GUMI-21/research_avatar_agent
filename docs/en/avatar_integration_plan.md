@@ -12,16 +12,17 @@ The machine is a Mac without Unity Editor. Validate through HTTP, WebSocket and
 JSON previews. See the [Workspace roadmap](internship_agent_workspace_plan.md)
 for the retained baseline and the [research plan](research_plan.md).
 
-Implemented in the first batch:
+Implemented baseline:
 
 - courses/gojuon-en/SKILL.md: English instructions, hiragana vowels/rows and katakana review.
 - CourseSelection: course/lesson IDs and en instruction / ja target language.
 - TeachingTurn / AvatarControl: versioned reply/expression validation, neutral/idle defaults.
 - SpeechRecognizer, SpeechSynthesizer, EmotionAnalyzer: interfaces without providers or automatic calls.
+- CourseCatalog: shared Skill parsing, allowed-root discovery/validation, course/lesson lookup and versioned in-memory snapshots, separately loaded during app creation.
 
-Runtime course discovery, teaching APIs/state, structured generation and Unity
-playback are not implemented. Tests load the actual course using SkillCatalog;
-this does not register the course in running Agents. Course discovery is next.
+Teaching APIs/state, structured generation and Unity playback are not implemented.
+Courses can be queried/resolved internally but are not automatically Agent Skills
+or model context. Teaching state models, migrations and Repository come next.
 
 ## 1. Experience and scope
 
@@ -54,11 +55,13 @@ Metadata includes display name, instruction_language=en, target_language=ja,
 lesson_ids, scenarios and empty recommended_tools. Matching headings identify lessons such as
 hiragana-vowels.
 
-- Future CourseCatalog reuses Skill parsing and additionally validates language, lessons, size and version.
+- CourseCatalog reuses Skill parsing and validates language, lessons, size and version. Retained internal metadata does not change public Skill API fields.
 - courses is project teaching content, not a global Codex Skill installation or automatic enablement for all Workspace Agents.
 - Accept IDs only and resolve under administrator-approved roots; reject traversal, symlink escapes and arbitrary file reads.
-- The server owns available courses and Session binding. Current ID schemas validate format, not existence.
-- Pin content/hash per Run. Editing a script cannot alter an active turn; later-turn version changes must be explicit, not silent progress replacement.
+- Selectable lessons must be declared and match exactly one unindented level-two heading (## lesson-id) outside code fences; support headings cannot be selected.
+- CourseSelection validates format and CourseCatalog.resolve rejects missing courses/lessons. Session binding is not implemented yet.
+- Immutable course snapshots and bounded reads are implemented. Refresh replaces the complete catalog only after validation; failure retains the old catalog.
+- Original-byte hashes accompany content; edits require explicit refresh. Per-Run version pinning/progress migration still belong to later teaching-execution batches.
 - Courses are public administrator-provided material. Student messages/state remain client-scoped.
 - Skills cannot grant tools or override server output schemas.
 
@@ -153,8 +156,8 @@ Each backend batch runs appropriate tests/full unittest and pauses for review.
 
 | Batch | Complete change | Areas | Acceptance |
 | --- | --- | --- | --- |
-| 1 (current) | Course seed, selection/reply/expression contracts, optional ports | courses/, schemas/, adapters/avatar/ | Real script parsing, valid example, bounds, legacy compatibility |
-| 2 | CourseCatalog/lesson discovery and root settings | services/courses.py, core/settings.py | Roots, language/lessons, size, version, escape rejection |
+| 1 (implemented) | Course seed, selection/reply/expression contracts, optional ports | courses/, schemas/, adapters/avatar/ | Real script parsing, valid example, bounds, legacy compatibility |
+| 2 (current) | CourseCatalog/lesson discovery and root settings | services/courses.py, core/settings.py | Roots, language/lessons, size, version, escape rejection |
 | 3 | Teaching state/model/migration/Repository | models/, migrations/, repositories/ | Client scope, Session binding, versions/progress |
 | 4 | Catalog and teaching-binding REST | services/teaching.py, api/ | Course existence, Native binding, cross-client rejection |
 | 5 | Teaching options/context/permissions | services/run_execution.py, adapters/agent/ | Budgets, memory/RAG reuse, no tools/handoff, Workspace regression |

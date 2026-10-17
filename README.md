@@ -21,8 +21,9 @@ Workspace closeout covers the local engineering baseline, with real isolated
 Playwright transport checks and scripted-model tool-loop validation. Live Google
 accounts and autonomous cloud-model tool selection remain deferred. After
 closeout review, Avatar development reuses the existing backend. Course/output
-contracts and optional speech/emotion ports are implemented; runtime course loading
-and teaching APIs are next. See the [demo/handoff guide](docs/en/workspace_demo.md) for
+contracts, optional speech/emotion ports and a validated course catalog are
+implemented; teaching Session persistence and APIs are next.
+See the [demo/handoff guide](docs/en/workspace_demo.md) for
 the reproducible presentation scope and remaining validation boundaries.
 
 ## Repository layout

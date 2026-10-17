@@ -2,7 +2,8 @@
 
 import hashlib
 import re
-from dataclasses import dataclass
+from collections.abc import Mapping
+from dataclasses import dataclass, field
 from pathlib import Path
 from typing import cast, final
 
@@ -25,6 +26,7 @@ class SkillDefinition:
     recommended_tools: tuple[str, ...]
     instructions: str
     version_hash: str
+    metadata: Mapping[str, object] = field(default_factory=dict)
 
 
 @final
@@ -58,7 +60,8 @@ class SkillCatalog:
         return self._skills.get(skill_id)
 
     def _parse(self, path: Path) -> SkillDefinition:
-        raw = path.read_bytes()
+        with path.open("rb") as source:
+            raw = source.read(self._max_file_bytes + 1)
         if len(raw) > self._max_file_bytes:
             raise SkillCatalogError(f"Skill file is too large: {path.name}")
         try:
@@ -104,7 +107,7 @@ class SkillCatalog:
             raise SkillCatalogError("Skill instructions cannot be empty")
         return SkillDefinition(
             skill_id, name, description, scenarios, tools, instructions,
-            hashlib.sha256(raw).hexdigest(),
+            hashlib.sha256(raw).hexdigest(), dict(details),
         )
 
     @staticmethod

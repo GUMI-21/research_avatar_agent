@@ -119,6 +119,11 @@ class SkillSettings(StrictSettingsModel):
     max_file_bytes: int = Field(default=65_536, ge=1, le=1_048_576)
 
 
+class CourseSettings(StrictSettingsModel):
+    directories: tuple[Path, ...] = (SERVER_ROOT.parent / "courses",)
+    max_file_bytes: int = Field(default=65_536, ge=1, le=1_048_576)
+
+
 class DemoSettings(StrictSettingsModel):
     """Optional interview-demo boundary that disables write-capable tools."""
 
@@ -137,6 +142,7 @@ class Settings(StrictSettingsModel):
     codex: CodexSettings = Field(default_factory=CodexSettings)
     mcp: MCPSettings = Field(default_factory=MCPSettings)
     skills: SkillSettings = Field(default_factory=SkillSettings)
+    courses: CourseSettings = Field(default_factory=CourseSettings)
     demo: DemoSettings = Field(default_factory=DemoSettings)
     llm: LLMSettings
 

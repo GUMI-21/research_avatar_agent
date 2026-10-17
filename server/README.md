@@ -24,13 +24,30 @@ acceptance criteria. This README owns environment and validation commands.
 The active Avatar scope is English-led Japanese kana teaching. Project-root
 `courses/gojuon-en/SKILL.md` provides the initial lesson script. The first batch
 adds CourseSelection, TeachingTurn and validated AvatarControl contracts plus
-optional speech/independent-emotion ports. Providers, course discovery and
-teaching routes are not wired yet; the legacy Unity API remains unchanged.
+optional speech/independent-emotion ports. CourseCatalog now discovers/validates
+courses separately during app creation; teaching Session storage, routes and
+model injection are not wired yet. The legacy Unity API remains unchanged.
 
 Teaching will generate reply and expression suggestions in one model call,
 without a separate emotion-model request. The current Skills configuration does
 not automatically load `courses/`. See the [Avatar backend plan](../docs/zh/avatar_integration_plan.md)
 for implemented scope, subsequent batches and Unity-free acceptance.
+
+### Course discovery configuration
+
+`courses.directories` defaults to the repository's `courses/` directory independently
+of `skills.directories`; `courses.max_file_bytes` defaults to 65536. The tracked
+template uses `../courses`, relative to the Server working directory. Custom
+relative paths follow the same working-directory rule. Existing local YAML needs
+no update to use the absolute default. Set `directories: []` to disable discovery;
+missing directories produce an empty catalog.
+
+Declare `metadata.lesson_ids` with matching unindented level-two Markdown
+headings outside code fences. Discovery validates en/ja languages, uniqueness,
+IDs, file size, UTF-8, YAML and resolved paths. Invalid files raise CourseCatalogError
+and prevent app creation; an explicit refresh on an existing catalog retains
+its prior snapshot on failure. Refresh currently has no public API and is not
+an automatic watcher. Logs record counts/error types, not script content.
 
 ## Directory Layout
 

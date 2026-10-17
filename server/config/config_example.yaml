@@ -36,6 +36,10 @@ mcp:
 demo:
   enabled: false
 
+courses:
+  directories: [../courses]
+  max_file_bytes: 65536
+
 llm:
   default_provider: mock
   timeout_seconds: 30

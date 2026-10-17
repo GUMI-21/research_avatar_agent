@@ -130,7 +130,9 @@ class KnowledgeSourceService:
         chunks = KnowledgeChunkRepository(self._session)
         try:
             parsed_files = await asyncio.to_thread(
+                # 切片
                 _read_documents,
+                # 检测目录合法
                 resolve_knowledge_root(source.root_path),
             )
             existing = {

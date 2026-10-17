@@ -9,16 +9,17 @@
 当前为 Mac、没有 Unity Editor。通过 HTTP、WebSocket 和 JSON 预览验证后端，真实动画另行验收。
 Workspace 工程基线见 [路线图](internship_agent_workspace_plan.md)，研究方向见 [研究计划](research_plan.md)。
 
-已实现的第一批：
+已实现基线：
 
 - 仓库根目录 courses/gojuon-en/SKILL.md：英文教学脚本，覆盖平假名元音、其余行及片假名复习。
 - CourseSelection：课程/课节 ID、英语讲解和日语学习目标的契约。
 - TeachingTurn / AvatarControl：版本化回复与模型表情参数的严格校验，缺省使用 neutral/idle。
 - SpeechRecognizer、SpeechSynthesizer、EmotionAnalyzer：协议接口，无实际 Provider 或自动调用。
+- CourseCatalog：复用 Skill 解析器，在允许目录发现和校验课程/课节，维护版本化内存快照；Server 创建应用时单独加载课程目录。
 
-尚未实现课程运行时发现、教学 API、教学数据库状态、模型结构化生成或 Unity 播放。
-第一批测试使用现有 SkillCatalog 验证真实课程文件可解析，不代表课程已注册到运行中的 Agent。
-下一批先完成课程目录与课节发现。
+尚未实现教学 API、教学数据库状态、模型结构化生成或 Unity 播放。
+课程已可内部查询和选择，但不自动注册为普通 Agent Skill，也不代表已注入模型上下文。
+下一批实现教学会话扩展模型、迁移与 Repository。
 
 ## 一、课程体验与首版范围
 
@@ -48,11 +49,13 @@ Unity C#、场景、语音服务、独立情绪模型、课程编辑 Web 页面�
 name 作为 course_id；metadata 包含展示名、instruction_language=en、target_language=ja、
 lesson_ids、适用场景及空 recommended_tools。正文用对应课节 ID 标题组织，例如 hiragana-vowels。
 
-- 后续 CourseCatalog 复用现有 Skill 解析能力，额外校验课程语言、课节、大小和版本；不复制整套 Skill 系统。
+- CourseCatalog 已复用现有 Skill 解析能力，校验课程语言、课节、大小和版本；通用 Skill 元数据仅内部保留，不改变公共 Skill API。
 - courses 是项目教学资源目录，不是给 Codex 安装全局 Skill，也不自动加入所有 Workspace Agent。
 - 服务端仅接受 ID，通过管理员允许的根目录解析文件；禁止路径穿越、符号链接逃逸及任意文件读取。
-- 服务器维护课程可用列表，绑定已有 Session；当前 ID 契约只验证格式，真实存在性由后续 Catalog 验证。
-- 每轮固定脚本内容及版本哈希，运行中编辑文件不改变该轮；后续轮次更新规则需明确记录，不静默覆盖进度。
+- 目录只认可 lesson_ids 声明、且在代码围栏外恰好出现一次的无缩进二级标题（## lesson-id），辅助标题不能被选择。
+- CourseSelection 校验 ID 格式；CourseCatalog.resolve 进一步拒绝不存在的课程或课节，Session 绑定尚未实现。
+- 课程对象为不可变快照，读取文件有字节上限；刷新在全部校验成功后原子替换，失败保留旧目录。
+- 内容与原始字节哈希一起保存；文件编辑后显式刷新才生效。后续每轮固定版本和进度迁移仍需教学执行批次实现。
 - 初版课程为公开的管理员提供内容；学生消息和教学状态仍按 client_id 隔离。
 - Skill 只提供教学指令，不扩大工具权限，也不能覆盖服务端输出契约。
 
@@ -145,8 +148,8 @@ TeachingTurn 是一个完整 JSON 对象。首版先在服务端完整接收、�
 
 | 批次 | 完整改动 | 主要目录 | 验收 |
 | --- | --- | --- | --- |
-| 1（本批） | 课程种子、课程/回复/表情契约、可选模块端口 | courses/、schemas/、adapters/avatar/ | 真实脚本可解析、示例契约一致、参数校验、旧契约兼容 |
-| 2 | CourseCatalog 与课节发现、根目录配置 | services/courses.py、core/settings.py | 允许目录、语言/课节、大小、版本、逃逸拒绝 |
+| 1（已实现） | 课程种子、课程/回复/表情契约、可选模块端口 | courses/、schemas/、adapters/avatar/ | 真实脚本可解析、示例契约一致、参数校验、旧契约兼容 |
+| 2（本批） | CourseCatalog 与课节发现、根目录配置 | services/courses.py、core/settings.py | 允许目录、语言/课节、大小、版本、逃逸拒绝 |
 | 3 | 教学会话扩展模型、迁移、Repository | models/、migrations/、repositories/ | client 隔离、Session 关联、课程版本及进度 |
 | 4 | 课程查询与教学绑定 REST | services/teaching.py、api/ | 课程真实存在、Native 绑定、跨客户端资源拒绝 |
 | 5 | 教学执行配置、脚本上下文与权限约束 | services/run_execution.py、adapters/agent/ | 课程预算、记忆/RAG 复用、禁用工具/handoff、Workspace 回归 |
