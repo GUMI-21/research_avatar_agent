@@ -5,6 +5,7 @@ import { beforeEach, describe, expect, it, vi } from "vitest";
 import { App } from "./App";
 
 const now = "2026-09-10T08:00:00Z";
+let demoMode = false;
 const agent = {
   id: "agent-1",
   client_id: "local-demo",
@@ -16,6 +17,7 @@ const agent = {
   model: "gpt-5.6-luna",
   workspace_path: null,
   knowledge_source_ids: [],
+  skill_ids: [],
   created_at: now,
   updated_at: now,
 };
@@ -62,7 +64,28 @@ const run = {
   duration_ms: 680,
   time_to_first_token_ms: 120,
   error_type: null,
+  skill_versions: [{ id: "daily-planning", version_hash: "abcdef1234567890" }],
   created_at: now,
+};
+const skill = {
+  id: "daily-planning",
+  name: "每日工作规划",
+  description: "根据日程整理工作计划。",
+  applicable_scenarios: ["每日规划"],
+  recommended_tools: ["calendar_list_events"],
+  version_hash: "abcdef1234567890",
+};
+const knowledgeSource = {
+  id: "source-1",
+  client_id: "local-demo",
+  name: "Project Notes",
+  source_type: "markdown",
+  root_path: "D:\\Notes\\Project",
+  sync_status: "ready",
+  error_message: null,
+  last_synced_at: now,
+  created_at: now,
+  updated_at: now,
 };
 const memory = {
   id: "memory-1",
@@ -115,6 +138,7 @@ function renderApp() {
 
 describe("Agent workspace resources", () => {
   beforeEach(() => {
+    demoMode = false;
     window.localStorage.clear();
     FakeWebSocket.instances = [];
     const registeredWorkspaces = new Set(["local-demo"]);
@@ -182,6 +206,35 @@ describe("Agent workspace resources", () => {
         });
       }
       if (path === "/api/v1/usage/runs?limit=100") return jsonResponse({ runs: [run] });
+      if (path === "/api/v1/skills") return jsonResponse({ skills: [skill] });
+      if (path === "/api/v1/knowledge/sources" && init?.method === "POST") {
+        return jsonResponse({ ...knowledgeSource, ...JSON.parse(String(init.body)) });
+      }
+      if (path === "/api/v1/runtime/mcp-status") {
+        return jsonResponse({ servers: [{
+          name: "playwright", transport: "stdio", status: "connected",
+          tool_count: 3, error_type: null,
+        }] });
+      }
+      if (path === "/api/v1/runtime/policy") {
+        return jsonResponse({
+          demo_mode: demoMode,
+          blocked_tool_risks: demoMode ? ["local_write", "external_write"] : [],
+        });
+      }
+      if (path === "/api/v1/knowledge/sources") return jsonResponse({ sources: [knowledgeSource] });
+      if (path === `/api/v1/knowledge/sources/${knowledgeSource.id}/sync` && init?.method === "POST") {
+        return jsonResponse({ source_id: knowledgeSource.id, status: "ready", scanned: 1, created: 0, updated: 0, deleted: 0, unchanged: 1, chunks: 1 });
+      }
+      if (path === `/api/v1/knowledge/sources/${knowledgeSource.id}/embeddings/index` && init?.method === "POST") {
+        return jsonResponse({ source_id: knowledgeSource.id, provider: "local", model: "test", indexed: 1, unchanged: 0 });
+      }
+      if (path === `/api/v1/agents/${agent.id}/skills` && init?.method === "PUT") {
+        return jsonResponse({ ...agent, skill_ids: JSON.parse(String(init.body)).skill_ids });
+      }
+      if (path === `/api/v1/agents/${agent.id}/knowledge-sources` && init?.method === "PUT") {
+        return jsonResponse({ ...agent, knowledge_source_ids: JSON.parse(String(init.body)).knowledge_source_ids });
+      }
       if (path === "/api/v1/usage/summary") {
         return jsonResponse({
           run_count: 1,
@@ -330,6 +383,61 @@ describe("Agent workspace resources", () => {
       .not.toHaveTextContent("正在输入");
     expect(screen.getAllByText("运行完成")).toHaveLength(2);
   });
+
+  it("shows when the server is running in restricted demo mode", async () => {
+    demoMode = true;
+    renderApp();
+
+    const badge = await screen.findByText("Demo · 写入已禁用");
+    expect(badge).toHaveAttribute(
+      "title", "禁用风险：local_write、external_write",
+    );
+  });
+
+  it("shows a failed tool with its safe error type", async () => {
+    renderApp();
+    const composer = screen.getByLabelText("消息");
+    await waitFor(() => expect(composer).toBeEnabled());
+    fireEvent.change(composer, { target: { value: "打开网页" } });
+    fireEvent.click(screen.getByRole("button", { name: "发送" }));
+
+    act(() => {
+      const socket = FakeWebSocket.instances[0];
+      socket.emit({ type: "run_started", run_id: "run-error", sequence: 1, payload: {} });
+      socket.emit({
+        type: "tool_finished", run_id: "run-error", sequence: 2,
+        payload: { tool_name: "mcp_browser_navigate", status: "error", error_type: "MCPError" },
+      });
+      socket.emit({
+        type: "run_failed", run_id: "run-error", sequence: 3,
+        payload: { error_type: "MCPError" },
+      });
+    });
+
+    expect(screen.getByText("工具失败")).toBeInTheDocument();
+    expect(screen.getByText("mcp_browser_navigate · MCPError")).toBeInTheDocument();
+  });
+
+  it("shows when a duplicate tool call was skipped", async () => {
+    renderApp();
+    const composer = screen.getByLabelText("消息");
+    await waitFor(() => expect(composer).toBeEnabled());
+    fireEvent.change(composer, { target: { value: "列出文件" } });
+    fireEvent.click(screen.getByRole("button", { name: "发送" }));
+
+    act(() => {
+      const socket = FakeWebSocket.instances[0];
+      socket.emit({ type: "run_started", run_id: "run-repeat", sequence: 1, payload: {} });
+      socket.emit({
+        type: "tool_finished", run_id: "run-repeat", sequence: 2,
+        payload: { tool_name: "list_files", status: "skipped", reason: "duplicate_call" },
+      });
+    });
+
+    expect(screen.getByText("工具跳过")).toBeInTheDocument();
+    expect(screen.getByText("list_files · 重复参数调用已跳过")).toBeInTheDocument();
+  });
+
   it("reviews and approves a Markdown tool call", async () => {
     renderApp();
     const composer = screen.getByLabelText("消息");
@@ -357,6 +465,43 @@ describe("Agent workspace resources", () => {
       type: "tool_approval",
       run_id: "run-write",
       approval_id: "approval-1",
+      approved: true,
+    });
+  });
+  it("shows a safe Gmail approval summary without the message body", async () => {
+    renderApp();
+    const composer = screen.getByLabelText("消息");
+    await waitFor(() => expect(composer).toBeEnabled());
+    fireEvent.change(composer, { target: { value: "发送邮件" } });
+    fireEvent.click(screen.getByRole("button", { name: "发送" }));
+    const socket = FakeWebSocket.instances[0];
+
+    act(() => socket.emit({
+      type: "approval_required",
+      run_id: "run-email",
+      sequence: 2,
+      payload: {
+        approval_id: "approval-email",
+        tool_name: "gmail_send_message",
+        risk: "external_write",
+        summary: {
+          action: "send_message",
+          recipients: "candidate@example.com",
+          cc: "reviewer@example.com",
+          subject: "Interview",
+        },
+      },
+    }));
+
+    expect(screen.getByText("candidate@example.com")).toBeInTheDocument();
+    expect(screen.getByText("reviewer@example.com")).toBeInTheDocument();
+    expect(screen.getByText("Interview")).toBeInTheDocument();
+    expect(screen.queryByText("secret email body")).not.toBeInTheDocument();
+    fireEvent.click(screen.getByRole("button", { name: "批准执行" }));
+    expect(JSON.parse(socket.sent[1])).toEqual({
+      type: "tool_approval",
+      run_id: "run-email",
+      approval_id: "approval-email",
       approved: true,
     });
   });
@@ -418,6 +563,7 @@ describe("Agent workspace resources", () => {
     fireEvent.click(screen.getByRole("button", { name: "Run" }));
     expect(await screen.findByText("gpt-5.6-luna")).toBeInTheDocument();
     expect(screen.getByText("680 ms / 120 ms")).toBeInTheDocument();
+    expect(screen.getByText("daily-planning · abcdef12")).toBeInTheDocument();
 
     fireEvent.click(screen.getByRole("button", { name: "Usage" }));
     expect(screen.getByText("Workspace 总计")).toBeInTheDocument();
@@ -520,7 +666,7 @@ describe("Agent workspace resources", () => {
     fireEvent.change(screen.getByRole("combobox", { name: "Agent 头像 Emoji" }), {
       target: { value: "🐙" },
     });
-    fireEvent.change(screen.getByLabelText("API Key（首次使用该厂商时填写）"), {
+    fireEvent.change(screen.getByLabelText("API Key（留空复用该用户已配置的厂商凭据或环境变量）"), {
       target: { value: "agent-key" },
     });
     await waitFor(() => expect(screen.getByRole("button", { name: "保存" })).toBeEnabled());
@@ -573,26 +719,61 @@ describe("Agent workspace resources", () => {
     expect(screen.queryByRole("heading", { name: "工作区设置" })).not.toBeInTheDocument();
   });
 
-  it("configures the real server runtime from settings", async () => {
+  it("configures provider keys only from the Agent editor", async () => {
+    renderApp();
+    fireEvent.click(screen.getByRole("button", { name: "设置" }));
+    expect(screen.queryByText("模型运行时")).not.toBeInTheDocument();
+    expect(screen.queryByLabelText(/API Key/)).not.toBeInTheDocument();
+    fireEvent.click(screen.getAllByRole("button", { name: "关闭" })[0]);
+    fireEvent.click(await screen.findByRole("button", { name: "编辑 Agent" }));
+    await waitFor(() => expect(screen.getByLabelText("Agent 厂商")).toHaveValue("openai"));
+    expect(screen.getByLabelText("API Key（留空复用该用户已配置的厂商凭据或环境变量）")).toBeInTheDocument();
+  });
+
+  it("enables a discovered Skill for a Native Agent", async () => {
     renderApp();
     fireEvent.click(screen.getByRole("button", { name: "设置" }));
 
-    const provider = await screen.findByLabelText("Provider");
-    await screen.findByText(/当前配置：mock \/ mock-echo/);
-    fireEvent.change(provider, { target: { value: "openai" } });
-    fireEvent.change(screen.getByLabelText("API Key（留空则使用 Server 环境变量）"), {
-      target: { value: "test-key" },
-    });
-    fireEvent.click(screen.getByRole("button", { name: "应用配置" }));
-
+    const toggle = await screen.findByRole("checkbox", { name: "启用 每日工作规划" });
+    fireEvent.click(toggle);
     await waitFor(() => expect(fetch).toHaveBeenCalledWith(
-      "/api/v1/llm/config",
+      `/api/v1/agents/${agent.id}/skills`,
       expect.objectContaining({
-        method: "POST",
-        body: JSON.stringify({ provider: "openai", model: "gpt-5.6-luna", api_key: "test-key" }),
+        method: "PUT",
+        body: JSON.stringify({ skill_ids: ["daily-planning"] }),
       }),
     ));
-    expect(await screen.findByText(/当前配置：openai \/ gpt-5.6-luna/)).toBeInTheDocument();
+  });
+
+  it("manages the RAG directory lifecycle and Agent binding", async () => {
+    renderApp();
+    fireEvent.click(screen.getByRole("button", { name: "设置" }));
+    expect(await screen.findByRole("button", { name: "同步 Project Notes" })).toBeInTheDocument();
+
+    fireEvent.change(screen.getByPlaceholderText("例如：Obsidian Vault"), { target: { value: "Interview Notes" } });
+    fireEvent.change(screen.getByPlaceholderText("D:\\Notes\\Vault"), { target: { value: "D:\\Notes\\Interview" } });
+    fireEvent.click(screen.getByRole("button", { name: "添加目录" }));
+    await waitFor(() => expect(fetch).toHaveBeenCalledWith(
+      "/api/v1/knowledge/sources",
+      expect.objectContaining({ method: "POST", body: JSON.stringify({ name: "Interview Notes", root_path: "D:\\Notes\\Interview", source_type: "obsidian" }) }),
+    ));
+
+    fireEvent.click(screen.getByRole("button", { name: "同步 Project Notes" }));
+    await waitFor(() => expect(fetch).toHaveBeenCalledWith(
+      `/api/v1/knowledge/sources/${knowledgeSource.id}/sync`, expect.objectContaining({ method: "POST" }),
+    ));
+    await waitFor(() => expect(screen.getByRole("button", { name: "向量化 Project Notes" })).toBeEnabled());
+    fireEvent.click(screen.getByRole("button", { name: "向量化 Project Notes" }));
+    await waitFor(() => expect(fetch).toHaveBeenCalledWith(
+      `/api/v1/knowledge/sources/${knowledgeSource.id}/embeddings/index`, expect.objectContaining({ method: "POST" }),
+    ));
+
+    await waitFor(() => expect(screen.getByRole("checkbox", { name: "绑定 Project Notes" })).toBeEnabled());
+    fireEvent.click(screen.getByRole("checkbox", { name: "绑定 Project Notes" }));
+    await waitFor(() => expect(fetch).toHaveBeenCalledWith(
+      `/api/v1/agents/${agent.id}/knowledge-sources`,
+      expect.objectContaining({ method: "PUT", body: JSON.stringify({ knowledge_source_ids: [knowledgeSource.id] }) }),
+    ));
   });
 
   it("shows the server Codex login and rate limits", async () => {
@@ -603,5 +784,15 @@ describe("Agent workspace resources", () => {
     expect(screen.getByText("5 小时额度")).toBeInTheDocument();
     expect(screen.getByText("剩余 47%")).toBeInTheDocument();
     expect(screen.getByText("周额度")).toBeInTheDocument();
+  });
+
+  it("shows the safe MCP startup status in settings", async () => {
+    renderApp();
+    fireEvent.click(screen.getByRole("button", { name: "设置" }));
+
+    expect(await screen.findByText("playwright · stdio")).toBeInTheDocument();
+    expect(screen.getByText("3 tools")).toBeInTheDocument();
+    expect(screen.getByText("1/1 已连接")).toBeInTheDocument();
+    expect(screen.getByText(/运行期传输状态/)).toBeInTheDocument();
   });
 });

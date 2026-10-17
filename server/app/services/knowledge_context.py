@@ -20,7 +20,7 @@ class KnowledgeContextResult:
     budget_chars: int
     truncated: bool
 
-# 知识库组装为上下文
+# RAG知识库组装为上下文
 def assemble_knowledge_context(
     hits: Sequence[KnowledgeChunkHit],
     *,

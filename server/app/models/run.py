@@ -8,6 +8,7 @@ from sqlalchemy import (
     ForeignKey,
     Index,
     Integer,
+    JSON,
     Numeric,
     String,
     Text,
@@ -76,6 +77,9 @@ class RunRecord(Base):
     error_message: Mapped[str | None] = mapped_column(
         Text, nullable=True
     )  # 截断、脱敏后的错误摘要
+    skill_versions: Mapped[list[dict[str, str]]] = mapped_column(
+        JSON, default=list, server_default="[]"
+    )  # 实际注入入口 Agent 上下文的 Skill ID 与版本快照
     created_at: Mapped[datetime] = mapped_column(default=utc_now)
     started_at: Mapped[datetime | None] = mapped_column(nullable=True)
     completed_at: Mapped[datetime | None] = mapped_column(nullable=True)

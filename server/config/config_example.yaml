@@ -33,6 +33,9 @@ mcp:
   stdio_servers: []
   http_servers: []
 
+demo:
+  enabled: false
+
 llm:
   default_provider: mock
   timeout_seconds: 30

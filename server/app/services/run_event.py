@@ -15,7 +15,7 @@ from logs import log
 class EventPolicy:
     # 是否通过websocket实时发送
     stream: bool
-    # 是否保存到run_events表
+    # 是否保存到run_events表：是否持久化数据
     persist: bool
 
 
@@ -56,6 +56,7 @@ class UnsupportedRuntimeEventError(ValueError):
 # run_event逻辑处理
 class RunEventService:
     def __init__(self, session: AsyncSession) -> None:
+        # 数据库session
         self._session = session
         self._repository = RunEventRepository(session)
 
@@ -66,6 +67,7 @@ class RunEventService:
         except (KeyError, TypeError) as error:
             raise UnsupportedRuntimeEventError(str(event.type)) from error
 
+    # 断线重连后的事件补发
     async def replay(
         self,
         client_id: str,

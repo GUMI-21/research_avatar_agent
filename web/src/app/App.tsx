@@ -90,7 +90,17 @@ function eventDetail(type: string, payload: Record<string, unknown>, agents: Age
     return payload.duration_ms == null ? "终态已持久化" : `${payload.duration_ms} ms`;
   }
   if (type === "retrieval_result") return "候选与命中片段已记录";
-  if (type.startsWith("tool_") || type === "approval_required") return String(payload.tool_name || "工具事件");
+  if (type.startsWith("tool_") || type === "approval_required") {
+    const name = String(payload.tool_name || "工具事件");
+    if (payload.status === "error") {
+      return `${name} · ${String(payload.error_type || "执行失败")}`;
+    }
+    if (payload.status === "rejected") return `${name} · 用户已拒绝`;
+    if (payload.status === "skipped" && payload.reason === "duplicate_call") {
+      return `${name} · 重复参数调用已跳过`;
+    }
+    return name;
+  }
   return String(payload.message || payload.status || "事件已记录");
 }
 
@@ -110,7 +120,11 @@ function RunCard({ run, agents }: { run: LiveRun; agents: Agent[] }) {
       {run.events.map((event, index) => (
         <div className="run-event" key={`${event.type}-${event.sequence ?? index}`}>
           <span className="event-dot" />
-          <b>{eventLabels[event.type] || event.type}</b>
+          <b>{event.type === "tool_finished" && event.payload.status === "error"
+            ? "工具失败"
+            : event.type === "tool_finished" && event.payload.status === "skipped"
+              ? "工具跳过"
+              : eventLabels[event.type] || event.type}</b>
           <span>{eventDetail(event.type, event.payload, agents)}</span>
           <time>{event.sequence == null ? "live" : `#${event.sequence}`}</time>
         </div>
@@ -126,14 +140,34 @@ function ToolApprovalCard({
   approval: PendingApproval;
   onDecision: (approved: boolean) => void;
 }) {
+  const isMarkdown = approval.toolName === "write_markdown";
+  const labels: Record<string, string> = {
+    action: "操作",
+    recipients: "收件人",
+    cc: "抄送",
+    subject: "主题",
+    calendar: "日历",
+    event_id: "事件 ID",
+    start: "开始",
+    end: "结束",
+  };
   return (
     <article className="approval-card" role="alert">
-      <div><FileText size={16} /><b>批准 Markdown 写入？</b></div>
-      <code>{approval.path}</code>
-      <pre>{approval.contentPreview || "（空文件）"}</pre>
+      <div><FileText size={16} /><b>{isMarkdown ? "批准 Markdown 写入？" : "批准工具执行？"}</b></div>
+      {approval.path && <code>{approval.path}</code>}
+      {approval.contentPreview && <pre>{approval.contentPreview}</pre>}
+      {Object.entries(approval.summary).length > 0 && (
+        <dl>
+          {Object.entries(approval.summary).map(([key, value]) => (
+            <div key={key}><dt>{labels[key] ?? key}</dt><dd>{value}</dd></div>
+          ))}
+        </dl>
+      )}
       <div className="approval-actions">
         <button type="button" onClick={() => onDecision(false)}>拒绝</button>
-        <button type="button" className="primary" onClick={() => onDecision(true)}>批准写入</button>
+        <button type="button" className="primary" onClick={() => onDecision(true)}>
+          {isMarkdown ? "批准写入" : "批准执行"}
+        </button>
       </div>
     </article>
   );
@@ -153,6 +187,10 @@ export function App() {
   const workspaceQuery = useQuery({
     queryKey: ["workspace", clientId],
     queryFn: () => workspaceApi.ensureWorkspace(clientId),
+  });
+  const policyQuery = useQuery({
+    queryKey: ["runtime-policy"],
+    queryFn: workspaceApi.getRuntimePolicy,
   });
   const agentsQuery = useQuery({
     queryKey: ["agents"],
@@ -289,10 +327,12 @@ export function App() {
     setDraft("");
   }
 
-  const queryError = workspaceQuery.error || agentsQuery.error || sessionsQuery.error
+  const queryError = workspaceQuery.error || policyQuery.error
+    || agentsQuery.error || sessionsQuery.error
     || messagesQuery.error || runsQuery.error || usageQuery.error
     || providerCatalogQuery.error || modelMutation.error;
-  const resourcesLoading = workspaceQuery.isLoading || agentsQuery.isLoading
+  const resourcesLoading = workspaceQuery.isLoading || policyQuery.isLoading
+    || agentsQuery.isLoading
     || sessionsQuery.isLoading;
 
   return (
@@ -385,6 +425,14 @@ export function App() {
             </p>
           </div>
           <div className="header-actions">
+            {policyQuery.data?.demo_mode && (
+              <span
+                className="demo-badge"
+                title={`禁用风险：${policyQuery.data.blocked_tool_risks.join("、")}`}
+              >
+                Demo · 写入已禁用
+              </span>
+            )}
             {selectedAgent && (
               <button
                 className="icon-action"
@@ -537,12 +585,17 @@ export function App() {
       {dialog === "settings" && (
         <WorkspaceSettings
           clientId={clientId}
+          agents={agents}
           onClose={() => setDialog(null)}
+          onAgentUpdated={(saved) => queryClient.setQueryData<Agent[]>(["agents"], (old = []) =>
+            old.map((item) => item.id === saved.id ? saved : item)
+          )}
           onWorkspaceChange={changeWorkspace}
         />
       )}
       {dialog === "agent" && (
         <AgentDialog
+          clientId={clientId}
           agent={editingAgent}
           onClose={() => setDialog(null)}
           onSaved={(saved) => {
@@ -569,13 +622,14 @@ export function App() {
   );
 }
 
-function AgentDialog({ agent, onClose, onSaved }: {
+function AgentDialog({ clientId, agent, onClose, onSaved }: {
+  clientId: string;
   agent: Agent | null;
   onClose: () => void;
   onSaved: (agent: Agent) => void;
 }) {
   const providersQuery = useQuery({ queryKey: ["llm-providers"], queryFn: workspaceApi.listLLMProviders });
-  const configQuery = useQuery({ queryKey: ["llm-config"], queryFn: workspaceApi.getLLMConfig });
+  const configQuery = useQuery({ queryKey: ["llm-config", clientId], queryFn: workspaceApi.getLLMConfig });
   const [runtime, setRuntime] = useState(agent?.runtime || "native");
   const [providerId, setProviderId] = useState("");
   const [model, setModel] = useState("");
@@ -683,8 +737,9 @@ function AgentDialog({ agent, onClose, onSaved }: {
               </select>
             </label>
             {providerId !== "mock" && (
-              <label>API Key（首次使用该厂商时填写）<input name="api_key" type="password" autoComplete="off" /></label>
+              <label>API Key（留空复用该用户已配置的厂商凭据或环境变量）<input name="api_key" type="password" autoComplete="off" /></label>
             )}
+            {providerId === "mock" && <small className="field-hint">Mock 只固定回显，用于测试；不会选择 Tool/MCP。</small>}
             <small className="field-hint">凭据按用户加密保存在本地 Server；已配置过该厂商时可留空。</small>
           </>
         )}

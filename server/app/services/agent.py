@@ -45,3 +45,15 @@ class AgentService:
             workspace_path=workspace_path,
             knowledge_sources=[sources_by_id[item] for item in requested_ids],
         )
+
+    async def replace_knowledge_sources(
+        self, client_id: str, agent_id: str, source_ids: list[str]
+    ) -> AgentRecord | None:
+        sources = await self._sources.list_by_ids(client_id, source_ids)
+        sources_by_id = {source.id: source for source in sources}
+        missing = next((item for item in source_ids if item not in sources_by_id), None)
+        if missing is not None:
+            raise AgentKnowledgeSourceNotFoundError(missing)
+        return await self._agents.replace_knowledge_sources(
+            client_id, agent_id, [sources_by_id[item] for item in source_ids]
+        )

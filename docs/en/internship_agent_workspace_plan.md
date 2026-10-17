@@ -1,129 +1,103 @@
-# Internship Portfolio Phase: Personal Agent Workspace
+# Personal Agent Workspace Roadmap
 
 ## Goal
 
-Deliver a local-first Personal Agent Workspace in roughly 7–9 days. It should be stable enough for an AI Agent internship interview, while demonstrating the candidate's existing backend engineering experience.
+Deliver a stable Native Agent tool loop suitable for an AI Agent internship demo:
 
-The phase focuses on:
+> Natural-language task → model selects built-in/MCP tools (optionally guided by
+> Skills) → approval when needed → file, browser, mail or calendar operation →
+> result → visible audit trail.
 
-- FastAPI, REST resource APIs, and WebSocket run streaming.
-- Chinese-first RAG over an Obsidian/Markdown knowledge base.
-- A native Personal Agent runtime with LangGraph orchestration and multi-agent handoff.
-- Optional Codex and Claude specialized worker Agents behind a unified runtime boundary.
-- Inspectable context, citations, usage, cost, latency, and frequency.
+Mail/calendar tools and Skills are implemented; real-account integration remains to be validated. Use the Python Agent ecosystem
+with clear backend boundaries; existing Go experience is a complementary strength,
+not a reason to add another service. Avatar, emotion and voice work is deferred;
+keep Unity APIs compatible.
 
-Avatar teaching-script UI, Unity, emotion, and voice work are paused during this phase. Existing Unity APIs remain compatible.
+## Implemented baseline
 
-## Architecture
+| Area | Current behavior |
+| --- | --- |
+| Workspace | Persistent Agents, users, Sessions, messages and provider/model settings scoped by client |
+| Native runtime | Streaming, multi-turn tool execution, short-term context and managed long-term memory |
+| Orchestration | LangGraph, manual/automatic handoff, at most two delegations and cycle rejection |
+| Web | REST/WebSocket integration, cancellation, reconnect and durable event replay |
+| Codex | CLI proxy adapter, isolated thread binding, project-directory constraints, normalized events and usage |
+| Tools and approvals | File listing, UTF-8 reading, Markdown writes, risk levels and approve/reject continuation |
+| MCP | Discovery, schema validation, stdio/Streamable HTTP, Playwright integration and URL-domain filtering |
+| Google OAuth | State/PKCE authorization, encrypted refresh tokens, connection status and remote revocation |
+| Google tools | Automatic access-token refresh; Gmail/Calendar read and write tools guarded by the Registry |
+| Skills | `SKILL.md` discovery, per-Agent enablement, Native context injection, Run version records and UI settings |
+| Demo mode | Configurable blocking of local and external write-risk tools with a visible UI notice |
+| Observability | Runs, tool events, provider/model, tokens, estimated cost, latency and errors |
+| Text RAG | Incremental Markdown indexing, FTS5/vector hybrid search, citations, Agent source bindings and context injection |
 
-```text
-React Web
-  -> REST CRUD + WebSocket run events
-FastAPI
-  -> Session/Run Manager
-  -> Personal Agent Runtime / LangGraph Orchestrator
-  -> Knowledge/RAG Service
-  -> Usage and Context Inspector
-  -> Runtime Gateway
-       -> cloud LLM adapters
-       -> ACP adapter for Codex / Claude
-       -> direct CLI adapters as fallbacks
-SQLite WAL + FTS5 + Qdrant Local vector index
-```
-
-Implementation check (2026-09-09): vectors currently live in SQLite with exact
-cosine search; Qdrant and WAL configuration are not implemented. Native Agent
-runs now use hybrid retrieval over their bound sources and inject cited context
-within a 6,000-character budget, with keyword fallback when no Embedding Client
-is available. Durable events record the strategy and distinguish candidate
-Chunks from the final budgeted selection without storing note text. Real-Vault
-validation and the Context Inspector remain planned. Production workspace runs
-now use LangGraph; durable checkpoints and automatic handoff are subsequent slices. See the [Server README](../../server/README.md) for
-Windows environment setup.
-
-The second LangGraph slice routes production runs through the graph. The third
-adds an explicit `target_agent_id`; runs targeting another Agent follow
-`prepare -> handoff -> agent` and persist replayable handoff events. The shared
-in-memory checkpointer stores metadata without messages, prompts, or RAG text.
-Durable checkpoints, the frontend `@agent` picker, and restricted automatic
-handoff remain subsequent slices.
-
-The fourth LangGraph slice introduces provider-neutral tool definitions, tool
-calls, and allowed handoff targets. Native Runtime accepts only one
-`delegate_to_agent` call to a non-active allowlisted Agent with a non-empty task
-summary of at most 2,000 characters. Provider wire formats and graph continuation
-remain subsequent work.
-
-FastAPI remains the service boundary. LangGraph coordinates state transitions within a run; it does not own APIs, repositories, file scanning, or subprocess lifecycle.
-
-## Protocols
-
-REST owns Agent, Session, Knowledge Source, Usage, and demo-client resource operations.
-
-WebSocket owns long-running turns using AG-UI-compatible events plus project-specific context, handoff, and usage events:
+## Current architecture
 
 ```text
-run_started
-retrieval_started / retrieval_result
-context_prepared
-agent_started / agent_status
-assistant_delta
-tool_started / tool_finished
-handoff_started / handoff_finished
-usage_updated
-run_finished / run_failed
+React / TypeScript / Vite
+  ├─ REST: Agents, Sessions, Memory, Knowledge, configuration, Usage
+  └─ WebSocket: replies, handoff, tools, approvals, cancellation, replay
+        ↓
+FastAPI → Services → Repositories → SQLite
+  └─ RunExecutionService / LangGraph
+       ├─ Native Runtime → LLM adapters
+       │    ├─ short-term context, long-term memory, RAG
+       │    └─ Tool Registry → file tools / MCP / Gmail / Calendar
+       └─ Codex CLI Adapter → external thread
+Google OAuth → encrypted client-scoped credentials → shared API client
 ```
 
-The UI shows auditable progress and tool activity, not hidden model chain-of-thought. Provider-supported reasoning summaries, if used, are labeled separately.
+FastAPI owns the service boundary; LangGraph owns run transitions, not APIs,
+repositories or subprocess lifecycle. Native runs do not require Codex/Claude.
+Codex receives the current task and manages its own tools, code context and
+compaction. ACP/Claude are optional future adapters.
 
-## Client Isolation
+REST manages resources; WebSocket carries AG-UI-compatible run events and project
+extensions. Persistent queries require `client_id`. Local usernames and
+`X-Client-ID` provide data scope, not authentication. Target single-digit local
+clients without distributed infrastructure.
 
-Agents, sessions, messages, runs, delegations, knowledge data, and usage events all carry `client_id`. Repository methods require client scope even when a resource ID is known.
+## Known limits
 
-The demo targets single-digit clients with one FastAPI process, SQLite WAL, and an in-process run manager. Redis, distributed queues, and orchestration infrastructure are out of scope.
+- Checkpoints and pending approvals are in memory. Event replay does not resume execution across processes.
+- Automatic handoff has OpenAI wire support; equivalent support for other providers is not assumed.
+- Native file tools inherit Server OS permissions, not knowledge-source or Codex directory restrictions.
+- MCP filtering checks tool URL arguments, not redirects or all subresources; an empty domain list disables filtering.
+- Google tools and Skills are implemented, but the real external flow still needs validation with authorized test accounts.
+- Vectors live in SQLite with exact cosine search. Qdrant and WAL configuration are not implemented.
+- Restricted demo mode blocks write-risk tools; directory sandboxing, automatic reconnection and complete failure-path acceptance remain pending.
+  Missing usage must be labeled honestly; estimates are not billed cost. Audits must exclude credentials,
+  full sensitive content and hidden chain-of-thought.
 
-A future public demo uses a restricted client with seed data, quotas, and no access to local paths or dangerous CLI tools.
+## Priorities
 
-## Obsidian RAG
+The [Tool/MCP/Skill plan](tool_mcp_skill_plan.md) owns detailed scope and acceptance:
 
-The importer supports Markdown, frontmatter, wiki links, `![[asset.png]]`, and standard Markdown images. The MVP preserves note-to-asset relationships and safely previews assets inside the Vault boundary.
+1. Validate Google reads, writes, approvals, revocation and missing scopes with an authorized test account.
+2. Validate real MCP disconnection, timeout and frontend status; fix failure paths found.
+3. Update startup/architecture docs and demo materials, then complete milestone acceptance.
 
-OCR, image embeddings, and multimodal retrieval follow after text RAG is stable.
+These are remaining acceptance areas, not a fixed batch count or delivery deadline. Split
+implementation into roughly 100 functional lines per reviewed batch; backend and
+frontend may be separate batches.
 
-Retrieval combines keyword and vector results, applies client/source filters, deduplicates chunks, and builds cited context. The current local default is FastEmbed multilingual MiniLM; evaluate retrieval quality on real notes on Windows/macOS before changing models.
+## Retained and deferred work
 
-## Multi-Agent Model
+Retain Markdown heading/line chunking with source lines and hashes, local FastEmbed
+multilingual MiniLM, FTS5/vector ranking fused with RRF, budgeted cited context and
+keyword fallback without an embedding client. Image references are parsed, but
+persistent asset relationships and safe previews remain pending.
 
-- The native Personal Agent owns intent analysis, retrieval, context assembly, routing, and final synthesis, and remains usable without Codex or Claude.
-- An Agent stores prompt, runtime, model, tools, and knowledge scope.
-- A Session has one entry Agent, while each Message records its actual `agent_id`.
-- A Delegation records the parent run, target Agent, task, status, and result.
-- Users may hand off with `@agent-name`; Agents may use a controlled delegation tool.
-- Subagents receive a task summary and selected context instead of a full parent transcript.
-- MVP delegation is streamed, single-chain, cycle-checked, and limited to depth two.
+Real-Vault evaluation, embedding upgrades, OCR, image relationships, Qdrant, full
+Context Inspector, usage charts, ACP/Claude and complex parallel delegation do
+not block the current tool loop. See the [research plan](research_plan.md).
 
-## Delivery Batches
+## Milestone acceptance
 
-1. Architecture, collaboration rules, and an on-demand interview-review process.
-2. SQLite migrations, client isolation, Agent/Session/Message repositories and APIs.
-3. React shell and WebSocket Mock Chat vertical slice.
-4. Obsidian import, Chinese hybrid RAG, citations, and Context Inspector.
-5. LangGraph runs, checkpoints, traces, and streamed manual/automatic handoff. This is the current priority.
-6. Connect the Web Shell to real Agent/Session CRUD, message history, WebSocket runs, cancellation, reconnect, and handoff. Show provider, model, tokens, estimated cost, latency, and errors on each Run/turn and aggregate Runs in the conversation detail.
-7. Finish restricted demo mode, documentation, tests, and interview packaging. If the core workflow is ready, add a dashboard based on the [CC Switch statistics hierarchy](https://cc-switch.dev/docs/local-routing/usage-statistics/), with time/provider/model filters, summary cards, trends, and run details; these aggregate charts do not block the first usable workspace.
-8. After the interview-ready workspace, resume real-Vault RAG tuning, full Context Inspector and asset previews, then optional ACP/Codex/Claude workers and multimodal retrieval.
-
-Each batch contains about 100 lines of core implementation, is tested independently, and pauses for review.
-
-## Completion Criteria
-
-- A clean environment starts from the README.
-- Agents and sessions survive restart.
-- WebSocket events and assistant text stream reliably.
-- The existing text RAG path does not block the first interview-ready workspace; real-Vault tuning follows that milestone.
-- The native Personal Agent retrieves, orchestrates, and answers without requiring Codex or Claude.
-- Tasks move between Agents in one visible conversation.
-- Codex and Claude real-runtime checks do not block the native Personal Agent release.
-- Resource IDs cannot bypass client isolation.
-- One run exposes context, model, usage, cost status, and latency.
-- A repeatable two-minute demo is available, with project interview Q&A generated on request.
+- A clean environment starts using the [Server README](../../server/README.md) and [Web README](../../web/README.md).
+- Native runs select tools, request approval, execute, feed results back and answer without external CLI dependencies.
+- External writes have no side effects before approval; rejection, timeout, revoked access and MCP disconnection produce recoverable or terminal visible outcomes.
+- Resource IDs cannot bypass client scope; Google credentials and results remain isolated.
+- One conversation demonstrates handoff and exposes tools, approvals, models, tokens, cost status and latency.
+- Backend tests and frontend tests/typecheck/build pass; a repeatable two-minute demo exists.
+- Prepare project highlights, tradeoffs and resume wording during closeout; add interview Q&A only on explicit request.

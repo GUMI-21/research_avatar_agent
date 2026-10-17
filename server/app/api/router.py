@@ -11,7 +11,9 @@ from app.api.routes import (
     memories,
     messages,
     ping,
+    runtime_policy,
     sessions,
+    skills,
     unity,
     usage,
     workspaces,
@@ -26,10 +28,13 @@ api_router.include_router(codex_status.router, prefix="/api/v1", tags=["codex"])
 api_router.include_router(google_oauth.router, prefix="/api/v1", tags=["google"])
 api_router.include_router(knowledge.router, prefix="/api/v1", tags=["knowledge"])
 api_router.include_router(sessions.router, prefix="/api/v1", tags=["sessions"])
+api_router.include_router(skills.router, prefix="/api/v1", tags=["skills"])
 api_router.include_router(memories.router, prefix="/api/v1", tags=["memories"])
 api_router.include_router(messages.router, prefix="/api/v1", tags=["messages"])
+api_router.include_router(runtime_policy.router, prefix="/api/v1", tags=["runtime"])
 api_router.include_router(usage.router, prefix="/api/v1", tags=["usage"])
 api_router.include_router(workspaces.router, prefix="/api/v1", tags=["workspaces"])
+# websocket流式输出
 api_router.include_router(workspace_ws.router, prefix="/api/v1", tags=["runs"])
 api_router.include_router(
     llm_config.router,

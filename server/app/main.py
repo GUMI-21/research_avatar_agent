@@ -13,19 +13,33 @@ from app.adapters.knowledge import FastEmbedAdapter
 from app.api.router import api_router
 from app.core.database import Database
 from app.core.settings import Settings, get_settings
+from app.services.google_api_client import GoogleAPIClient
 from app.services.google_oauth_credentials import GoogleOAuthCredentialStore
 from app.services.google_oauth_flow import GoogleOAuthFlow
 from app.services.llm_credentials import LLMCredentialStore
 from app.services.llm_runtime import LLMRuntime
 from app.services.runtime_registry import RuntimeRegistry
+from app.services.skills import SkillCatalog
 from app.tools import (
     MCPClient, StdioMCPTransport, StreamableHttpMCPTransport,
     ToolApprovalBroker, create_file_tool_registry,
+    register_google_read_tools,
+    ToolRisk,
 )
 from logs import configure_logging, log
 
 
-@asynccontextmanager # 异步协程，由“异步生成器”实现的生命周期上下文。
+def _mark_mcp_unavailable(
+    app: FastAPI, transport: str, name: str, error: Exception,
+) -> None:
+    status = app.state.mcp_statuses[(transport, name)]
+    status["status"] = "unavailable"
+    # Upstream messages may contain private data; expose only the class name.
+    status["error_type"] = type(error.__cause__ or error).__name__
+
+
+# 由“异步生成器”实现的生命周期上下文。 fastapi启动和关闭时的资源管理
+@asynccontextmanager
 async def lifespan(app: FastAPI) -> AsyncIterator[None]:
     """Record the server process lifecycle."""
     await app.state.llm_credentials.restore(app.state.llm_runtime)
@@ -45,11 +59,24 @@ async def lifespan(app: FastAPI) -> AsyncIterator[None]:
                 ))
                 names = await MCPClient(
                     config.name, transport, config.allowed_domains, config.blocked_tools,
+                    on_transport_error=lambda error, name=config.name: (
+                        _mark_mcp_unavailable(app, "stdio", name, error)
+                    ),
                 ).register_tools(
                     app.state.tool_registry
                 )
+                app.state.mcp_statuses[("stdio", config.name)] = {
+                    "name": config.name, "transport": "stdio",
+                    "status": "connected", "tool_count": len(names),
+                    "error_type": None,
+                }
                 log.info("Connected MCP server={} tools={}", config.name, len(names))
             except Exception as error:
+                app.state.mcp_statuses[("stdio", config.name)] = {
+                    "name": config.name, "transport": "stdio",
+                    "status": "unavailable", "tool_count": 0,
+                    "error_type": type(error).__name__,
+                }
                 log.warning("MCP server={} unavailable error_type={}",
                             config.name, type(error).__name__)
         for config in app.state.settings.mcp.http_servers:
@@ -61,16 +88,31 @@ async def lifespan(app: FastAPI) -> AsyncIterator[None]:
                 )
                 names = await MCPClient(
                     config.name, transport, config.allowed_domains, config.blocked_tools,
+                    on_transport_error=lambda error, name=config.name: (
+                        _mark_mcp_unavailable(app, "http", name, error)
+                    ),
                 ).register_tools(
                     app.state.tool_registry
                 )
+                app.state.mcp_statuses[("http", config.name)] = {
+                    "name": config.name, "transport": "http",
+                    "status": "connected", "tool_count": len(names),
+                    "error_type": None,
+                }
                 log.info("Connected MCP server={} tools={}", config.name, len(names))
             except Exception as error:
+                app.state.mcp_statuses[("http", config.name)] = {
+                    "name": config.name, "transport": "http",
+                    "status": "unavailable", "tool_count": 0,
+                    "error_type": type(error).__name__,
+                }
                 log.warning("MCP server={} unavailable error_type={}",
                             config.name, type(error).__name__)
         yield
     finally:
         await mcp_stack.aclose()
+        if app.state.google_api_client is not None:
+            await app.state.google_api_client.close()
         await app.state.database.dispose()
         log.info("Stopping {}", app.title)
 
@@ -84,7 +126,30 @@ def create_app(settings: Settings) -> FastAPI:
         lifespan=lifespan,
     )
     app.state.settings = settings
+    app.state.mcp_statuses = {
+        # stdio_server 本地npx程序; dict推导式语法
+        **{
+            ("stdio", config.name): {
+                "name": config.name,
+                "transport": "stdio",
+                "status": "pending",
+            }
+            for config in settings.mcp.stdio_servers
+        },
+        **{
+            ("http", config.name): {
+                "name": config.name,
+                "transport": "http",
+                "status": "pending",
+            }
+            for config in settings.mcp.http_servers
+        },
+    }
+    # default - url: sqlite+aiosqlite:///data/personal_agent.db
     app.state.database = Database(settings.database.url)
+    app.state.skill_catalog = SkillCatalog(
+        settings.skills.directories, settings.skills.max_file_bytes
+    )
     # langGraph检查点存储器,所有请求共享同一个实例。 进程内字典
     app.state.graph_checkpointer = InMemorySaver()
     app.state.embedding_client = FastEmbedAdapter(
@@ -114,8 +179,25 @@ def create_app(settings: Settings) -> FastAPI:
         if oauth_client_id and oauth_client_secret
         else None
     )
+    app.state.google_api_client = (
+        GoogleAPIClient(
+            app.state.google_oauth_credentials,
+            oauth_client_id,
+            SecretStr(oauth_client_secret),
+        )
+        if oauth_client_id and oauth_client_secret
+        else None
+    )
     runtime_registry = RuntimeRegistry()
-    file_tools = create_file_tool_registry()
+    blocked_risks = (
+        (ToolRisk.LOCAL_WRITE, ToolRisk.EXTERNAL_WRITE)
+        if settings.demo.enabled else ()
+    )
+    file_tools = create_file_tool_registry(blocked_risks=blocked_risks)
+    app.state.demo_mode = settings.demo.enabled
+    app.state.blocked_tool_risks = tuple(risk.value for risk in blocked_risks)
+    if app.state.google_api_client is not None:
+        register_google_read_tools(file_tools, app.state.google_api_client)
     app.state.tool_registry = file_tools
     approvals = ToolApprovalBroker()
     app.state.tool_approval_broker = approvals

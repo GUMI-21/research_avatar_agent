@@ -16,6 +16,7 @@ export type Agent = {
   model: string | null;
   workspace_path: string | null;
   knowledge_source_ids: string[];
+  skill_ids: string[];
   created_at: string;
   updated_at: string;
 };
@@ -58,7 +59,43 @@ export type RunUsage = {
   duration_ms: number | null;
   time_to_first_token_ms: number | null;
   error_type: string | null;
+  skill_versions: { id: string; version_hash: string }[];
   created_at: string;
+};
+
+export type RuntimePolicy = {
+  demo_mode: boolean;
+  blocked_tool_risks: string[];
+};
+
+export type MCPServerStatus = {
+  name: string;
+  transport: "stdio" | "http";
+  status: "pending" | "connected" | "unavailable";
+  tool_count: number;
+  error_type: string | null;
+};
+
+export type Skill = {
+  id: string;
+  name: string;
+  description: string;
+  applicable_scenarios: string[];
+  recommended_tools: string[];
+  version_hash: string;
+};
+
+export type KnowledgeSource = {
+  id: string;
+  client_id: string;
+  name: string;
+  source_type: "obsidian" | "markdown";
+  root_path: string;
+  sync_status: "pending" | "syncing" | "ready" | "failed";
+  error_message: string | null;
+  last_synced_at: string | null;
+  created_at: string;
+  updated_at: string;
 };
 
 export type UsageSummary = {
@@ -147,6 +184,10 @@ async function request<T>(path: string, init?: RequestInit, scoped = true): Prom
 }
 
 export const workspaceApi = {
+  getRuntimePolicy: () =>
+    request<RuntimePolicy>("/api/v1/runtime/policy"),
+  getMCPStatus: async () =>
+    (await request<{ servers: MCPServerStatus[] }>("/api/v1/runtime/mcp-status")).servers,
   ensureWorkspace: async (username: string) => {
     const normalized = username.trim().toLowerCase();
     try {
@@ -172,6 +213,27 @@ export const workspaceApi = {
     request<Agent>(`/api/v1/agents/${encodeURIComponent(agentId)}`, {
       method: "PATCH",
       body: JSON.stringify(input),
+    }),
+  listSkills: async () =>
+    (await request<{ skills: Skill[] }>("/api/v1/skills")).skills,
+  updateAgentSkills: (agentId: string, skillIds: string[]) =>
+    request<Agent>(`/api/v1/agents/${encodeURIComponent(agentId)}/skills`, {
+      method: "PUT",
+      body: JSON.stringify({ skill_ids: skillIds }),
+    }),
+  listKnowledgeSources: async () =>
+    (await request<{ sources: KnowledgeSource[] }>("/api/v1/knowledge/sources")).sources,
+  createKnowledgeSource: (input: Pick<KnowledgeSource, "name" | "root_path" | "source_type">) =>
+    request<KnowledgeSource>("/api/v1/knowledge/sources", {
+      method: "POST", body: JSON.stringify(input),
+    }),
+  syncKnowledgeSource: (sourceId: string) =>
+    request(`/api/v1/knowledge/sources/${encodeURIComponent(sourceId)}/sync`, { method: "POST" }),
+  indexKnowledgeSource: (sourceId: string) =>
+    request(`/api/v1/knowledge/sources/${encodeURIComponent(sourceId)}/embeddings/index`, { method: "POST" }),
+  updateAgentKnowledgeSources: (agentId: string, sourceIds: string[]) =>
+    request<Agent>(`/api/v1/agents/${encodeURIComponent(agentId)}/knowledge-sources`, {
+      method: "PUT", body: JSON.stringify({ knowledge_source_ids: sourceIds }),
     }),
   listSessions: async () =>
     (await request<{ sessions: WorkspaceSession[] }>("/api/v1/sessions"))

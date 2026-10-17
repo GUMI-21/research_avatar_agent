@@ -45,6 +45,7 @@ class RunRepository:
         runtime: str,
         provider: str | None = None,
         model: str | None = None,
+        skill_versions: list[dict[str, str]] | None = None,
     ) -> RunRecord:
         session_statement = select(SessionRecord.id).where(
             SessionRecord.client_id == client_id,
@@ -67,6 +68,7 @@ class RunRepository:
             runtime=runtime,
             provider=provider,
             model=model,
+            skill_versions=skill_versions or [],
         )
         self._session.add(run)
         await self._session.flush()
@@ -85,6 +87,27 @@ class RunRepository:
         )
         result = await self._session.execute(statement)
         return result.scalar_one_or_none()
+
+    async def add_skill_versions(
+        self,
+        client_id: str,
+        run_id: str,
+        skill_versions: list[dict[str, str]],
+    ) -> RunRecord | None:
+        run = await self.get(client_id, run_id)
+        if run is None:
+            return None
+        existing = {
+            (item.get("id"), item.get("version_hash"))
+            for item in run.skill_versions
+        }
+        additions = [
+            item for item in skill_versions
+            if (item.get("id"), item.get("version_hash")) not in existing
+        ]
+        run.skill_versions = [*run.skill_versions, *additions]
+        await self._session.flush()
+        return run
 
     async def list_recent(
         self,

@@ -2,6 +2,7 @@
 
 import tempfile
 import unittest
+import httpx
 from pathlib import Path
 from collections.abc import AsyncIterator
 from dataclasses import replace
@@ -22,7 +23,8 @@ from app.adapters.llm import (
     LLMUsage,
 )
 from app.schemas.llm import LLMProvider
-from app.tools import ToolApprovalBroker, create_file_tool_registry
+from app.tools import ToolApprovalBroker, ToolRegistry, create_file_tool_registry
+from app.tools.google import register_google_read_tools
 
 
 class FakeLLMClient(LLMClient):
@@ -83,8 +85,9 @@ class ToolCallingLLMClient(FakeLLMClient):
 
 
 class FileToolCallingLLMClient(FakeLLMClient):
-    def __init__(self) -> None:
+    def __init__(self, path: str = "README.md") -> None:
         super().__init__()
+        self.path = path
         self.requests: list[LLMRequest] = []
 
     async def stream(
@@ -98,7 +101,7 @@ class FileToolCallingLLMClient(FakeLLMClient):
                 model="mock-tools",
                 tool_call=LLMToolCall(
                     name="read_text_file",
-                    arguments={"path": "README.md", "max_chars": 40},
+                    arguments={"path": self.path, "max_chars": 40},
                 ),
             )
             return
@@ -128,6 +131,45 @@ class WriteToolCallingLLMClient(FakeLLMClient):
             ),
         )
 
+class UnreadToolCallingLLMClient(FakeLLMClient):
+    def __init__(self) -> None:
+        super().__init__()
+        self.requests: list[LLMRequest] = []
+
+    async def stream(
+        self, request: LLMRequest,
+    ) -> AsyncIterator[LLMStreamChunk]:
+        self.requests.append(request)
+        if len(self.requests) == 1:
+            yield LLMStreamChunk(
+                text="", provider=LLMProvider.MOCK, model="mock-tools",
+                tool_call=LLMToolCall("gmail_read_unread_messages", {}),
+            )
+        else:
+            yield LLMStreamChunk(
+                text="未读邮件：Interview time",
+                provider=LLMProvider.MOCK, model="mock-tools",
+            )
+
+
+class RepeatingFileLLMClient(FakeLLMClient):
+    def __init__(self, vary_arguments: bool = False) -> None:
+        super().__init__()
+        self.vary_arguments = vary_arguments
+        self.requests: list[LLMRequest] = []
+
+    async def stream(self, request: LLMRequest) -> AsyncIterator[LLMStreamChunk]:
+        self.requests.append(request)
+        if not request.tools:
+            yield LLMStreamChunk("Final answer", LLMProvider.MOCK, "mock-tools")
+            return
+        max_entries = len(self.requests) if self.vary_arguments else 1
+        yield LLMStreamChunk(
+            "", LLMProvider.MOCK, "mock-tools",
+            tool_call=LLMToolCall("list_files", {"path": ".", "max_entries": max_entries}),
+        )
+
+
 def make_request(knowledge_context: str = "") -> RuntimeRequest:
     return RuntimeRequest(
         run_id="run-1",
@@ -143,6 +185,48 @@ def make_request(knowledge_context: str = "") -> RuntimeRequest:
 
 
 class NativeAgentRuntimeTest(unittest.IsolatedAsyncioTestCase):
+    async def test_greeting_does_not_offer_tools_or_resume_old_task(self) -> None:
+        client = FakeLLMClient()
+        runtime = NativeAgentRuntime(
+            client, create_file_tool_registry(Path(__file__).resolve().parents[1])
+        )
+        request = replace(make_request(), message="你好", conversation_context="user: 修改日记")
+
+        events = [event async for event in runtime.stream(request)]
+
+        self.assertEqual(events[-1].type, RuntimeEventType.RUN_FINISHED)
+        assert client.last_request is not None
+        self.assertEqual(client.last_request.tools, ())
+        self.assertIn("do not resume earlier tasks", client.last_request.instructions)
+
+    async def test_duplicate_tool_call_is_skipped_then_model_answers(self) -> None:
+        client = RepeatingFileLLMClient()
+        runtime = NativeAgentRuntime(
+            client, create_file_tool_registry(Path(__file__).resolve().parents[1])
+        )
+
+        events = [event async for event in runtime.stream(make_request())]
+
+        finished = [event.payload for event in events if event.type is RuntimeEventType.TOOL_FINISHED]
+        self.assertEqual([item["status"] for item in finished], ["completed", "skipped"])
+        self.assertEqual(finished[-1]["reason"], "duplicate_call")
+        self.assertEqual(len(client.requests), 3)
+        self.assertEqual(client.requests[-1].tools, ())
+        self.assertEqual(events[-1].type, RuntimeEventType.RUN_FINISHED)
+
+    async def test_budget_gets_one_final_answer_without_tools(self) -> None:
+        client = RepeatingFileLLMClient(vary_arguments=True)
+        runtime = NativeAgentRuntime(
+            client, create_file_tool_registry(Path(__file__).resolve().parents[1])
+        )
+
+        events = [event async for event in runtime.stream(make_request())]
+
+        self.assertEqual(len([e for e in events if e.type is RuntimeEventType.TOOL_FINISHED]), 6)
+        self.assertEqual(len(client.requests), 7)
+        self.assertEqual(client.requests[-1].tools, ())
+        self.assertEqual(events[-1].type, RuntimeEventType.RUN_FINISHED)
+
     async def test_success_is_normalized_to_runtime_events(self) -> None:
         client = FakeLLMClient()
         runtime = NativeAgentRuntime(client)
@@ -164,7 +248,7 @@ class NativeAgentRuntimeTest(unittest.IsolatedAsyncioTestCase):
                 RuntimeEventType.RUN_FINISHED,
             ],
         )
-        self.assertIn("用户问题:\nHello", events[2].payload["text"])
+        self.assertIn("用户问题:\nHello", str(events[2].payload["text"]))
         self.assertEqual(events[3].payload["cost_status"], "unavailable")
         assert client.last_request is not None
         self.assertEqual(client.last_request.client_id, "client-a")
@@ -266,7 +350,32 @@ class NativeAgentRuntimeTest(unittest.IsolatedAsyncioTestCase):
         self.assertIn(RuntimeEventType.TOOL_FINISHED, event_types)
         self.assertEqual(len(client.requests), 2)
         self.assertIn("<read_text_file>", client.requests[1].message)
+        finished = next(
+            event for event in events
+            if event.type is RuntimeEventType.TOOL_FINISHED
+        )
+        self.assertEqual(finished.payload["status"], "completed")
         self.assertEqual(events[-1].type, RuntimeEventType.RUN_FINISHED)
+
+    async def test_tool_failure_closes_audit_event_before_run_failure(self) -> None:
+        runtime = NativeAgentRuntime(
+            FileToolCallingLLMClient("missing.txt"),
+            create_file_tool_registry(Path(__file__).resolve().parents[1]),
+        )
+        events = []
+
+        with self.assertRaises(ValueError):
+            async for event in runtime.stream(make_request()):
+                events.append(event)
+
+        self.assertEqual(events[-2].type, RuntimeEventType.TOOL_FINISHED)
+        self.assertEqual(events[-2].payload, {
+            "tool_name": "read_text_file",
+            "status": "error",
+            "error_type": "ValueError",
+        })
+        self.assertEqual(events[-1].type, RuntimeEventType.RUN_FAILED)
+
     async def test_markdown_write_pauses_for_approval(self) -> None:
         with tempfile.TemporaryDirectory() as directory:
             path = Path(directory) / "note.md"
@@ -281,6 +390,7 @@ class NativeAgentRuntimeTest(unittest.IsolatedAsyncioTestCase):
                 events.append(event)
                 if event.type is RuntimeEventType.APPROVAL_REQUIRED:
                     self.assertFalse(path.exists())
+                    self.assertEqual(event.payload["summary"], {})
                     approvals.decide(
                         "client-a", "run-1",
                         str(event.payload["approval_id"]), True,
@@ -288,6 +398,75 @@ class NativeAgentRuntimeTest(unittest.IsolatedAsyncioTestCase):
 
             self.assertEqual(path.read_text(encoding="utf-8"), "# Approved")
             self.assertIn(RuntimeEventType.TOOL_FINISHED, [item.type for item in events])
+
+    async def test_unread_mail_reaches_model_after_approval(self) -> None:
+        class FakeGoogle:
+            def __init__(self) -> None:
+                self.calls: list[str] = []
+
+            async def request(self, client_id, method, service, path, **_kwargs):
+                self.calls.append(f"{client_id}:{method}:{service}:{path}")
+                if path.endswith("/messages"):
+                    return httpx.Response(200, json={"messages": [{"id": "msg-1"}]})
+                return httpx.Response(200, json={
+                    "id": "msg-1", "snippet": "Interview",
+                    "payload": {"headers": [
+                        {"name": "Subject", "value": "Interview time"},
+                    ]},
+                })
+
+        google = FakeGoogle()
+        registry = ToolRegistry()
+        register_google_read_tools(registry, google)  # type: ignore[arg-type]
+        llm = UnreadToolCallingLLMClient()
+        approvals = ToolApprovalBroker()
+        runtime = NativeAgentRuntime(llm, registry, approvals)
+        events = []
+        async for event in runtime.stream(replace(
+            make_request(), message="总结当前未读邮件",
+        )):
+            events.append(event)
+            if event.type is RuntimeEventType.APPROVAL_REQUIRED:
+                self.assertEqual(google.calls, [])
+                approvals.decide(
+                    "client-a", "run-1", str(event.payload["approval_id"]), True,
+                )
+
+        self.assertEqual(len(llm.requests), 2)
+        self.assertIn(
+            "gmail_read_unread_messages",
+            [tool.name for tool in llm.requests[0].tools],
+        )
+        self.assertIn("Interview time", llm.requests[1].message)
+        self.assertEqual(events[-1].type, RuntimeEventType.RUN_FINISHED)
+        self.assertTrue(all(call.startswith("client-a:GET:gmail:") for call in google.calls))
+
+    async def test_approved_tool_failure_closes_audit_event(self) -> None:
+        with tempfile.TemporaryDirectory() as directory:
+            approvals = ToolApprovalBroker()
+            runtime = NativeAgentRuntime(
+                WriteToolCallingLLMClient(
+                    str(Path(directory) / "missing" / "note.md")
+                ),
+                create_file_tool_registry(),
+                approvals,
+            )
+            events = []
+
+            with self.assertRaises(ValueError):
+                async for event in runtime.stream(make_request()):
+                    events.append(event)
+                    if event.type is RuntimeEventType.APPROVAL_REQUIRED:
+                        approvals.decide(
+                            "client-a", "run-1",
+                            str(event.payload["approval_id"]), True,
+                        )
+
+            self.assertEqual(events[-2].type, RuntimeEventType.TOOL_FINISHED)
+            self.assertEqual(events[-2].payload["status"], "error")
+            self.assertEqual(events[-2].payload["error_type"], "ValueError")
+            self.assertEqual(events[-1].type, RuntimeEventType.RUN_FAILED)
+
     async def test_delegate_tool_rejects_target_outside_allowlist(self) -> None:
         client = ToolCallingLLMClient("agent-unknown")
         request = replace(

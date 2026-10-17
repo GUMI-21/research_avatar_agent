@@ -29,6 +29,7 @@ from app.services import (
     RunExecutionService,
 )
 from app.services.runtime_registry import RuntimeNotFoundError, RuntimeRegistry
+from app.services.skills import SkillCatalog
 from app.tools import ToolApprovalBroker
 from logs import log
 
@@ -37,6 +38,7 @@ router = APIRouter()
 
 @dataclass
 class ActiveRun:
+    # [None] 是泛型的类型写法,表示asynico.Task的返回值是None
     task: asyncio.Task[None] | None = None
     # 当前 Agent 执行记录的 ID，由 RunExecutionService 创建
     run_id: str | None = None
@@ -46,16 +48,23 @@ class ActiveRun:
 @router.websocket("/ws")
 async def workspace_socket(
     websocket: WebSocket,
+    # Annotatedl诶性标注，一个str参数，从Query中获取
     client_id: Annotated[str, Query(min_length=1, max_length=64)],
 ) -> None:
+    # 接受webSocket握手，升级为连接
     await websocket.accept()
     database: Database = websocket.app.state.database
+    # Agent 执行事件注册器，在main函数中注册好的agent_runtime adapater
     registry: RuntimeRegistry = websocket.app.state.runtime_registry
     embedding_client: EmbeddingClient = websocket.app.state.embedding_client
+    # langGraph检查点存储器
     graph_checkpointer: BaseCheckpointSaver[str] = (
         websocket.app.state.graph_checkpointer
     )
     approvals: ToolApprovalBroker = websocket.app.state.tool_approval_broker
+    skill_catalog: SkillCatalog | None = getattr(
+        websocket.app.state, "skill_catalog", None
+    )
     log.info("websocket_connected business=agent_workspace client_id={}", client_id)
     # 异步协程锁，保证发送消息不冲突
     send_lock = asyncio.Lock()
@@ -65,6 +74,7 @@ async def workspace_socket(
         while True:
             try:
                 # 暂停当前协程，收到客户端消息后继续；不会阻塞事件循环
+                # 将接收到的json转换为命令对象
                 command = WORKSPACE_COMMAND_ADAPTER.validate_python(
                     await websocket.receive_json()
                 )
@@ -84,6 +94,7 @@ async def workspace_socket(
                     PongFrame(request_id=command.request_id),
                 )
                 continue
+            # 是否同意工具调用
             if isinstance(command, ToolApprovalCommand):
                 if (
                     active_run.run_id != command.run_id
@@ -157,7 +168,10 @@ async def workspace_socket(
                     "This connection already has an active Run",
                 )
                 continue
+
+            # 只剩下SendMessageCommand了
             active_run.run_id = None
+            # 创建send_message的task； create_task也会把task注册到当前event loop（asynico的内部实现），等待调度执行；
             active_run.task = asyncio.create_task(
                 _stream_run(
                     websocket,
@@ -166,6 +180,7 @@ async def workspace_socket(
                     registry,
                     embedding_client,
                     graph_checkpointer,
+                    skill_catalog,
                     client_id,
                     command.session_id,
                     command.content,
@@ -179,10 +194,11 @@ async def workspace_socket(
             "websocket_disconnected business=agent_workspace client_id={}",
             client_id,
         )
+    # 断开连接后关闭资源
     finally:
         if active_run.task is not None and not active_run.task.done():
             active_run.task.cancel()
-            # 调用cancel，CancelledError是预期结果，等待任务资源关闭
+            # 调用cancel，CancelledError是预期结果，等待任务资源关闭；suppres 忽略指定异常
             with suppress(asyncio.CancelledError):
                 await active_run.task
 
@@ -206,6 +222,7 @@ async def _send_frame(
         await websocket.send_json(frame.model_dump(mode="json"))
 
 
+# 处理SendMessageCommand
 async def _stream_run(
     websocket: WebSocket,
     send_lock: asyncio.Lock,
@@ -213,6 +230,7 @@ async def _stream_run(
     registry: RuntimeRegistry,
     embedding_client: EmbeddingClient,
     graph_checkpointer: BaseCheckpointSaver[str],
+    skill_catalog: SkillCatalog | None,
     client_id: str,
     session_id: str,
     content: str,
@@ -221,8 +239,9 @@ async def _stream_run(
 ) -> None:
     try:
         async with database.session() as session:
+            # 获取agent执行器对象
             service = RunExecutionService(
-                session, registry, embedding_client, graph_checkpointer
+                session, registry, embedding_client, graph_checkpointer, skill_catalog
             )
             # 异步消费已经拆分好的 Agent 执行事件
             async for item in service.stream(
@@ -236,6 +255,7 @@ async def _stream_run(
                 await _send_frame(
                     websocket,
                     send_lock,
+                    # 统一发送agent事件帧
                     RunEventFrame(
                         type=item.event.type,
                         run_id=item.run_id,
@@ -277,6 +297,7 @@ async def _replay_run(
     command: ResumeRunCommand,
 ) -> None:
     async with database.session() as session:
+        # 需要补发的事件
         records = list(
             await RunEventService(session).replay(
                 client_id,
@@ -287,6 +308,7 @@ async def _replay_run(
         )
     has_more = len(records) > command.limit
     records = records[: command.limit]
+    # 补发事件，流式输出不会落表，所以补发事件大概率只有几条
     for record in records:
         frame = RunEventFrame(
             type=RuntimeEventType(record.event_type),

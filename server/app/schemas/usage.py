@@ -25,6 +25,7 @@ class RunUsageRead(BaseModel):
     duration_ms: int | None
     time_to_first_token_ms: int | None
     error_type: str | None
+    skill_versions: list[dict[str, str]]
     created_at: datetime
 
 

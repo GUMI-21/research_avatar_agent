@@ -1,5 +1,6 @@
 """Official MCP SDK transports for stdio and Streamable HTTP servers."""
 
+import asyncio
 from collections.abc import Mapping, Sequence
 from contextlib import AsyncExitStack
 from pathlib import Path
@@ -45,17 +46,26 @@ class _SDKMCPTransport:
     ) -> Mapping[str, object]:
         if self._client is None:
             raise MCPError("MCP transport is not connected")
-        if method == "tools/list":
-            result = await self._client.list_tools()
-        elif method == "tools/call":
-            values = dict(params or {})
-            name = values.get("name")
-            arguments = values.get("arguments", {})
-            if not isinstance(name, str) or not isinstance(arguments, dict):
-                raise MCPError("MCP tools/call parameters are invalid")
-            result = await self._client.call_tool(name, arguments)
-        else:
-            raise MCPError(f"Unsupported MCP method '{method}'")
+        try:
+            async with asyncio.timeout(self._timeout_seconds):
+                if method == "tools/list":
+                    result = await self._client.list_tools()
+                elif method == "tools/call":
+                    values = dict(params or {})
+                    name = values.get("name")
+                    arguments = values.get("arguments", {})
+                    if not isinstance(name, str) or not isinstance(arguments, dict):
+                        raise MCPError("MCP tools/call parameters are invalid")
+                    result = await self._client.call_tool(name, arguments)
+                else:
+                    raise MCPError(f"Unsupported MCP method '{method}'")
+        except asyncio.CancelledError:
+            raise
+        except MCPError:
+            raise
+        except Exception as error:
+            self._client = None
+            raise MCPError("MCP transport request failed") from error
         return cast(Mapping[str, object], result.model_dump(
             mode="json", by_alias=True, exclude_none=True,
         ))

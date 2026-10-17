@@ -1,5 +1,6 @@
 """Tests for the official SDK-backed stdio MCP transport."""
 
+import asyncio
 import unittest
 from unittest.mock import patch
 
@@ -32,6 +33,25 @@ class FakeClient:
     async def call_tool(self, name: str, arguments: dict[str, object]) -> FakeResult:
         self.calls.append((name, arguments))
         return FakeResult({"content": [{"type": "text", "text": "ok"}]})
+
+
+class FailingClient(FakeClient):
+    async def list_tools(self) -> FakeResult:
+        raise ConnectionError("sensitive upstream detail")
+
+
+class CancellableClient(FakeClient):
+    def __init__(self) -> None:
+        super().__init__()
+        self.started = asyncio.Event()
+        self.attempts = 0
+
+    async def list_tools(self) -> FakeResult:
+        self.attempts += 1
+        if self.attempts == 1:
+            self.started.set()
+            await asyncio.Event().wait()
+        return await super().list_tools()
 
 
 class StdioMCPTransportTest(unittest.IsolatedAsyncioTestCase):
@@ -76,6 +96,36 @@ class StdioMCPTransportTest(unittest.IsolatedAsyncioTestCase):
                     await transport.request("resources/list")
                 with self.assertRaisesRegex(MCPError, "parameters"):
                     await transport.request("tools/call", {"name": 42})
+
+    async def test_request_failure_is_safe_and_disconnects_transport(self) -> None:
+        with patch("app.tools.mcp_sdk.Client", return_value=FailingClient()):
+            async with StdioMCPTransport("fake-server") as transport:
+                with self.assertRaisesRegex(MCPError, "request failed") as raised:
+                    await transport.request("tools/list")
+                self.assertNotIn("sensitive upstream detail", str(raised.exception))
+                with self.assertRaisesRegex(MCPError, "not connected"):
+                    await transport.request("tools/list")
+
+    async def test_timeout_is_mapped_but_task_cancellation_is_preserved(self) -> None:
+        timeout_client = CancellableClient()
+        with patch("app.tools.mcp_sdk.Client", return_value=timeout_client):
+            async with StdioMCPTransport(
+                "fake-server", timeout_seconds=0.001,
+            ) as transport:
+                with self.assertRaisesRegex(MCPError, "request failed"):
+                    await transport.request("tools/list")
+
+        cancel_client = CancellableClient()
+        with patch("app.tools.mcp_sdk.Client", return_value=cancel_client):
+            async with StdioMCPTransport("fake-server") as transport:
+                task = asyncio.create_task(transport.request("tools/list"))
+                await cancel_client.started.wait()
+                task.cancel()
+                with self.assertRaises(asyncio.CancelledError):
+                    await task
+                result = await transport.request("tools/list")
+
+        self.assertEqual(result["tools"], [{"name": "search"}])
 
 
 if __name__ == "__main__":

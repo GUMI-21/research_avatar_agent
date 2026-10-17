@@ -113,6 +113,18 @@ class MCPSettings(StrictSettingsModel):
     stdio_servers: tuple[MCPStdioServerSettings, ...] = ()
     http_servers: tuple[MCPHttpServerSettings, ...] = ()
 
+
+class SkillSettings(StrictSettingsModel):
+    directories: tuple[Path, ...] = (SERVER_ROOT / "skills",)
+    max_file_bytes: int = Field(default=65_536, ge=1, le=1_048_576)
+
+
+class DemoSettings(StrictSettingsModel):
+    """Optional interview-demo boundary that disables write-capable tools."""
+
+    enabled: bool = False
+
+
 class Settings(StrictSettingsModel):
     """Complete server configuration for one runtime environment."""
 
@@ -124,6 +136,8 @@ class Settings(StrictSettingsModel):
     embedding: EmbeddingSettings = Field(default_factory=EmbeddingSettings)
     codex: CodexSettings = Field(default_factory=CodexSettings)
     mcp: MCPSettings = Field(default_factory=MCPSettings)
+    skills: SkillSettings = Field(default_factory=SkillSettings)
+    demo: DemoSettings = Field(default_factory=DemoSettings)
     llm: LLMSettings
 
 

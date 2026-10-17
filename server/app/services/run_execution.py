@@ -16,6 +16,7 @@ from app.adapters.agent import (
     RuntimeRequest,
 )
 from app.adapters.knowledge import EmbeddingClient
+from app.core.intent import is_simple_greeting
 from app.models import MessageRecord
 from app.orchestration import AgentRunTarget, LangGraphRunOrchestrator
 from app.repositories import (
@@ -31,6 +32,7 @@ from app.services.knowledge_retrieval import KnowledgeRetrievalService
 from app.services.run import RunService
 from app.services.run_event import RunEventService
 from app.services.runtime_registry import RuntimeRegistry
+from app.services.skills import SkillCatalog, SkillDefinition
 
 
 RUN_EVENT_STATUSES = {
@@ -50,6 +52,25 @@ MEMORY_CONTEXT_BUDGET_CHARS = 4000
 # 注入最近 12 条、最多 6000 字符的短期会话上下文；装配同客户端 handoff 候选。
 RECENT_MESSAGE_LIMIT = 12
 RECENT_CONTEXT_BUDGET_CHARS = 6000
+
+
+def _system_prompt_with_skills(
+    system_prompt: str, skills: Sequence[SkillDefinition]
+) -> str:
+    if not skills:
+        return system_prompt
+    sections = [
+        system_prompt.rstrip(),
+        "Enabled Skills follow. They are instructions only: use tools through the "
+        "Tool Registry and preserve every permission and approval requirement.",
+    ]
+    for skill in skills:
+        tools = ", ".join(skill.recommended_tools) or "none"
+        sections.append(
+            f"## Skill: {skill.name} ({skill.id})\n"
+            f"Recommended tools: {tools}\n{skill.instructions}"
+        )
+    return "\n\n".join(sections)
 
 
 def _optional_string(value: object) -> str | None:
@@ -125,6 +146,7 @@ class RunExecutionService:
         registry: RuntimeRegistry,
         embedding_client: EmbeddingClient | None = None,
         graph_checkpointer: BaseCheckpointSaver[str] | None = None,
+        skill_catalog: SkillCatalog | None = None,
     ) -> None:
         self._session = session
         self._registry = registry
@@ -134,7 +156,9 @@ class RunExecutionService:
         self._retrieval = KnowledgeRetrievalService(session, embedding_client)
         self._retrieval_strategy = "hybrid" if embedding_client else "keyword"
         self._graph_checkpointer = graph_checkpointer
+        self._skill_catalog = skill_catalog
 
+    # 处理agent事件
     async def stream(
         self,
         client_id: str,
@@ -157,16 +181,20 @@ class RunExecutionService:
         )
         if agent is None:
             raise RunExecutionParentNotFoundError("Agent not found")
+        # 装配最近的上下文，暂定12条
         recent_messages = await MessageRepository(self._session).list_messages(
             client_id, session_id, limit=RECENT_MESSAGE_LIMIT
         )
+        # 已注册的llm runtime_id -> 当前：native / codex
         available_runtime_ids = set(self._registry.available())
+        # 只获取runtime当前可用的agent
         available_agents = [
             item
             for item in await agent_repository.list_agents(client_id)
             if item.runtime in available_runtime_ids
         ]
         agents_by_id = {item.id: item for item in available_agents}
+        # 读写外部 Runtime 的 thread ID （codex线程ID）
         thread_repository = RuntimeThreadRepository(self._session)
         runtime_thread_ids = {
             item.id: await thread_repository.get_external_id(
@@ -174,6 +202,7 @@ class RunExecutionService:
             )
             for item in available_agents if item.runtime == "codex"
         }
+        # 长期记忆
         memory_repository = MemoryRepository(self._session)
         memory_records = {
             item.id: await memory_repository.list_for_agent(
@@ -194,6 +223,16 @@ class RunExecutionService:
         )
         # 根据表中的 runtime 字段调用已注册的 Factory，创建对应 Runtime 实例
         runtime = self._registry.create(agent.runtime)
+        skills_by_agent = {
+            item.id: tuple(
+                skill
+                for skill_id in item.skill_ids
+                if (skill := self._skill_catalog.get(skill_id)) is not None
+            )
+            for item in available_agents
+            if item.runtime == "native" and self._skill_catalog is not None
+        }
+        enabled_skills = skills_by_agent.get(agent.id, ())
         # 创建 Agent 执行记录
         run = await self._runs.create_run(
             client_id,
@@ -201,6 +240,10 @@ class RunExecutionService:
             agent.id,
             runtime=agent.runtime,
             model=agent.model,
+            skill_versions=[
+                {"id": skill.id, "version_hash": skill.version_hash}
+                for skill in enabled_skills
+            ],
         )
         _ = await self._messages.append(
             client_id,
@@ -210,6 +253,7 @@ class RunExecutionService:
             content=message,
             run_id=run.id,
         )
+        # 计时
         execution_started = perf_counter()
         run_started = await self._process(
             client_id,
@@ -223,7 +267,7 @@ class RunExecutionService:
         try:
             source_ids = (
                 sorted(set(agent.knowledge_source_ids))
-                if agent.runtime == "native"
+                if agent.runtime == "native" and not is_simple_greeting(message)
                 else []
             )
             if source_ids:
@@ -254,6 +298,7 @@ class RunExecutionService:
                         limit=KNOWLEDGE_PER_SOURCE_LIMIT,
                     )
                     hits.extend(source_hits)
+                    # event落库
                     result = await self._process(
                         client_id,
                         run.id,
@@ -316,7 +361,9 @@ class RunExecutionService:
             runtime_thread_id=runtime_thread_ids.get(agent.id),
             workspace_path=agent.workspace_path,
             # 身份、近期会话和 RAG 上下文保持独立边界。
-            system_prompt=agent.system_prompt,
+            system_prompt=_system_prompt_with_skills(
+                agent.system_prompt, enabled_skills
+            ),
             conversation_context=_assemble_recent_context(recent_messages),
             memory_context=memory_contexts.get(agent.id, ""),
             memory_ids=tuple(record.id for record in memory_records.get(agent.id, ())),
@@ -326,6 +373,7 @@ class RunExecutionService:
         graph_targets = {
             item.id: AgentRunTarget(
                 self._registry.create(item.runtime),
+                # replace: 复制原来的request，只修改部分片段
                 replace(
                     request,
                     agent_id=item.id,
@@ -334,7 +382,9 @@ class RunExecutionService:
                     model=item.model,
                     runtime_thread_id=runtime_thread_ids.get(item.id),
                     workspace_path=item.workspace_path,
-                    system_prompt=item.system_prompt,
+                    system_prompt=_system_prompt_with_skills(
+                        item.system_prompt, skills_by_agent.get(item.id, ())
+                    ),
                     memory_context=memory_contexts.get(item.id, ""),
                     memory_ids=tuple(
                         record.id for record in memory_records.get(item.id, ())
@@ -346,9 +396,11 @@ class RunExecutionService:
                     ) + (HandoffTarget(agent.id, agent.name),),
                 ),
             )
+            # 除了当前agent的其他可用agent
             for item in available_agents
             if item.id != agent.id
         }
+        # 控制由哪个agent执行以及是否进行handoff
         orchestrator = LangGraphRunOrchestrator(
             runtime, self._graph_checkpointer, graph_targets
         )
@@ -406,6 +458,21 @@ class RunExecutionService:
                     await thread_repository.set_external_id(
                         client_id, session_id, active_agent.id,
                         active_agent.runtime, thread_id,
+                    )
+            if event.type is RuntimeEventType.HANDOFF_STARTED:
+                target_id = event.payload.get("to_agent_id")
+                target_skills = (
+                    skills_by_agent.get(target_id, ())
+                    if isinstance(target_id, str) else ()
+                )
+                if target_skills:
+                    await self._runs.record_skills(
+                        client_id,
+                        run.id,
+                        [
+                            {"id": skill.id, "version_hash": skill.version_hash}
+                            for skill in target_skills
+                        ],
                     )
             terminal_received = event.type in TERMINAL_EVENTS or terminal_received
             if event.type is RuntimeEventType.HANDOFF_FINISHED:

@@ -74,7 +74,7 @@ class LangGraphRunOrchestrator:
         self._handoff_targets = handoff_targets or {}
         builder = StateGraph(AgentRunState, context_schema=AgentRunContext)
         builder.add_node("prepare", self._prepare)
-        # 转交任务
+        # 转交任务节点
         builder.add_node("handoff", self._handoff)
         builder.add_node("agent", self._run_agent)
         builder.add_edge(START, "prepare")
@@ -110,6 +110,7 @@ class LangGraphRunOrchestrator:
             raise HandoffRoutingError("Missing handoff target")
         depth = state["handoff_depth"]
         if invocation.pending_mode == "automatic":
+            # 转交最大深度2
             if depth >= 2 or target_id in state["visited_agent_ids"]:
                 raise HandoffRoutingError("Handoff depth or cycle rejected")
             target = invocation.targets.get(target_id)
@@ -148,6 +149,7 @@ class LangGraphRunOrchestrator:
             "visited_agent_ids": [*state["visited_agent_ids"], target_id],
         }
 
+    # agent执行节点
     async def _run_agent(
         self,
         state: AgentRunState,
@@ -173,6 +175,7 @@ class LangGraphRunOrchestrator:
                     pending_agent_id = target_id
                     invocation.pending_summary = summary
                     invocation.pending_mode = "automatic"
+        # 返回值是用来更新langgraph状态；是否需要转交判断的是pending_agent_id
         return {
             "phase": "handoff_requested" if pending_agent_id else "completed",
             "terminal_event": terminal_event,
@@ -181,6 +184,7 @@ class LangGraphRunOrchestrator:
 
     @staticmethod
     def _after_agent(state: AgentRunState) -> Literal["handoff", "__end__"]:
+        # 存在pending_agent_id触发转交
         return "handoff" if state["pending_agent_id"] else "__end__"
 
     async def stream(
@@ -213,7 +217,7 @@ class LangGraphRunOrchestrator:
                 self._runtime, request, self._handoff_targets
             )
         }
-        # 根据图开始进入状态流
+        # 会收到 stream_writer() 写出去的 RuntimeEvent。
         async for event in self._graph.astream(
             initial,
             config=config,
@@ -223,6 +227,7 @@ class LangGraphRunOrchestrator:
             if isinstance(event, RuntimeEvent):
                 yield event
 
+    # 实时查看langGraph流转状态
     async def get_state(self, run_id: str) -> AgentRunState:
         config: RunnableConfig = {"configurable": {"thread_id": run_id}}
         snapshot = await self._graph.aget_state(config)

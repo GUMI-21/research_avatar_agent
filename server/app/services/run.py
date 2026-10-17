@@ -38,6 +38,7 @@ class RunService:
         runtime: str,
         provider: str | None = None,
         model: str | None = None,
+        skill_versions: list[dict[str, str]] | None = None,
     ) -> RunRecord:
         run = await self._repository.create(
             client_id,
@@ -46,6 +47,7 @@ class RunService:
             runtime=runtime,
             provider=provider,
             model=model,
+            skill_versions=skill_versions,
         )
         await self._commit("create", run)
         return run
@@ -117,6 +119,20 @@ class RunService:
         if updated is None:
             raise RunNotFoundError(run_id)
         await self._commit("usage", updated)
+        return updated
+
+    async def record_skills(
+        self,
+        client_id: str,
+        run_id: str,
+        skill_versions: list[dict[str, str]],
+    ) -> RunRecord:
+        updated = await self._repository.add_skill_versions(
+            client_id, run_id, skill_versions
+        )
+        if updated is None:
+            raise RunNotFoundError(run_id)
+        await self._commit("skills", updated)
         return updated
 
     # services调用repositories数据库的封装方法，如果成功就commit，有错误就rollback

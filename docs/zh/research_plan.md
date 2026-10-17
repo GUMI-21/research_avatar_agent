@@ -1,5 +1,7 @@
 # 研究计划
 
+本研究方向暂缓实施；当前开发以 [Workspace 路线图](internship_agent_workspace_plan.md) 为准。未来模块边界与候选契约见 [Avatar 集成计划](avatar_integration_plan.md)。
+
 ## 核心问题
 
 与无情绪表达的 Avatar 和真实教师基线相比，由情绪模型驱动的 3D 教学 Avatar 是否能够提升学习者的参与感、自然感、社会临场感和整体学习体验？

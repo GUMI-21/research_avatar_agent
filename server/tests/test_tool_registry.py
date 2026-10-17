@@ -8,6 +8,7 @@ from pydantic import Field, ValidationError
 from app.tools import (
     ToolApprovalRequiredError,
     ToolArguments,
+    ToolBlockedError,
     ToolContext,
     ToolRegistry,
     ToolResult,
@@ -98,6 +99,23 @@ class ToolRegistryTest(unittest.IsolatedAsyncioTestCase):
             approved=True,
         )
         self.assertEqual(result.metadata["path"], "README.md")
+
+    async def test_blocked_risk_is_hidden_and_cannot_be_approved(self) -> None:
+        registry = ToolRegistry(blocked_risks=(ToolRisk.LOCAL_WRITE,))
+        registry.register(ToolSpec(
+            name="write_server_file",
+            description="Write one server file.",
+            arguments=ReadArguments,
+            risk=ToolRisk.LOCAL_WRITE,
+            handler=read_handler,
+        ))
+
+        self.assertEqual(registry.definitions(), ())
+        with self.assertRaises(ToolBlockedError):
+            await registry.execute(
+                "write_server_file", self.context, {"path": "README.md"},
+                approved=True,
+            )
 
 
 if __name__ == "__main__":
