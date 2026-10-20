@@ -25,8 +25,9 @@ The active Avatar scope is English-led Japanese kana teaching. Project-root
 `courses/gojuon-en/SKILL.md` provides the initial lesson script. The first batch
 adds CourseSelection, TeachingTurn and validated AvatarControl contracts plus
 optional speech/independent-emotion ports. CourseCatalog now discovers/validates
-courses separately during app creation; teaching Session storage, routes and
-model injection are not wired yet. The legacy Unity API remains unchanged.
+courses separately during app creation. Teaching Session storage and its Repository
+now exist; routes, progress updates and model injection are not wired yet.
+The legacy Unity API remains unchanged.
 
 Teaching will generate reply and expression suggestions in one model call,
 without a separate emotion-model request. The current Skills configuration does
@@ -48,6 +49,17 @@ IDs, file size, UTF-8, YAML and resolved paths. Invalid files raise CourseCatalo
 and prevent app creation; an explicit refresh on an existing catalog retains
 its prior snapshot on failure. Refresh currently has no public API and is not
 an automatic watcher. Logs record counts/error types, not script content.
+
+### Teaching Session storage
+
+Apply Alembic migrations using the commands below before startup. The
+`teaching_session_states` table holds one binding per conversation: client scope,
+course/lesson IDs, script SHA256, `completed_turns=0` and `state_version=1`.
+The turn count does not measure mastery. Repository creation/lookup enforce client
+scope and only flush; the caller owns commit/rollback. Creation logs are marked
+`db_mutation_staged`, not committed. Script bodies are not archived in this table.
+Catalog/Native validation, rebinding and optimistic progress updates remain
+future Service/execution work; there is no public teaching API yet.
 
 ## Directory Layout
 

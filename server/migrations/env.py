@@ -22,6 +22,7 @@ from app.models import (  # noqa: F401
     RunEventRecord,
     RunRecord,
     SessionRecord,
+    TeachingSessionRecord,
 )
 
 config = context.config

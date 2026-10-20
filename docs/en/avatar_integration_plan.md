@@ -19,10 +19,11 @@ Implemented baseline:
 - TeachingTurn / AvatarControl: versioned reply/expression validation, neutral/idle defaults.
 - SpeechRecognizer, SpeechSynthesizer, EmotionAnalyzer: interfaces without providers or automatic calls.
 - CourseCatalog: shared Skill parsing, allowed-root discovery/validation, course/lesson lookup and versioned in-memory snapshots, separately loaded during app creation.
+- TeachingSessionRecord / TeachingRepository: one configuration per conversation, storing course/lesson, script hash, completed-turn count and state version; client-scoped creation/lookup with caller-owned transactions.
 
-Teaching APIs/state, structured generation and Unity playback are not implemented.
+Teaching APIs, automatic progress updates, structured generation and Unity playback are not implemented.
 Courses can be queried/resolved internally but are not automatically Agent Skills
-or model context. Teaching state models, migrations and Repository come next.
+or model context. Course lookup and binding REST come next, with Service validation of courses and Native Sessions.
 
 ## 1. Experience and scope
 
@@ -133,9 +134,17 @@ These APIs are not implemented. Retain X-Client-ID/WS scope, not authentication.
 Legacy POST /api/v1/unity/chat remains unchanged; Unity must explicitly migrate
 to the new pipeline rather than silently changing its neutral/idle behavior.
 
-Add teaching-Session and Run-presentation extension tables for course/lesson/hash,
-committed progress, suggestions, controls, fallback and latency. Do not duplicate
-chat or write per-frame records. Courses are read-only to conversations.
+The teaching_session_states extension table now uses session_id as its primary
+and foreign key, allowing one configuration per conversation. completed_turns
+starts at 0 and counts committed turns, not mastery; state_version starts at 1
+for future optimistic updates. Progress updates/conflict handling are not implemented.
+course_version stores the script SHA256 at binding time, not an archived script.
+Course existence, Native-only binding and version-change policy remain later
+Service/execution work. Repository methods only flush; the primary key rejects
+duplicate bindings, with API error mapping still pending.
+The Run-presentation table remains planned for suggestions, controls, fallback
+and latency. Do not duplicate chat or write per-frame records.
+Courses are read-only to conversations.
 
 ## 6. Correctness
 
@@ -157,8 +166,8 @@ Each backend batch runs appropriate tests/full unittest and pauses for review.
 | Batch | Complete change | Areas | Acceptance |
 | --- | --- | --- | --- |
 | 1 (implemented) | Course seed, selection/reply/expression contracts, optional ports | courses/, schemas/, adapters/avatar/ | Real script parsing, valid example, bounds, legacy compatibility |
-| 2 (current) | CourseCatalog/lesson discovery and root settings | services/courses.py, core/settings.py | Roots, language/lessons, size, version, escape rejection |
-| 3 | Teaching state/model/migration/Repository | models/, migrations/, repositories/ | Client scope, Session binding, versions/progress |
+| 2 (implemented) | CourseCatalog/lesson discovery and root settings | services/courses.py, core/settings.py | Roots, language/lessons, size, version, escape rejection |
+| 3 (current) | Teaching state/model/migration/Repository | models/, migrations/, repositories/ | Client scope, Session binding, course version, progress defaults and rollback |
 | 4 | Catalog and teaching-binding REST | services/teaching.py, api/ | Course existence, Native binding, cross-client rejection |
 | 5 | Teaching options/context/permissions | services/run_execution.py, adapters/agent/ | Budgets, memory/RAG reuse, no tools/handoff, Workspace regression |
 | 6 | Joint-output parser/plain reply/fallback | adapters/agent/, services/avatar_policy.py | No raw JSON leakage, bad expressions fall back, bad replies fail |

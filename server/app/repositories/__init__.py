@@ -17,6 +17,7 @@ from app.repositories.session import (
     SessionAgentNotFoundError,
     SessionRepository,
 )
+from app.repositories.teaching import TeachingRepository, TeachingSessionNotFoundError
 
 # 引用*时，对外暴露类
 __all__ = [
@@ -38,4 +39,6 @@ __all__ = [
     "RunEventRunNotFoundError",
     "SessionAgentNotFoundError",
     "SessionRepository",
+    "TeachingRepository",
+    "TeachingSessionNotFoundError",
 ]

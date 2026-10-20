@@ -15,6 +15,7 @@ from app.models.run import RunRecord
 from app.models.run_event import RunEventRecord
 from app.models.runtime_thread import RuntimeThreadRecord
 from app.models.session import SessionRecord
+from app.models.teaching import TeachingSessionRecord
 from app.models.workspace import WorkspaceRecord
 
 __all__ = [
@@ -33,5 +34,6 @@ __all__ = [
     "RunRecord",
     "RuntimeThreadRecord",
     "SessionRecord",
+    "TeachingSessionRecord",
     "WorkspaceRecord",
 ]
