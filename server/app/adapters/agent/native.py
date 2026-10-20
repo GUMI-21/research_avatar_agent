@@ -133,16 +133,18 @@ class NativeAgentRuntime:
             message = "\n\n".join(
                 [*context_parts, f"用户问题:\n{request.message}"]
             )
-        greeting = is_simple_greeting(request.message)
+        teaching = request.mode == "teaching"
+        greeting = not teaching and is_simple_greeting(request.message)
         tool_definitions = (
-            self._tools.definitions() if self._tools is not None and not greeting else ()
+            self._tools.definitions() if self._tools is not None and not greeting and not teaching else ()
         )
         tool_context = ToolContext(request.client_id, request.agent_id)
         last_tool_call: tuple[str, str] | None = None
         force_final = False
         try:
             for step in range(MAX_TOOL_CALLS + 1):
-                final_only = greeting or force_final or step == MAX_TOOL_CALLS
+                # 教学模式不仅隐藏工具描述，也拒绝 Provider 返回的任何工具调用。
+                final_only = teaching or greeting or force_final or step == MAX_TOOL_CALLS
                 requested_tool = False
                 async for chunk in self._llm_client.stream(
                     LLMRequest(

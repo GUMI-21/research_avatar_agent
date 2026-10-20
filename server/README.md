@@ -26,8 +26,9 @@ The active Avatar scope is English-led Japanese kana teaching. Project-root
 adds CourseSelection, TeachingTurn and validated AvatarControl contracts plus
 optional speech/independent-emotion ports. CourseCatalog now discovers/validates
 courses separately during app creation. Teaching Session storage and its Repository
-now exist, alongside course listing and initial binding REST. Progress updates,
-model injection and teaching execution are not wired yet; storing a binding
+now exist, alongside course listing and initial binding REST. Internal request
+preparation and enforced teaching permissions are testable, but public model
+injection/execution and progress updates are not wired yet; storing a binding
 does not change ordinary chat handling.
 The legacy Unity API remains unchanged.
 
@@ -83,6 +84,23 @@ and unavailable courses/lessons return 404; non-Native binding returns 409 and
 invalid inputs 422. Stored configuration remains readable after catalog removal,
 but PUT still validates the catalog; no archived-script execution is provided.
 These endpoints do not call an LLM, create a Run or advance progress.
+
+### Internal teaching preparation
+
+`TeachingService.prepare(RuntimeRequest)` rechecks client-scoped binding/Session,
+the bound Native Agent and the current course/lesson/hash. It rejects target
+overrides, missing/changed scripts and course context over 8,000 characters rather
+than truncate scripts. The course section includes the complete body, selected
+lesson, hash, state version and committed-turn count (not mastery). This is not
+a total request token limit. Existing dialogue/memory/RAG/model fields are preserved;
+their assembly remains responsible for scoping and budgets.
+
+The returned internal request uses `mode="teaching"`; Native disables all tools,
+rejects unsolicited calls and keeps teaching instructions for greetings. LangGraph
+also blocks manual/automatic handoff. `mode="workspace"` remains the default.
+Preparation makes no model call or database mutation. Public RunExecutionService,
+HTTP and WS do not use it yet: joint reply/expression parsing must land before
+structured output is allowed into chat. Tests are not live-model teaching validation.
 
 ## Directory Layout
 

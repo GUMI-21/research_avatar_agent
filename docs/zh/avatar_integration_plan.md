@@ -18,10 +18,12 @@ Workspace 工程基线见 [路线图](internship_agent_workspace_plan.md)，研�
 - CourseCatalog：复用 Skill 解析器，在允许目录发现和校验课程/课节，维护版本化内存快照；Server 创建应用时单独加载课程目录。
 - TeachingSessionRecord / TeachingRepository：每个对话一份教学配置，保存课程/课节、脚本哈希、已提交轮数和状态版本；创建/查询按 client_id 隔离，由调用方提交事务。
 - 课程列表及教学配置 GET/PUT：仅允许自己的 Native Session 绑定真实课程/课节，固定脚本哈希；同配置重复请求幂等，切课/升级暂拒绝。
+- TeachingService.prepare：内部准备教学请求，复核绑定/Native/脚本哈希，注入有预算的课程上下文，保留已有对话/记忆/RAG 字段；Native 与 LangGraph 强制禁止工具和转交。
 
-尚未实现教学执行 API、自动进度更新、模型结构化生成或 Unity 播放。
-课程已可通过 API 查询和选择，但不自动注册为普通 Agent Skill，也不代表已注入模型上下文。
-绑定目前只保存配置，不改变普通聊天处理流程。下一批实现教学执行配置、脚本上下文及权限约束。
+尚未实现教学执行 API、联合输出解析、自动进度更新或 Unity 播放。
+课程已可通过 API 查询和选择，但不自动注册为普通 Agent Skill。
+内部请求准备与权限策略已可测试；公开 RunExecutionService/HTTP/WS 尚未接入该准备方法，绑定仍不改变普通聊天处理流程。
+下一批实现联合回复/表情解析，避免原始 JSON 进入聊天，然后再桥接教学执行入口。
 
 ## 一、课程体验与首版范围
 
@@ -80,6 +82,22 @@ lesson_ids、适用场景及空 recommended_tools。正文用对应课节 ID 标
 - LangGraph 保留已有编排职责，普通 Workspace 不启用教学专属完成步骤。
 - 不自动把教学进度或模型猜测写入 Agent 长期记忆；课程正文也不能绕过系统权限。
 
+### 已实现的内部请求准备
+
+TeachingService.prepare 接收内部 RuntimeRequest，不对客户端开放执行模式参数。
+它按 client_id 复核教学状态与 Session、当前 Agent 身份及 Native runtime，拒绝非绑定 Agent 的目标覆盖；
+解析当前课程/课节并核对已存脚本哈希。课程移除或脚本变更时拒绝准备，不自动升级。
+完整课程正文连同服务端课节、脚本/状态版本和已提交轮数进入独立准备段，最多 8,000 字符；
+超过预算直接拒绝，不截断可能包含输出契约的脚本。预算仅约束该课程段，不是全请求 token 上限。
+首版发送整份课程正文并标明选定课节，不声称模型一定遵循教学策略；真实教学质量另行验收。
+
+返回请求使用 mode=teaching，清空 handoff 候选，保留原请求的近期会话、记忆、RAG、模型等字段；
+这些上下文仍由既有装配层负责作用域与各自预算。准备阶段不调用模型、不创建 Run/Message、不修改进度。
+Native 在教学模式下不提供任何工具定义，并拒绝 Provider 返回的工具/委派调用；问候也保留教学指令。
+LangGraph 同时拒绝手动目标转交及 Runtime 发出的转交请求，不执行目标 Agent。
+普通 Workspace 默认 mode=workspace，保留现有工具/转交/问候行为。
+当前仅可通过内部测试执行此路径；公开运行链要等联合输出解析完成后再接入，不能直接把结构化输出作为 assistant_delta 发给用户。
+
 ### 首版文本传输取舍
 
 TeachingTurn 是一个完整 JSON 对象。首版先在服务端完整接收、解析，再发送纯 reply；
@@ -129,7 +147,7 @@ REST 沿用 X-Client-ID，WebSocket 沿用现有作用域，仍不是正式认�
 已新增 teaching_session_states 教学 Session 扩展表，session_id 同时作为主键和外键，
 每个对话最多一份配置。completed_turns 初始为 0，只表示已提交教学轮数，不表示掌握程度；
 state_version 初始为 1，为后续乐观并发更新预留，目前尚未实现进度更新或状态版本的乐观并发控制。
-course_version 保存绑定时脚本 SHA256，不归档正文；Service 已校验课程存在性和 Native 限制，运行时版本检查后续实现。
+course_version 保存绑定时脚本 SHA256，不归档正文；绑定与内部请求准备均校验课程/Native，准备时检查脚本版本；公开运行链尚未接入。
 Repository 只 flush，Service 提交/回滚并记录提交成功日志；主键冲突映射为 409，客户端可重试。
 Run 呈现表仍待新增，用于保存表情建议、最终控制、降级原因和耗时；不复制聊天全文、不逐帧写库。
 课程内容只读，教学对话不通过工具修改服务器脚本。
@@ -160,8 +178,8 @@ Run 呈现表仍待新增，用于保存表情建议、最终控制、降级原�
 | 1（已实现） | 课程种子、课程/回复/表情契约、可选模块端口 | courses/、schemas/、adapters/avatar/ | 真实脚本可解析、示例契约一致、参数校验、旧契约兼容 |
 | 2（已实现） | CourseCatalog 与课节发现、根目录配置 | services/courses.py、core/settings.py | 允许目录、语言/课节、大小、版本、逃逸拒绝 |
 | 3（已实现） | 教学会话扩展模型、迁移、Repository | models/、migrations/、repositories/ | client 隔离、Session 关联、课程版本、进度默认值及事务回滚 |
-| 4（本批） | 课程查询与首次教学绑定 REST | services/teaching.py、api/ | 课程真实存在、Native 绑定、跨客户端拒绝、幂等与冲突；切课/升级后置 |
-| 5 | 教学执行配置、脚本上下文与权限约束 | services/run_execution.py、adapters/agent/ | 课程预算、记忆/RAG 复用、禁用工具/handoff、Workspace 回归 |
+| 4（已实现） | 课程查询与首次教学绑定 REST | services/teaching.py、api/ | 课程真实存在、Native 绑定、跨客户端拒绝、幂等与冲突；切课/升级后置 |
+| 5（本批） | 内部教学请求准备、脚本上下文与权限约束 | services/teaching.py、adapters/agent/、orchestration/ | 课程预算/版本、保留记忆/RAG、禁止工具/handoff、Workspace 回归；公开执行桥接后置 |
 | 6 | 联合输出解析、纯文本提取及表情回退 | adapters/agent/、services/avatar_policy.py | 不外泄原始 JSON；非法表情回退、坏回复失败 |
 | 7 | HTTP Native 桥接与会话守卫 | services/teaching.py、api/ | 多轮英文引导、同 Session 忙碌保护、消息/Run；阶段 A |
 | 8 | 呈现持久化与成功终态前状态提交 | models/、repositories/、services/ | 每轮一份、课程快照、状态版本、取消不提交 |

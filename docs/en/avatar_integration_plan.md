@@ -21,11 +21,13 @@ Implemented baseline:
 - CourseCatalog: shared Skill parsing, allowed-root discovery/validation, course/lesson lookup and versioned in-memory snapshots, separately loaded during app creation.
 - TeachingSessionRecord / TeachingRepository: one configuration per conversation, storing course/lesson, script hash, completed-turn count and state version; client-scoped creation/lookup with caller-owned transactions.
 - Course listing and teaching GET/PUT: bind real courses/lessons to the client's own Native Session and pin the script hash; identical retries are idempotent, while rebinding/upgrades are rejected for now.
+- TeachingService.prepare: internal request preparation rechecks binding/Native/script hash, adds bounded course context and preserves conversation/memory/RAG fields; Native and LangGraph enforce no tools/handoff.
 
-Teaching execution APIs, automatic progress updates, structured generation and Unity playback are not implemented.
+Teaching execution APIs, joint-output parsing, automatic progress updates and Unity playback are not implemented.
 Courses can be queried/selected through the API but are not automatically Agent Skills
-or model context. Binding only stores configuration and does not change ordinary chat handling.
-Teaching execution options, script context and permission restrictions come next.
+and are not yet part of public model calls. Internal preparation/policy is testable;
+RunExecutionService/HTTP/WS do not invoke it yet, so binding does not change ordinary chat handling.
+Joint reply/expression parsing comes next to prevent raw JSON leakage, followed by the execution bridge.
 
 ## 1. Experience and scope
 
@@ -88,6 +90,27 @@ Teaching prompts and sequence are project-authored.
 - Retain LangGraph orchestration; ordinary Workspace does not enable teaching completion.
 - Do not automatically write progress/guessed affect into Agent memory. Lessons cannot bypass permissions.
 
+### Implemented internal request preparation
+
+TeachingService.prepare accepts an internal RuntimeRequest, not a client-selected mode.
+It rechecks client-scoped teaching state/Session, current Agent identity and Native runtime,
+rejecting a different target Agent. It resolves the course/lesson and checks the bound hash;
+removed or changed scripts are rejected, not silently upgraded.
+The complete course body and server-selected lesson, script/state version and committed-turn
+count form a preparation section capped at 8,000 characters. Reject over-budget scripts rather
+than truncate an output contract. This caps the course section, not total request tokens.
+The complete script is sent with the selected lesson identified; actual teaching quality and
+instruction following still need separate live-model acceptance.
+
+The copied request uses mode=teaching and no handoff candidates while preserving conversation,
+memory, RAG and model fields. Existing assembly owns their scope and individual budgets.
+Preparation does not call a model, create Run/Message records or update progress.
+Native offers no tools and rejects unsolicited tool/delegation calls; greetings keep teaching
+instructions. LangGraph rejects both manual and runtime-requested handoffs without executing
+the target. Workspace defaults to mode=workspace and retains existing behavior.
+Only internal tests exercise this path for now; public wiring waits for joint-output parsing
+so raw structured JSON cannot become user-facing assistant_delta text.
+
 ### Initial transport tradeoff
 
 TeachingTurn is complete JSON. First buffer and parse it on the server, then send
@@ -146,7 +169,8 @@ and foreign key, allowing one configuration per conversation. completed_turns
 starts at 0 and counts committed turns, not mastery; state_version starts at 1
 for future optimistic updates. Progress updates and optimistic state-version checks are not implemented.
 course_version stores the script SHA256 at binding time, not an archived script.
-Service now validates course existence and Native-only binding; runtime version checks remain later work.
+Binding and internal preparation validate course/Native; preparation checks script versions.
+The public execution pipeline does not invoke preparation yet.
 Repository methods only flush; Service commits/rolls back and logs successful commits.
 Primary-key conflicts return 409 so callers can retry.
 The Run-presentation table remains planned for suggestions, controls, fallback
@@ -175,8 +199,8 @@ Each backend batch runs appropriate tests/full unittest and pauses for review.
 | 1 (implemented) | Course seed, selection/reply/expression contracts, optional ports | courses/, schemas/, adapters/avatar/ | Real script parsing, valid example, bounds, legacy compatibility |
 | 2 (implemented) | CourseCatalog/lesson discovery and root settings | services/courses.py, core/settings.py | Roots, language/lessons, size, version, escape rejection |
 | 3 (implemented) | Teaching state/model/migration/Repository | models/, migrations/, repositories/ | Client scope, Session binding, course version, progress defaults and rollback |
-| 4 (current) | Course lookup and initial teaching-binding REST | services/teaching.py, api/ | Real course selection, Native binding, client isolation, idempotency/conflicts; rebinding/upgrades deferred |
-| 5 | Teaching options/context/permissions | services/run_execution.py, adapters/agent/ | Budgets, memory/RAG reuse, no tools/handoff, Workspace regression |
+| 4 (implemented) | Course lookup and initial teaching-binding REST | services/teaching.py, api/ | Real course selection, Native binding, client isolation, idempotency/conflicts; rebinding/upgrades deferred |
+| 5 (current) | Internal teaching request/context/policy preparation | services/teaching.py, adapters/agent/, orchestration/ | Course budget/version, preserved memory/RAG, no tools/handoff, Workspace regression; public wiring deferred |
 | 6 | Joint-output parser/plain reply/fallback | adapters/agent/, services/avatar_policy.py | No raw JSON leakage, bad expressions fall back, bad replies fail |
 | 7 | HTTP Native bridge/Session guard | services/teaching.py, api/ | Multi-turn English guidance, busy protection, messages/Runs; A |
 | 8 | Presentation persistence/pre-terminal commits | models/, repositories/, services/ | One result/turn, snapshot versions, no cancelled progress |

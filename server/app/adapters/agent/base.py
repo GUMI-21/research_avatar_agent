@@ -3,7 +3,7 @@
 from collections.abc import AsyncIterator, Mapping
 from dataclasses import dataclass, field
 from enum import StrEnum
-from typing import Protocol
+from typing import Literal, Protocol
 
 '''
 runtime 字段       → "native" / "codex"（选择哪种运行方式）
@@ -34,6 +34,7 @@ class RuntimeRequest:
     memory_ids: tuple[str, ...] = ()
     knowledge_context: str = ""
     handoff_targets: tuple[HandoffTarget, ...] = ()
+    mode: Literal["workspace", "teaching"] = "workspace"  # 内部执行策略，不接收客户端直接覆盖
 
 # playload：事件执行的具体数据，根据type内容不同；dataclass：自动创建构造函数
 @dataclass(frozen=True)

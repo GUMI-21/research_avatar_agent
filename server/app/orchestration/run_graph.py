@@ -160,6 +160,8 @@ class LangGraphRunOrchestrator:
         # 调用agent执行接口 逐个获取事件
         pending_agent_id: str | None = None
         async for event in invocation.runtime.stream(invocation.request):
+            if invocation.request.mode == "teaching" and event.type is RuntimeEventType.HANDOFF_REQUESTED:
+                raise HandoffRoutingError("Teaching mode forbids Agent handoff")
             # LangGraph 当前节点的执行环境，stream_writer 的作用是把节点内部产生的数据发送到 LangGraph 的 custom 流
             runtime.stream_writer(event)
             if event.type in {
@@ -194,6 +196,8 @@ class LangGraphRunOrchestrator:
         entry_agent_id: str | None = None,
     ) -> AsyncIterator[RuntimeEvent]:
         entry_agent_id = entry_agent_id or request.agent_id
+        if request.mode == "teaching" and entry_agent_id != request.agent_id:
+            raise HandoffRoutingError("Teaching mode forbids Agent handoff")
         initial: AgentRunState = {
             "run_id": request.run_id,
             "client_id": request.client_id,
