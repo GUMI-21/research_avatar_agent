@@ -17,10 +17,11 @@ Workspace 工程基线见 [路线图](internship_agent_workspace_plan.md)，研�
 - SpeechRecognizer、SpeechSynthesizer、EmotionAnalyzer：协议接口，无实际 Provider 或自动调用。
 - CourseCatalog：复用 Skill 解析器，在允许目录发现和校验课程/课节，维护版本化内存快照；Server 创建应用时单独加载课程目录。
 - TeachingSessionRecord / TeachingRepository：每个对话一份教学配置，保存课程/课节、脚本哈希、已提交轮数和状态版本；创建/查询按 client_id 隔离，由调用方提交事务。
+- 课程列表及教学配置 GET/PUT：仅允许自己的 Native Session 绑定真实课程/课节，固定脚本哈希；同配置重复请求幂等，切课/升级暂拒绝。
 
-尚未实现教学 API、自动进度更新、模型结构化生成或 Unity 播放。
-课程已可内部查询和选择，但不自动注册为普通 Agent Skill，也不代表已注入模型上下文。
-下一批实现课程查询和教学绑定 REST，由 Service 校验课程及 Native Session。
+尚未实现教学执行 API、自动进度更新、模型结构化生成或 Unity 播放。
+课程已可通过 API 查询和选择，但不自动注册为普通 Agent Skill，也不代表已注入模型上下文。
+绑定目前只保存配置，不改变普通聊天处理流程。下一批实现教学执行配置、脚本上下文及权限约束。
 
 ## 一、课程体验与首版范围
 
@@ -54,7 +55,7 @@ lesson_ids、适用场景及空 recommended_tools。正文用对应课节 ID 标
 - courses 是项目教学资源目录，不是给 Codex 安装全局 Skill，也不自动加入所有 Workspace Agent。
 - 服务端仅接受 ID，通过管理员允许的根目录解析文件；禁止路径穿越、符号链接逃逸及任意文件读取。
 - 目录只认可 lesson_ids 声明、且在代码围栏外恰好出现一次的无缩进二级标题（## lesson-id），辅助标题不能被选择。
-- CourseSelection 校验 ID 格式；CourseCatalog.resolve 进一步拒绝不存在的课程或课节，Session 绑定尚未实现。
+- CourseSelection 校验 ID 格式；CourseCatalog.resolve 进一步拒绝不存在的课程或课节，TeachingService 在首次绑定时使用该校验。
 - 课程对象为不可变快照，读取文件有字节上限；刷新在全部校验成功后原子替换，失败保留旧目录。
 - 内容与原始字节哈希一起保存；文件编辑后显式刷新才生效。后续每轮固定版本和进度迁移仍需教学执行批次实现。
 - 初版课程为公开的管理员提供内容；学生消息和教学状态仍按 client_id 隔离。
@@ -108,25 +109,28 @@ TeachingTurn 是一个完整 JSON 对象。首版先在服务端完整接收、�
 独立情绪接口可返回现有 EmotionState，再由策略决定是否采用；不得直接驱动任意客户端代码。
 本阶段不为这些接口增加额外模型请求、音频存储或服务依赖。
 
-## 五、计划中的资源与接口
+## 五、资源与接口
 
 复用现有 Agent、Session、Message、Run、RunEvent；所有持久资源按 client_id 与 ID 过滤。
 
-- GET /api/v1/avatar/courses：返回允许课程及课节的安全元数据，不公开服务器绝对路径。
-- GET/PUT /api/v1/avatar/sessions/{session_id}/teaching：绑定 course_id/lesson_id，读取或修改教学配置。
-- POST /api/v1/avatar/chat：针对已绑定的 Native Session 执行文本教学，返回 reply、Run 与呈现结果。
-- 复用 /api/v1/ws?client_id=...：依据 Session 配置进入教学链，避免重复流式服务。
-- POST /api/v1/avatar/preview：只验证和映射表情建议，无模型调用或会话修改。
-- GET /api/v1/avatar/runs/{run_id}/presentation：查询已保存的呈现结果。
+- 已实现 GET /api/v1/avatar/courses：返回允许课程及课节的安全元数据，不返回脚本正文、内部元数据或服务器绝对路径。
+- 已实现 GET/PUT /api/v1/avatar/sessions/{session_id}/teaching：读取或首次绑定 course_id/lesson_id；PUT 空对象使用默认元音课节，课程版本由服务端决定。
+- 计划 POST /api/v1/avatar/chat：针对已绑定的 Native Session 执行文本教学，返回 reply、Run 与呈现结果。
+- 计划复用 /api/v1/ws?client_id=...：依据 Session 配置进入教学链，避免重复流式服务。
+- 计划 POST /api/v1/avatar/preview：只验证和映射表情建议，无模型调用或会话修改。
+- 计划 GET /api/v1/avatar/runs/{run_id}/presentation：查询已保存的呈现结果。
 
-这些新接口均未实现。REST 沿用 X-Client-ID，WebSocket 沿用现有作用域，仍不是正式认证。
+REST 沿用 X-Client-ID，WebSocket 沿用现有作用域，仍不是正式认证；课程列表是共享的管理员公开元数据。
+无配置、资源不存在、跨客户端访问或课程/课节不可用返回 404；非 Native 绑定返回 409；非法输入返回 422。
+相同课程/课节/哈希的重复 PUT 不重置进度、版本或时间；更换课节或脚本哈希返回 409，待运行守卫及版本迁移接好后再开放。
+课程目录移除后仍可 GET 已存配置供审计，但 PUT 必须重新通过目录校验；这不代表旧脚本仍可执行。
 旧 POST /api/v1/unity/chat 继续兼容；后续 Unity 客户端明确迁移到新链，不自动改变旧 neutral/idle 行为。
 
 已新增 teaching_session_states 教学 Session 扩展表，session_id 同时作为主键和外键，
 每个对话最多一份配置。completed_turns 初始为 0，只表示已提交教学轮数，不表示掌握程度；
-state_version 初始为 1，为后续乐观并发更新预留，目前尚未实现进度更新或版本冲突处理。
-course_version 保存绑定时脚本 SHA256，不归档正文；实际课程存在性、Native 限制及版本变更策略由后续 Service/执行批次实现。
-Repository 只 flush，不 commit；重复绑定由主键约束拒绝，API 错误映射后续实现。
+state_version 初始为 1，为后续乐观并发更新预留，目前尚未实现进度更新或状态版本的乐观并发控制。
+course_version 保存绑定时脚本 SHA256，不归档正文；Service 已校验课程存在性和 Native 限制，运行时版本检查后续实现。
+Repository 只 flush，Service 提交/回滚并记录提交成功日志；主键冲突映射为 409，客户端可重试。
 Run 呈现表仍待新增，用于保存表情建议、最终控制、降级原因和耗时；不复制聊天全文、不逐帧写库。
 课程内容只读，教学对话不通过工具修改服务器脚本。
 
@@ -155,8 +159,8 @@ Run 呈现表仍待新增，用于保存表情建议、最终控制、降级原�
 | --- | --- | --- | --- |
 | 1（已实现） | 课程种子、课程/回复/表情契约、可选模块端口 | courses/、schemas/、adapters/avatar/ | 真实脚本可解析、示例契约一致、参数校验、旧契约兼容 |
 | 2（已实现） | CourseCatalog 与课节发现、根目录配置 | services/courses.py、core/settings.py | 允许目录、语言/课节、大小、版本、逃逸拒绝 |
-| 3（本批） | 教学会话扩展模型、迁移、Repository | models/、migrations/、repositories/ | client 隔离、Session 关联、课程版本、进度默认值及事务回滚 |
-| 4 | 课程查询与教学绑定 REST | services/teaching.py、api/ | 课程真实存在、Native 绑定、跨客户端资源拒绝 |
+| 3（已实现） | 教学会话扩展模型、迁移、Repository | models/、migrations/、repositories/ | client 隔离、Session 关联、课程版本、进度默认值及事务回滚 |
+| 4（本批） | 课程查询与首次教学绑定 REST | services/teaching.py、api/ | 课程真实存在、Native 绑定、跨客户端拒绝、幂等与冲突；切课/升级后置 |
 | 5 | 教学执行配置、脚本上下文与权限约束 | services/run_execution.py、adapters/agent/ | 课程预算、记忆/RAG 复用、禁用工具/handoff、Workspace 回归 |
 | 6 | 联合输出解析、纯文本提取及表情回退 | adapters/agent/、services/avatar_policy.py | 不外泄原始 JSON；非法表情回退、坏回复失败 |
 | 7 | HTTP Native 桥接与会话守卫 | services/teaching.py、api/ | 多轮英文引导、同 Session 忙碌保护、消息/Run；阶段 A |

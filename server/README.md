@@ -26,7 +26,9 @@ The active Avatar scope is English-led Japanese kana teaching. Project-root
 adds CourseSelection, TeachingTurn and validated AvatarControl contracts plus
 optional speech/independent-emotion ports. CourseCatalog now discovers/validates
 courses separately during app creation. Teaching Session storage and its Repository
-now exist; routes, progress updates and model injection are not wired yet.
+now exist, alongside course listing and initial binding REST. Progress updates,
+model injection and teaching execution are not wired yet; storing a binding
+does not change ordinary chat handling.
 The legacy Unity API remains unchanged.
 
 Teaching will generate reply and expression suggestions in one model call,
@@ -58,8 +60,29 @@ course/lesson IDs, script SHA256, `completed_turns=0` and `state_version=1`.
 The turn count does not measure mastery. Repository creation/lookup enforce client
 scope and only flush; the caller owns commit/rollback. Creation logs are marked
 `db_mutation_staged`, not committed. Script bodies are not archived in this table.
-Catalog/Native validation, rebinding and optimistic progress updates remain
-future Service/execution work; there is no public teaching API yet.
+Service validates catalog selection and Native ownership, commits/rolls back, and
+logs successful binds as `db_mutation_committed`. Rebinding and optimistic progress
+updates remain future Service/execution work.
+
+### Teaching resource APIs
+
+All require the temporary `X-Client-ID` header (data scope, not authentication).
+
+- `GET /api/v1/avatar/courses`: shared public course metadata, lesson IDs and hashes;
+  no script bodies, internal metadata or server paths.
+- `GET /api/v1/avatar/sessions/{session_id}/teaching`: the client's stored configuration.
+- `PUT /api/v1/avatar/sessions/{session_id}/teaching`: initial binding using
+  `{"course_id":"gojuon-en","lesson_id":"hiragana-vowels"}`; `{}` selects these defaults.
+
+Only the client's own Native Session can bind a real course/lesson. The server
+sets the script hash, counters and version; responses use UTC timestamps.
+Identical retries preserve progress/version/timestamps. Changing lesson or script
+hash returns 409 until Run guards and version migration are ready. Concurrent
+insert conflicts return 409 and may be retried. Missing/cross-client resources
+and unavailable courses/lessons return 404; non-Native binding returns 409 and
+invalid inputs 422. Stored configuration remains readable after catalog removal,
+but PUT still validates the catalog; no archived-script execution is provided.
+These endpoints do not call an LLM, create a Run or advance progress.
 
 ## Directory Layout
 

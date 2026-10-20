@@ -14,6 +14,7 @@ from app.api.routes import (
     runtime_policy,
     sessions,
     skills,
+    teaching,
     unity,
     usage,
     workspaces,
@@ -29,6 +30,7 @@ api_router.include_router(google_oauth.router, prefix="/api/v1", tags=["google"]
 api_router.include_router(knowledge.router, prefix="/api/v1", tags=["knowledge"])
 api_router.include_router(sessions.router, prefix="/api/v1", tags=["sessions"])
 api_router.include_router(skills.router, prefix="/api/v1", tags=["skills"])
+api_router.include_router(teaching.router, prefix="/api/v1", tags=["avatar"])
 api_router.include_router(memories.router, prefix="/api/v1", tags=["memories"])
 api_router.include_router(messages.router, prefix="/api/v1", tags=["messages"])
 api_router.include_router(runtime_policy.router, prefix="/api/v1", tags=["runtime"])
