@@ -19,11 +19,12 @@ Workspace 工程基线见 [路线图](internship_agent_workspace_plan.md)，研�
 - TeachingSessionRecord / TeachingRepository：每个对话一份教学配置，保存课程/课节、脚本哈希、已提交轮数和状态版本；创建/查询按 client_id 隔离，由调用方提交事务。
 - 课程列表及教学配置 GET/PUT：仅允许自己的 Native Session 绑定真实课程/课节，固定脚本哈希；同配置重复请求幂等，切课/升级暂拒绝。
 - TeachingService.prepare：内部准备教学请求，复核绑定/Native/脚本哈希，注入有预算的课程上下文，保留已有对话/记忆/RAG 字段；Native 与 LangGraph 强制禁止工具和转交。
+- TeachingTurnParser 与 Native 内部教学模式：收齐并校验联合 JSON，仅发送纯 reply；表情无效回退中性，完成事件携带校验后的教学结果，不额外调用模型。
 
-尚未实现教学执行 API、联合输出解析、自动进度更新或 Unity 播放。
+尚未实现教学执行 API、自动进度更新或 Unity 播放。
 课程已可通过 API 查询和选择，但不自动注册为普通 Agent Skill。
 内部请求准备与权限策略已可测试；公开 RunExecutionService/HTTP/WS 尚未接入该准备方法，绑定仍不改变普通聊天处理流程。
-下一批实现联合回复/表情解析，避免原始 JSON 进入聊天，然后再桥接教学执行入口。
+下一批桥接教学执行入口及 Session 运行守卫，复用已实现的准备与解析步骤。
 
 ## 一、课程体验与首版范围
 
@@ -77,7 +78,7 @@ lesson_ids、适用场景及空 recommended_tools。正文用对应课节 ID 标
 - CourseCatalog 负责脚本/课节发现和版本，不承担对话执行。
 - TeachingService 管课程绑定、当前课节及进度；Repository 管查询，Service 管事务。
 - Native/LLM Adapter 负责生成回复；教学继续使用 runtime=native，不新增重复的教学 Runtime。
-- TeachingTurnParser 校验结构化输出，AvatarPolicy 负责限制和映射，不预测学生心理状态。
+- TeachingTurnParser 校验结构化输出并回退无效表情；当前沿用 AvatarControl 的语义范围，后续呈现策略不预测学生心理状态。
 - 首版教学默认禁用工具及自动 handoff；模型若产生未授权调用，执行边界也必须拒绝。
 - LangGraph 保留已有编排职责，普通 Workspace 不启用教学专属完成步骤。
 - 不自动把教学进度或模型猜测写入 Agent 长期记忆；课程正文也不能绕过系统权限。
@@ -96,14 +97,23 @@ TeachingService.prepare 接收内部 RuntimeRequest，不对客户端开放执�
 Native 在教学模式下不提供任何工具定义，并拒绝 Provider 返回的工具/委派调用；问候也保留教学指令。
 LangGraph 同时拒绝手动目标转交及 Runtime 发出的转交请求，不执行目标 Agent。
 普通 Workspace 默认 mode=workspace，保留现有工具/转交/问候行为。
-当前仅可通过内部测试执行此路径；公开运行链要等联合输出解析完成后再接入，不能直接把结构化输出作为 assistant_delta 发给用户。
+当前仅可通过内部测试执行此路径；公开运行链尚未桥接准备/解析，不自动启用教学模式。
 
-### 首版文本传输取舍
+### 已实现的联合解析与文本传输
 
-TeachingTurn 是一个完整 JSON 对象。首版先在服务端完整接收、解析，再发送纯 reply；
-可能只产生一个回复片段，暂不承诺教学文本逐字出现。WebSocket 仍传递 Run 状态和最终结果。
-禁止把原始 JSON、表情内部字段或后续独立模块输出直接混入用户聊天。
-普通 Workspace 的既有逐段流式回复不受影响，增量结构化解析可以后续优化。
+TeachingTurn 是一个完整 JSON 对象。Native 内部教学模式缓冲最多 65,536 字符的原始输出（含 JSON 转义及空白），
+超限立即拒绝；不逐字显示教学文本。先校验对象、schema_version、顶层字段及非空且最长 10,000 字符的 reply，
+再验证 avatar；只有 avatar 非法时保留 reply，并整体回退 neutral/idle、强度和时长为 0，原因 invalid_avatar。
+缺省/部分 avatar 使用契约默认值，不算降级；显式 null 或非法值才触发回退。
+JSON 损坏、重复键、非标准 NaN/Infinity、额外顶层字段、非法回复或版本均失败，不提取“看似可用”的片段；不修补 Markdown 围栏或混合说明文字。
+
+解析成功只产生一段 assistant_delta，内容为校验后的 reply；run_finished.payload.teaching 携带输出版本、
+校验后的 avatar 与 fallback_reason，不包含回复副本或非法原始参数。该元数据不是可执行的 avatar_control 动作命令；
+呈现表、command_id/有效期及 Unity 播放仍待后续批次。当前不修改课程进度。
+模型失败或校验失败时不转发缓冲内容，不发布成功终态；取消继续向上层传播。
+若失败前已收到 Provider 信息，仍发出现有用量状态（有统计则 reported，否则 unavailable），不重试或增加第二次模型调用。
+错误/降级只记录安全原因或错误类型，不记录原始 JSON 或 Pydantic 输入详情。
+普通 Workspace 的既有逐段流式回复不受影响，教学增量结构化解析可以后续优化。
 
 ## 四、已固定的第一批契约
 
@@ -158,7 +168,7 @@ Run 呈现表仍待新增，用于保存表情建议、最终控制、降级原�
   语言字段的校验不等于保证自然语言输出合格，实际模型质量需单独验收。
 - **联合生成**：回复与表情来自同一次 LLM 调用，Usage 使用现有 Provider 报告，不存在默认第二次情绪计费。
 - **解析与降级**：先验证可用 reply；只有 avatar 非法时保留回复并回退中性，记录原因。
-  整体 JSON 损坏、reply 缺失/空白或生成失败则失败，不伪造教学回答。服务级降级在后续解析批次实现。
+  整体 JSON 损坏、reply 缺失/空白或生成失败则失败，不伪造教学回答。内部 Native 解析路径已实现；公开教学执行入口仍待桥接。
 - **终态**：课程进度与呈现结果完成处理后才发布唯一 run_finished；普通 Workspace 保持原路径。
 - **取消与并发**：同教学 Session 的 HTTP/WS 共用活跃 Run 守卫。取消终止剩余工作，
   不提交新的有效动作或已完成进度，过期状态不能覆盖更新版本。
@@ -179,8 +189,8 @@ Run 呈现表仍待新增，用于保存表情建议、最终控制、降级原�
 | 2（已实现） | CourseCatalog 与课节发现、根目录配置 | services/courses.py、core/settings.py | 允许目录、语言/课节、大小、版本、逃逸拒绝 |
 | 3（已实现） | 教学会话扩展模型、迁移、Repository | models/、migrations/、repositories/ | client 隔离、Session 关联、课程版本、进度默认值及事务回滚 |
 | 4（已实现） | 课程查询与首次教学绑定 REST | services/teaching.py、api/ | 课程真实存在、Native 绑定、跨客户端拒绝、幂等与冲突；切课/升级后置 |
-| 5（本批） | 内部教学请求准备、脚本上下文与权限约束 | services/teaching.py、adapters/agent/、orchestration/ | 课程预算/版本、保留记忆/RAG、禁止工具/handoff、Workspace 回归；公开执行桥接后置 |
-| 6 | 联合输出解析、纯文本提取及表情回退 | adapters/agent/、services/avatar_policy.py | 不外泄原始 JSON；非法表情回退、坏回复失败 |
+| 5（已实现） | 内部教学请求准备、脚本上下文与权限约束 | services/teaching.py、adapters/agent/、orchestration/ | 课程预算/版本、保留记忆/RAG、禁止工具/handoff、Workspace 回归；公开执行桥接后置 |
+| 6（本批） | 联合输出解析、纯文本提取及表情回退 | services/teaching_output.py、adapters/agent/native.py | 不外泄原始 JSON；非法表情回退、坏回复失败、缓冲上限与已有 Usage 保留 |
 | 7 | HTTP Native 桥接与会话守卫 | services/teaching.py、api/ | 多轮英文引导、同 Session 忙碌保护、消息/Run；阶段 A |
 | 8 | 呈现持久化与成功终态前状态提交 | models/、repositories/、services/ | 每轮一份、课程快照、状态版本、取消不提交 |
 | 9 | Avatar 事件、查询与 JSON 预览 | schemas/run_stream.py、services/run_event.py、api/ | 字段、有效期限、持久补发、去重契约 |

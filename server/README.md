@@ -27,8 +27,8 @@ adds CourseSelection, TeachingTurn and validated AvatarControl contracts plus
 optional speech/independent-emotion ports. CourseCatalog now discovers/validates
 courses separately during app creation. Teaching Session storage and its Repository
 now exist, alongside course listing and initial binding REST. Internal request
-preparation and enforced teaching permissions are testable, but public model
-injection/execution and progress updates are not wired yet; storing a binding
+preparation, enforced permissions and joint-output parsing are testable, but public
+model injection/execution and progress updates are not wired yet; storing a binding
 does not change ordinary chat handling.
 The legacy Unity API remains unchanged.
 
@@ -99,8 +99,24 @@ The returned internal request uses `mode="teaching"`; Native disables all tools,
 rejects unsolicited calls and keeps teaching instructions for greetings. LangGraph
 also blocks manual/automatic handoff. `mode="workspace"` remains the default.
 Preparation makes no model call or database mutation. Public RunExecutionService,
-HTTP and WS do not use it yet: joint reply/expression parsing must land before
-structured output is allowed into chat. Tests are not live-model teaching validation.
+HTTP and WS do not use it yet. Tests are not live-model teaching validation.
+
+### Internal teaching output parsing
+
+Native teaching mode buffers up to 65,536 raw output characters including JSON
+escaping/whitespace. `TeachingTurnParser` validates one JSON object and its
+version/top-level fields/nonblank reply before validating avatar. Invalid avatar
+alone preserves reply and replaces the whole control with neutral/idle and zero
+intensity/duration (`invalid_avatar`); absent/partial avatar uses contract defaults.
+Bad JSON, duplicate keys, nonstandard NaN/Infinity, unknown top-level fields,
+invalid replies/versions and Markdown wrappers fail rather than produce a fabricated reply.
+
+Only validated reply becomes one `assistant_delta`. `run_finished.payload.teaching`
+contains schema version, validated avatar and fallback reason, not an executable
+Unity command. There is no presentation table/progress update or public teaching
+execution bridge yet. Failures discard buffered output; received Provider Usage
+is retained when available, without a retry/second model call. Error/fallback
+metadata excludes raw JSON/invalid controls. Ordinary Workspace streaming is unchanged.
 
 ## Directory Layout
 

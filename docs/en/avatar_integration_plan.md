@@ -22,12 +22,13 @@ Implemented baseline:
 - TeachingSessionRecord / TeachingRepository: one configuration per conversation, storing course/lesson, script hash, completed-turn count and state version; client-scoped creation/lookup with caller-owned transactions.
 - Course listing and teaching GET/PUT: bind real courses/lessons to the client's own Native Session and pin the script hash; identical retries are idempotent, while rebinding/upgrades are rejected for now.
 - TeachingService.prepare: internal request preparation rechecks binding/Native/script hash, adds bounded course context and preserves conversation/memory/RAG fields; Native and LangGraph enforce no tools/handoff.
+- TeachingTurnParser and internal Native teaching mode: buffer/validate joint JSON, emit reply only, fall back to neutral for invalid avatar and attach validated teaching metadata to completion without an extra model call.
 
-Teaching execution APIs, joint-output parsing, automatic progress updates and Unity playback are not implemented.
+Teaching execution APIs, automatic progress updates and Unity playback are not implemented.
 Courses can be queried/selected through the API but are not automatically Agent Skills
 and are not yet part of public model calls. Internal preparation/policy is testable;
 RunExecutionService/HTTP/WS do not invoke it yet, so binding does not change ordinary chat handling.
-Joint reply/expression parsing comes next to prevent raw JSON leakage, followed by the execution bridge.
+The execution bridge and Session Run guard come next, reusing preparation and parsing.
 
 ## 1. Experience and scope
 
@@ -85,7 +86,7 @@ Teaching prompts and sequence are project-authored.
 - CourseCatalog owns scripts, lessons and versions, not conversation execution.
 - TeachingService owns binding/lesson/progress; Repository queries and Service transactions remain separate.
 - Reuse runtime=native, not a duplicate teaching Runtime.
-- TeachingTurnParser validates output; AvatarPolicy bounds/maps presentation, not student psychology.
+- TeachingTurnParser validates output and falls back for invalid expressions; current semantics use AvatarControl bounds, and future presentation policy does not assess student psychology.
 - Disable teaching tools/automatic handoff initially and reject unauthorized calls at execution too.
 - Retain LangGraph orchestration; ordinary Workspace does not enable teaching completion.
 - Do not automatically write progress/guessed affect into Agent memory. Lessons cannot bypass permissions.
@@ -108,16 +109,30 @@ Preparation does not call a model, create Run/Message records or update progress
 Native offers no tools and rejects unsolicited tool/delegation calls; greetings keep teaching
 instructions. LangGraph rejects both manual and runtime-requested handoffs without executing
 the target. Workspace defaults to mode=workspace and retains existing behavior.
-Only internal tests exercise this path for now; public wiring waits for joint-output parsing
-so raw structured JSON cannot become user-facing assistant_delta text.
+Only internal tests exercise this path for now; public preparation/parsing wiring
+is still pending and binding does not automatically enable teaching mode.
 
-### Initial transport tradeoff
+### Implemented joint parsing and text transport
 
-TeachingTurn is complete JSON. First buffer and parse it on the server, then send
-plain reply, possibly as one chunk. Progressive word-by-word teaching is not
-promised initially. WebSocket still carries lifecycle/final results. Never stream
-raw JSON, expression internals or optional-module output into chat. Existing
-Workspace streaming stays unchanged; incremental structured parsing can come later.
+TeachingTurn is complete JSON. Internal Native teaching mode buffers at most 65,536
+raw characters including escaping/whitespace, rejecting overflow instead of streaming
+partial teaching text. First validate the object/version/top-level fields and nonblank
+reply (at most 10,000 characters), then avatar. Invalid avatar alone preserves reply
+and replaces the complete control with neutral/idle and zero intensity/duration,
+with reason invalid_avatar. Missing/partial avatar uses contract defaults without a
+fallback; explicit null/invalid values trigger fallback.
+Reject malformed/duplicate-key JSON, nonstandard NaN/Infinity, extra top-level fields,
+invalid replies/versions, Markdown fences or explanatory wrappers; do not salvage fragments.
+
+Success emits one assistant_delta containing only the validated reply. run_finished.payload.teaching
+contains output version, validated avatar and fallback_reason, not duplicate reply or invalid raw
+parameters. This metadata is not an executable avatar_control command. Presentation tables,
+command IDs/expiry and Unity playback remain planned; progress is unchanged.
+Provider/validation failure discards buffered text without a success terminal; cancellation
+propagates. If provider information was received before failure, emit existing usage status
+(reported when available, otherwise unavailable) without retrying or adding model calls.
+Errors/fallback logs expose only safe reasons/types, not raw JSON or Pydantic input details.
+Workspace incremental streaming is unchanged; incremental teaching JSON parsing is deferred.
 
 ## 4. First-batch contracts
 
@@ -181,7 +196,7 @@ Courses are read-only to conversations.
 
 - **Language/quality:** require English explanations while allowing Japanese/romaji. Language metadata validation is not proof of output quality; live-model acceptance is separate.
 - **Joint generation:** reply/expressions share one call and existing Provider Usage, with no mandatory second affect charge.
-- **Parsing/fallback:** validate usable reply first. Invalid avatar alone preserves reply with a logged neutral fallback. Broken JSON/missing or blank reply/generation failures fail rather than fabricate teaching. Service fallback is implemented in a later parser batch.
+- **Parsing/fallback:** validate usable reply first. Invalid avatar alone preserves reply with a logged neutral fallback. Broken JSON/missing or blank reply/generation failures fail rather than fabricate teaching. Internal Native parsing is implemented; public execution wiring remains pending.
 - **Terminal order:** commit presentation/progress before the unique run_finished; retain the ordinary Workspace path.
 - **Cancellation/concurrency:** share an active-Run guard across teaching HTTP/WS. Cancellation stops remaining work without committing valid new commands/completed progress; stale snapshots cannot overwrite newer state.
 - **Replay:** planned avatar_control has command_id and expiration. Restore state without repeating expired one-shot actions; Unity behavior still needs live acceptance.
@@ -200,8 +215,8 @@ Each backend batch runs appropriate tests/full unittest and pauses for review.
 | 2 (implemented) | CourseCatalog/lesson discovery and root settings | services/courses.py, core/settings.py | Roots, language/lessons, size, version, escape rejection |
 | 3 (implemented) | Teaching state/model/migration/Repository | models/, migrations/, repositories/ | Client scope, Session binding, course version, progress defaults and rollback |
 | 4 (implemented) | Course lookup and initial teaching-binding REST | services/teaching.py, api/ | Real course selection, Native binding, client isolation, idempotency/conflicts; rebinding/upgrades deferred |
-| 5 (current) | Internal teaching request/context/policy preparation | services/teaching.py, adapters/agent/, orchestration/ | Course budget/version, preserved memory/RAG, no tools/handoff, Workspace regression; public wiring deferred |
-| 6 | Joint-output parser/plain reply/fallback | adapters/agent/, services/avatar_policy.py | No raw JSON leakage, bad expressions fall back, bad replies fail |
+| 5 (implemented) | Internal teaching request/context/policy preparation | services/teaching.py, adapters/agent/, orchestration/ | Course budget/version, preserved memory/RAG, no tools/handoff, Workspace regression; public wiring deferred |
+| 6 (current) | Joint-output parser/plain reply/fallback | services/teaching_output.py, adapters/agent/native.py | No raw JSON leakage, invalid-avatar fallback, bad-reply failure, buffer bounds and retained Usage |
 | 7 | HTTP Native bridge/Session guard | services/teaching.py, api/ | Multi-turn English guidance, busy protection, messages/Runs; A |
 | 8 | Presentation persistence/pre-terminal commits | models/, repositories/, services/ | One result/turn, snapshot versions, no cancelled progress |
 | 9 | Avatar events/query/preview | schemas/run_stream.py, services/run_event.py, api/ | Fields, expiration, durable replay, deduplication contract |

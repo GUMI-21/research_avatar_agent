@@ -17,6 +17,9 @@ from app.adapters.llm import (
 )
 from app.schemas.llm import LLMProvider
 from app.core.intent import is_simple_greeting
+from app.services.teaching_output import (
+    MAX_TEACHING_OUTPUT_CHARS, ParsedTeachingTurn, TeachingOutputError, TeachingTurnParser,
+)
 from app.tools import (
     ToolApprovalBroker,
     ToolApprovalRequiredError,
@@ -24,6 +27,7 @@ from app.tools import (
     ToolRegistry,
     ToolResult,
 )
+from logs import log
 
 
 def _add_usage(total: LLMUsage | None, current: LLMUsage | None) -> LLMUsage | None:
@@ -45,6 +49,18 @@ def _add_usage(total: LLMUsage | None, current: LLMUsage | None) -> LLMUsage | N
 
 class HandoffRequestRejectedError(ValueError):
     pass
+
+
+def _usage_event(provider: str | None, model: str | None, usage: LLMUsage | None) -> RuntimeEvent:
+    return RuntimeEvent(type=RuntimeEventType.USAGE_UPDATED, payload={
+        "provider": provider, "model": model,
+        "input_tokens": usage.input_tokens if usage else None,
+        "output_tokens": usage.output_tokens if usage else None,
+        "cache_read_tokens": usage.cache_read_tokens if usage else None,
+        "cache_write_tokens": usage.cache_write_tokens if usage else None,
+        "usage_status": "reported" if usage else "unavailable",
+        "cost_status": "unavailable",
+    })
 
 
 def _handoff_tools(
@@ -134,6 +150,9 @@ class NativeAgentRuntime:
                 [*context_parts, f"用户问题:\n{request.message}"]
             )
         teaching = request.mode == "teaching"
+        teaching_parts: list[str] = []
+        teaching_chars = 0
+        teaching_result: ParsedTeachingTurn | None = None
         greeting = not teaching and is_simple_greeting(request.message)
         tool_definitions = (
             self._tools.definitions() if self._tools is not None and not greeting and not teaching else ()
@@ -309,34 +328,42 @@ class NativeAgentRuntime:
                         requested_tool = True
                         break
                     if chunk.text:
-                        emitted_text = True
-                        yield RuntimeEvent(
-                            type=RuntimeEventType.ASSISTANT_DELTA,
-                            payload={"text": chunk.text},
-                        )
+                        if teaching:
+                            teaching_chars += len(chunk.text)
+                            if teaching_chars > MAX_TEACHING_OUTPUT_CHARS:
+                                raise TeachingOutputError("output_too_large")
+                            teaching_parts.append(chunk.text)
+                        else:
+                            emitted_text = True
+                            yield RuntimeEvent(
+                                type=RuntimeEventType.ASSISTANT_DELTA,
+                                payload={"text": chunk.text},
+                            )
                 if not requested_tool:
                     break
+            if teaching:
+                teaching_result = TeachingTurnParser().parse("".join(teaching_parts))
+                if teaching_result.fallback_reason:
+                    log.warning("teaching_avatar_fallback business=avatar_teaching run_id={} reason={}",
+                                request.run_id, teaching_result.fallback_reason)
+                emitted_text = True
+                yield RuntimeEvent(type=RuntimeEventType.ASSISTANT_DELTA,
+                                   payload={"text": teaching_result.turn.reply})
             if not emitted_text and not emitted_action:
                 raise RuntimeError("LLM stream ended without text")
         except Exception as error:
+            # 解析失败不等于没有发生模型调用；保留已收到的用量，不重试模型。
+            if teaching and provider is not None:
+                yield _usage_event(provider, model, usage)
             yield RuntimeEvent(
                 type=RuntimeEventType.RUN_FAILED,
                 payload={"error_type": type(error).__name__},
             )
             raise
         # 计算花费
-        yield RuntimeEvent(
-            type=RuntimeEventType.USAGE_UPDATED,
-            payload={
-                "provider": provider,
-                "model": model,
-                "input_tokens": usage.input_tokens if usage else None,
-                "output_tokens": usage.output_tokens if usage else None,
-                "cache_read_tokens": usage.cache_read_tokens if usage else None,
-                "cache_write_tokens": usage.cache_write_tokens if usage else None,
-                "usage_status": "reported" if usage else "unavailable",
-                "cost_status": "unavailable",
-            },
-        )
+        yield _usage_event(provider, model, usage)
         if not emitted_action:
-            yield RuntimeEvent(type=RuntimeEventType.RUN_FINISHED)
+            yield RuntimeEvent(
+                type=RuntimeEventType.RUN_FINISHED,
+                payload={"teaching": teaching_result.presentation()} if teaching_result else {},
+            )
