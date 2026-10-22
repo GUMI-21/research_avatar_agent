@@ -1,10 +1,11 @@
 """WebSocket entrypoint for streamed Personal Agent Runs."""
 
 import asyncio
-from contextlib import suppress
+from contextlib import aclosing, suppress
 from dataclasses import dataclass
 from typing import Annotated
 
+from anyio import CancelScope
 from fastapi import APIRouter, Query, WebSocket, WebSocketDisconnect
 from langgraph.checkpoint.base import BaseCheckpointSaver
 from pydantic import BaseModel, ValidationError
@@ -30,6 +31,9 @@ from app.services import (
 )
 from app.services.runtime_registry import RuntimeNotFoundError, RuntimeRegistry
 from app.services.skills import SkillCatalog
+from app.services.courses import CourseCatalog, CourseSelectionNotFoundError
+from app.services.session_run_guard import SessionRunBusyError, SessionRunGuard
+from app.services.teaching import TeachingBindingConflictError
 from app.tools import ToolApprovalBroker
 from logs import log
 
@@ -186,6 +190,8 @@ async def workspace_socket(
                     command.content,
                     command.target_agent_id,
                     active_run,
+                    getattr(websocket.app.state, "course_catalog", None),
+                    getattr(websocket.app.state, "session_run_guard", None),
                 )
             )
     # WebSocket 接收消息时检测到断连
@@ -197,10 +203,12 @@ async def workspace_socket(
     # 断开连接后关闭资源
     finally:
         if active_run.task is not None and not active_run.task.done():
-            active_run.task.cancel()
-            # 调用cancel，CancelledError是预期结果，等待任务资源关闭；suppres 忽略指定异常
-            with suppress(asyncio.CancelledError):
-                await active_run.task
+            # 框架断连取消可能反复打断 await；屏蔽外层取消，等模型/数据库真正清理完。
+            with CancelScope(shield=True):
+                active_run.task.cancel()
+                # 调用cancel，CancelledError是预期结果，等待任务资源关闭；suppres 忽略指定异常
+                with suppress(asyncio.CancelledError):
+                    await active_run.task
 
 
 async def _send_error(
@@ -236,33 +244,37 @@ async def _stream_run(
     content: str,
     target_agent_id: str | None,
     active_run: ActiveRun,
+    course_catalog: CourseCatalog | None = None,
+    session_run_guard: SessionRunGuard | None = None,
 ) -> None:
     try:
         async with database.session() as session:
             # 获取agent执行器对象
             service = RunExecutionService(
-                session, registry, embedding_client, graph_checkpointer, skill_catalog
+                session, registry, embedding_client, graph_checkpointer, skill_catalog,
+                course_catalog, session_run_guard,
             )
             # 异步消费已经拆分好的 Agent 执行事件
-            async for item in service.stream(
+            async with aclosing(service.stream(
                 client_id,
                 session_id,
                 content,
                 target_agent_id=target_agent_id,
-            ):
-                if active_run.run_id is None:
-                    active_run.run_id = item.run_id
-                await _send_frame(
-                    websocket,
-                    send_lock,
-                    # 统一发送agent事件帧
-                    RunEventFrame(
-                        type=item.event.type,
-                        run_id=item.run_id,
-                        sequence=item.sequence,
-                        payload=dict(item.event.payload),
-                    ),
-                )
+            )) as events:
+                async for item in events:
+                    if active_run.run_id is None:
+                        active_run.run_id = item.run_id
+                    await _send_frame(
+                        websocket,
+                        send_lock,
+                        # 统一发送agent事件帧
+                        RunEventFrame(
+                            type=item.event.type,
+                            run_id=item.run_id,
+                            sequence=item.sequence,
+                            payload=dict(item.event.payload),
+                        ),
+                    )
     # 发送消息时检测到断连
     except WebSocketDisconnect:
         return
@@ -270,6 +282,12 @@ async def _stream_run(
         raise
     except RunExecutionParentNotFoundError:
         await _send_error(websocket, send_lock, "not_found", "Session not found")
+    except CourseSelectionNotFoundError:
+        await _send_error(websocket, send_lock, "not_found", "Course or lesson is unavailable")
+    except SessionRunBusyError:
+        await _send_error(websocket, send_lock, "session_busy", "Session already has an active Run")
+    except TeachingBindingConflictError:
+        await _send_error(websocket, send_lock, "teaching_conflict", "Teaching configuration is not executable")
     except RuntimeNotFoundError:
         await _send_error(
             websocket,

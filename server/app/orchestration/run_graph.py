@@ -1,6 +1,7 @@
 """Minimal LangGraph workflow around provider-neutral Agent runtimes."""
 
-from collections.abc import AsyncIterator
+from collections.abc import AsyncGenerator, AsyncIterator
+from contextlib import aclosing
 from dataclasses import dataclass, replace
 from typing import Literal, TypedDict, cast
 
@@ -194,7 +195,7 @@ class LangGraphRunOrchestrator:
         request: RuntimeRequest,
         *,
         entry_agent_id: str | None = None,
-    ) -> AsyncIterator[RuntimeEvent]:
+    ) -> AsyncGenerator[RuntimeEvent, None]:
         entry_agent_id = entry_agent_id or request.agent_id
         if request.mode == "teaching" and entry_agent_id != request.agent_id:
             raise HandoffRoutingError("Teaching mode forbids Agent handoff")
@@ -222,14 +223,15 @@ class LangGraphRunOrchestrator:
             )
         }
         # 会收到 stream_writer() 写出去的 RuntimeEvent。
-        async for event in self._graph.astream(
+        async with aclosing(self._graph.astream(
             initial,
             config=config,
             context=context,
             stream_mode="custom",
-        ):
-            if isinstance(event, RuntimeEvent):
-                yield event
+        )) as events:
+            async for event in events:
+                if isinstance(event, RuntimeEvent):
+                    yield event
 
     # 实时查看langGraph流转状态
     async def get_state(self, run_id: str) -> AgentRunState:

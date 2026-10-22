@@ -21,6 +21,7 @@ from app.services.llm_runtime import LLMRuntime
 from app.services.runtime_registry import RuntimeRegistry
 from app.services.skills import SkillCatalog
 from app.services.courses import CourseCatalog
+from app.services.session_run_guard import SessionRunGuard
 from app.tools import (
     MCPClient, StdioMCPTransport, StreamableHttpMCPTransport,
     ToolApprovalBroker, create_file_tool_registry,
@@ -148,6 +149,7 @@ def create_app(settings: Settings) -> FastAPI:
     }
     # default - url: sqlite+aiosqlite:///data/personal_agent.db
     app.state.database = Database(settings.database.url)
+    app.state.session_run_guard = SessionRunGuard()
     app.state.skill_catalog = SkillCatalog(
         settings.skills.directories, settings.skills.max_file_bytes
     )

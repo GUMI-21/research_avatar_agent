@@ -20,11 +20,12 @@ Workspace 工程基线见 [路线图](internship_agent_workspace_plan.md)，研�
 - 课程列表及教学配置 GET/PUT：仅允许自己的 Native Session 绑定真实课程/课节，固定脚本哈希；同配置重复请求幂等，切课/升级暂拒绝。
 - TeachingService.prepare：内部准备教学请求，复核绑定/Native/脚本哈希，注入有预算的课程上下文，保留已有对话/记忆/RAG 字段；Native 与 LangGraph 强制禁止工具和转交。
 - TeachingTurnParser 与 Native 内部教学模式：收齐并校验联合 JSON，仅发送纯 reply；表情无效回退中性，完成事件携带校验后的教学结果，不额外调用模型。
+- 教学 WebSocket 执行链：已绑定 Session 自动复用教学准备、Native/LangGraph、消息/Run/事件；应用级 SessionRunGuard 拒绝同作用域的并发 Run 和运行中绑定 PUT。
 
-尚未实现教学执行 API、自动进度更新或 Unity 播放。
+尚未实现 HTTP 教学 chat、自动进度更新或 Unity 播放。
 课程已可通过 API 查询和选择，但不自动注册为普通 Agent Skill。
-内部请求准备与权限策略已可测试；公开 RunExecutionService/HTTP/WS 尚未接入该准备方法，绑定仍不改变普通聊天处理流程。
-下一批桥接教学执行入口及 Session 运行守卫，复用已实现的准备与解析步骤。
+RunExecutionService 与 WebSocket 已根据 Session 绑定启用教学模式；未绑定 Session 继续普通 Workspace 路径。
+下一批接 HTTP /avatar/chat，复用同一执行服务和 Session 守卫；真实模型教学质量仍待单独验收。
 
 ## 一、课程体验与首版范围
 
@@ -97,7 +98,8 @@ TeachingService.prepare 接收内部 RuntimeRequest，不对客户端开放执�
 Native 在教学模式下不提供任何工具定义，并拒绝 Provider 返回的工具/委派调用；问候也保留教学指令。
 LangGraph 同时拒绝手动目标转交及 Runtime 发出的转交请求，不执行目标 Agent。
 普通 Workspace 默认 mode=workspace，保留现有工具/转交/问候行为。
-当前仅可通过内部测试执行此路径；公开运行链尚未桥接准备/解析，不自动启用教学模式。
+RunExecutionService 已在创建 Run/用户消息之前调用教学准备；课程不可用、版本变化或非绑定 Native 目标会被提前拒绝。
+教学时不装载其他 Agent 的运行上下文或 Workspace Agent Skills；保留绑定 Agent 的近期会话、记忆与 RAG，课程脚本单独注入。
 
 ### 已实现的联合解析与文本传输
 
@@ -114,6 +116,21 @@ JSON 损坏、重复键、非标准 NaN/Infinity、额外顶层字段、非法�
 若失败前已收到 Provider 信息，仍发出现有用量状态（有统计则 reported，否则 unavailable），不重试或增加第二次模型调用。
 错误/降级只记录安全原因或错误类型，不记录原始 JSON 或 Pydantic 输入详情。
 普通 Workspace 的既有逐段流式回复不受影响，教学增量结构化解析可以后续优化。
+
+### 已实现的 WebSocket 桥接与会话守卫
+
+先通过教学绑定 PUT 选择课程，再沿用 /api/v1/ws?client_id=... 的 send_message（session_id、content）；
+不新增 WebSocket 协议或客户端可选 mode。服务端按绑定切换执行路径，回复以纯文本保存到 Message，
+课程呈现元数据随完成事件持久化；独立呈现表与进度提交仍未实现。
+同一应用进程的 SessionRunGuard 按 (client_id, session_id) 占用，忙碌时立即拒绝，不排队执行过时消息。
+正式应用的所有 WS Session Run 共用该守卫，教学绑定 PUT 也使用它；跨连接冲突返回 session_busy，
+同连接已有任务仍返回 run_in_progress，准备失败返回 not_found 或 teaching_conflict。
+已绑定 Session 缺少课程目录或共享守卫时拒绝执行，不退回普通聊天；绑定 PUT 缺少共享守卫时返回 503。
+
+成功、失败、取消与消费者提前关闭都会关闭内层图迭代器并释放守卫；断连时屏蔽外层反复取消，等待任务清理。
+消费者提前关闭会补记取消终态；取消打断数据库操作时先 rollback 再记录状态，不产生 assistant 消息或教学进度。
+这是单进程、单事件循环的内存互斥，不是分布式锁或跨进程恢复；当前演示应使用单个 Server worker。
+取消本地任务不保证已发出的厂商请求停止计费。HTTP 教学桥接留到下一子批，之后将使用同一个守卫。
 
 ## 四、已固定的第一批契约
 
@@ -144,7 +161,7 @@ JSON 损坏、重复键、非标准 NaN/Infinity、额外顶层字段、非法�
 - 已实现 GET /api/v1/avatar/courses：返回允许课程及课节的安全元数据，不返回脚本正文、内部元数据或服务器绝对路径。
 - 已实现 GET/PUT /api/v1/avatar/sessions/{session_id}/teaching：读取或首次绑定 course_id/lesson_id；PUT 空对象使用默认元音课节，课程版本由服务端决定。
 - 计划 POST /api/v1/avatar/chat：针对已绑定的 Native Session 执行文本教学，返回 reply、Run 与呈现结果。
-- 计划复用 /api/v1/ws?client_id=...：依据 Session 配置进入教学链，避免重复流式服务。
+- 已实现复用 /api/v1/ws?client_id=...：依据 Session 配置进入教学链，避免重复流式服务。
 - 计划 POST /api/v1/avatar/preview：只验证和映射表情建议，无模型调用或会话修改。
 - 计划 GET /api/v1/avatar/runs/{run_id}/presentation：查询已保存的呈现结果。
 
@@ -157,7 +174,7 @@ REST 沿用 X-Client-ID，WebSocket 沿用现有作用域，仍不是正式认�
 已新增 teaching_session_states 教学 Session 扩展表，session_id 同时作为主键和外键，
 每个对话最多一份配置。completed_turns 初始为 0，只表示已提交教学轮数，不表示掌握程度；
 state_version 初始为 1，为后续乐观并发更新预留，目前尚未实现进度更新或状态版本的乐观并发控制。
-course_version 保存绑定时脚本 SHA256，不归档正文；绑定与内部请求准备均校验课程/Native，准备时检查脚本版本；公开运行链尚未接入。
+course_version 保存绑定时脚本 SHA256，不归档正文；绑定和每次 WS 执行前均校验课程/Native 与脚本版本。
 Repository 只 flush，Service 提交/回滚并记录提交成功日志；主键冲突映射为 409，客户端可重试。
 Run 呈现表仍待新增，用于保存表情建议、最终控制、降级原因和耗时；不复制聊天全文、不逐帧写库。
 课程内容只读，教学对话不通过工具修改服务器脚本。
@@ -168,7 +185,7 @@ Run 呈现表仍待新增，用于保存表情建议、最终控制、降级原�
   语言字段的校验不等于保证自然语言输出合格，实际模型质量需单独验收。
 - **联合生成**：回复与表情来自同一次 LLM 调用，Usage 使用现有 Provider 报告，不存在默认第二次情绪计费。
 - **解析与降级**：先验证可用 reply；只有 avatar 非法时保留回复并回退中性，记录原因。
-  整体 JSON 损坏、reply 缺失/空白或生成失败则失败，不伪造教学回答。内部 Native 解析路径已实现；公开教学执行入口仍待桥接。
+  整体 JSON 损坏、reply 缺失/空白或生成失败则失败，不伪造教学回答。Native 解析已接入教学 WebSocket；HTTP 教学入口后续接入。
 - **终态**：课程进度与呈现结果完成处理后才发布唯一 run_finished；普通 Workspace 保持原路径。
 - **取消与并发**：同教学 Session 的 HTTP/WS 共用活跃 Run 守卫。取消终止剩余工作，
   不提交新的有效动作或已完成进度，过期状态不能覆盖更新版本。
@@ -190,8 +207,9 @@ Run 呈现表仍待新增，用于保存表情建议、最终控制、降级原�
 | 3（已实现） | 教学会话扩展模型、迁移、Repository | models/、migrations/、repositories/ | client 隔离、Session 关联、课程版本、进度默认值及事务回滚 |
 | 4（已实现） | 课程查询与首次教学绑定 REST | services/teaching.py、api/ | 课程真实存在、Native 绑定、跨客户端拒绝、幂等与冲突；切课/升级后置 |
 | 5（已实现） | 内部教学请求准备、脚本上下文与权限约束 | services/teaching.py、adapters/agent/、orchestration/ | 课程预算/版本、保留记忆/RAG、禁止工具/handoff、Workspace 回归；公开执行桥接后置 |
-| 6（本批） | 联合输出解析、纯文本提取及表情回退 | services/teaching_output.py、adapters/agent/native.py | 不外泄原始 JSON；非法表情回退、坏回复失败、缓冲上限与已有 Usage 保留 |
-| 7 | HTTP Native 桥接与会话守卫 | services/teaching.py、api/ | 多轮英文引导、同 Session 忙碌保护、消息/Run；阶段 A |
+| 6（已实现） | 联合输出解析、纯文本提取及表情回退 | services/teaching_output.py、adapters/agent/native.py | 不外泄原始 JSON；非法表情回退、坏回复失败、缓冲上限与已有 Usage 保留 |
+| 7A（本批） | WS 教学桥接与共享 Session 守卫 | services/run_execution.py、services/session_run_guard.py、api/ | 多轮、绑定自动选择、跨连接/绑定冲突、提前校验、取消/断连清理 |
+| 7B | HTTP Native 桥接 | schemas/、api/routes/teaching.py | 复用 WS 执行链与同一守卫、HTTP/WS 冲突、消息/Run；阶段 A |
 | 8 | 呈现持久化与成功终态前状态提交 | models/、repositories/、services/ | 每轮一份、课程快照、状态版本、取消不提交 |
 | 9 | Avatar 事件、查询与 JSON 预览 | schemas/run_stream.py、services/run_event.py、api/ | 字段、有效期限、持久补发、去重契约 |
 | 10 | 客户端事件兼容与后端流式整合 | web/src/shared/api/、server/app/ | 教学仅显示 reply、普通聊天不变；阶段 B |

@@ -11,6 +11,7 @@ from app.schemas.teaching import (
 )
 from app.services.courses import CourseCatalog, CourseSelectionNotFoundError
 from app.services.teaching import TeachingBindingConflictError, TeachingService
+from app.services.session_run_guard import SessionRunBusyError
 
 router = APIRouter(prefix="/avatar")
 
@@ -41,12 +42,16 @@ async def get_teaching(
 @router.put("/sessions/{session_id}/teaching", response_model=TeachingSessionRead)
 async def bind_teaching(
     session_id: str, request: CourseSelection, client_id: ClientID,
-    database_session: DBSession, catalog: Courses,
+    database_session: DBSession, catalog: Courses, http_request: Request,
 ) -> TeachingSessionRead:
     try:
-        record = await TeachingService(database_session, catalog).bind(client_id, session_id, request)
+        guard = getattr(http_request.app.state, "session_run_guard", None)
+        if guard is None:
+            raise HTTPException(status_code=503, detail="Session Run guard is unavailable")
+        async with guard.claim(client_id, session_id):
+            record = await TeachingService(database_session, catalog).bind(client_id, session_id, request)
     except (TeachingSessionNotFoundError, CourseSelectionNotFoundError) as error:
         raise HTTPException(status_code=404, detail=str(error)) from error
-    except TeachingBindingConflictError as error:
+    except (TeachingBindingConflictError, SessionRunBusyError) as error:
         raise HTTPException(status_code=409, detail=str(error)) from error
     return TeachingSessionRead.model_validate(record)

@@ -27,9 +27,9 @@ adds CourseSelection, TeachingTurn and validated AvatarControl contracts plus
 optional speech/independent-emotion ports. CourseCatalog now discovers/validates
 courses separately during app creation. Teaching Session storage and its Repository
 now exist, alongside course listing and initial binding REST. Internal request
-preparation, enforced permissions and joint-output parsing are testable, but public
-model injection/execution and progress updates are not wired yet; storing a binding
-does not change ordinary chat handling.
+preparation, enforced permissions and joint-output parsing are wired into WebSocket
+Runs for bound Sessions. Unbound Sessions retain normal Workspace behavior.
+HTTP teaching chat and automatic progress updates are not wired yet.
 The legacy Unity API remains unchanged.
 
 Teaching will generate reply and expression suggestions in one model call,
@@ -98,8 +98,8 @@ their assembly remains responsible for scoping and budgets.
 The returned internal request uses `mode="teaching"`; Native disables all tools,
 rejects unsolicited calls and keeps teaching instructions for greetings. LangGraph
 also blocks manual/automatic handoff. `mode="workspace"` remains the default.
-Preparation makes no model call or database mutation. Public RunExecutionService,
-HTTP and WS do not use it yet. Tests are not live-model teaching validation.
+Preparation makes no model call or database mutation; RunExecutionService now uses
+it before creating teaching Runs/user Messages. Tests are not live-model teaching validation.
 
 ### Internal teaching output parsing
 
@@ -113,10 +113,30 @@ invalid replies/versions and Markdown wrappers fail rather than produce a fabric
 
 Only validated reply becomes one `assistant_delta`. `run_finished.payload.teaching`
 contains schema version, validated avatar and fallback reason, not an executable
-Unity command. There is no presentation table/progress update or public teaching
-execution bridge yet. Failures discard buffered output; received Provider Usage
+Unity command. There is no presentation table/progress update or HTTP teaching
+chat yet. Failures discard buffered output; received Provider Usage
 is retained when available, without a retry/second model call. Error/fallback
 metadata excludes raw JSON/invalid controls. Ordinary Workspace streaming is unchanged.
+
+### Teaching over WebSocket
+
+After binding, use the existing `/api/v1/ws?client_id=...` send_message command
+with `session_id` and `content`. Teaching mode is selected server-side, not a client
+flag. Course/Native/hash checks happen before Run/Message creation; teaching excludes
+other Agents and Workspace Agent Skills while retaining recent messages/memory/RAG.
+Messages store plain reply; the completion event stores validated presentation metadata.
+Progress remains unchanged and the old `/unity/chat` API is untouched.
+
+An app-scoped `SessionRunGuard` claims `(client_id, session_id)` for all WS Runs and
+binding PUTs. Busy requests are rejected, not queued: cross-connection `session_busy`,
+same-connection `run_in_progress`, binding PUT 409. Bound Sessions without catalog/guard
+fail closed (`teaching_conflict`); unavailable resources return `not_found`.
+Binding PUT returns 503 when the shared guard is missing.
+Failure/cancel/early close release ownership after iterator cleanup; disconnect cleanup
+is shielded and interrupted transactions are rolled back before cancellation is recorded.
+This is a single-process/event-loop guard: use one Server worker, not a distributed lock
+or execution-recovery mechanism. Local cancellation does not guarantee upstream billing stops.
+HTTP `/avatar/chat` will reuse this service/guard in the next sub-batch.
 
 ## Directory Layout
 

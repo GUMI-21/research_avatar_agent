@@ -18,6 +18,7 @@ from app.repositories import AgentRepository, SessionRepository, TeachingReposit
 from app.schemas.teaching import CourseSelection
 from app.services.courses import CourseCatalog
 from app.services.teaching import TeachingBindingConflictError, TeachingService
+from app.services.session_run_guard import SessionRunGuard
 
 
 class TeachingRoutesTest(unittest.IsolatedAsyncioTestCase):
@@ -30,6 +31,7 @@ class TeachingRoutesTest(unittest.IsolatedAsyncioTestCase):
         self.app = FastAPI()
         self.app.state.database = self.database
         self.app.state.course_catalog = self.catalog
+        self.app.state.session_run_guard = SessionRunGuard()
         self.app.include_router(api_router)
         self.client = httpx.AsyncClient(
             transport=httpx.ASGITransport(app=self.app), base_url="http://testserver",
@@ -125,6 +127,11 @@ class TeachingRoutesTest(unittest.IsolatedAsyncioTestCase):
         self.assertEqual(response.status_code, 409)
         self.assertEqual(response.json()["detail"], "Teaching requires a Native Agent")
         self.assertEqual((await self.client.get(path)).status_code, 404)
+
+    async def test_binding_requires_shared_guard(self) -> None:
+        self.app.state.session_run_guard = None
+        self.assertEqual((await self.client.put(self.path, json={})).status_code, 503)
+        self.assertEqual((await self.client.get(self.path)).status_code, 404)
 
     async def test_agent_reference_must_also_belong_to_client(self) -> None:
         async with self.database.session() as session:

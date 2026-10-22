@@ -1,7 +1,8 @@
 """Coordinate one Agent Run from runtime selection to streamed events."""
 
 import asyncio
-from collections.abc import AsyncIterator, Sequence
+from collections.abc import AsyncGenerator, AsyncIterator, Sequence
+from contextlib import AsyncExitStack, aclosing, nullcontext
 from dataclasses import dataclass, replace
 from hashlib import sha256
 from time import perf_counter
@@ -21,7 +22,7 @@ from app.models import MessageRecord
 from app.orchestration import AgentRunTarget, LangGraphRunOrchestrator
 from app.repositories import (
     AgentRepository, MemoryRepository, MessageRepository, RuntimeThreadRepository,
-    SessionRepository,
+    SessionRepository, TeachingRepository,
 )
 from app.services.message import MessageService
 from app.services.knowledge_context import (
@@ -33,6 +34,9 @@ from app.services.run import RunService
 from app.services.run_event import RunEventService
 from app.services.runtime_registry import RuntimeRegistry
 from app.services.skills import SkillCatalog, SkillDefinition
+from app.services.courses import CourseCatalog
+from app.services.session_run_guard import SessionRunGuard
+from app.services.teaching import TeachingBindingConflictError, TeachingService
 
 
 RUN_EVENT_STATUSES = {
@@ -147,6 +151,8 @@ class RunExecutionService:
         embedding_client: EmbeddingClient | None = None,
         graph_checkpointer: BaseCheckpointSaver[str] | None = None,
         skill_catalog: SkillCatalog | None = None,
+        course_catalog: CourseCatalog | None = None,
+        session_run_guard: SessionRunGuard | None = None,
     ) -> None:
         self._session = session
         self._registry = registry
@@ -157,6 +163,8 @@ class RunExecutionService:
         self._retrieval_strategy = "hybrid" if embedding_client else "keyword"
         self._graph_checkpointer = graph_checkpointer
         self._skill_catalog = skill_catalog
+        self._course_catalog = course_catalog
+        self._session_run_guard = session_run_guard
 
     # 处理agent事件
     async def stream(
@@ -166,7 +174,43 @@ class RunExecutionService:
         message: str,
         *,
         target_agent_id: str | None = None,
-    ) -> AsyncIterator[StreamedRunEvent]:
+    ) -> AsyncGenerator[StreamedRunEvent, None]:
+        guard = self._session_run_guard
+        async with guard.claim(client_id, session_id) if guard else nullcontext():
+            teaching = await TeachingRepository(self._session).get(client_id, session_id) is not None
+            if teaching and (guard is None or self._course_catalog is None):
+                raise TeachingBindingConflictError("Teaching execution dependencies are unavailable")
+            # 后登记的图迭代器先关闭，模型/图任务停止后才释放 Session 守卫。
+            run_id = None
+            terminal = False
+            try:
+                async with AsyncExitStack() as cleanup:
+                    events = await cleanup.enter_async_context(aclosing(self._execute(
+                        client_id, session_id, message, target_agent_id=target_agent_id,
+                        teaching=teaching, cleanup=cleanup,
+                    )))
+                    async for item in events:
+                        run_id = item.run_id
+                        terminal = item.event.type in TERMINAL_EVENTS or terminal
+                        yield item
+            except asyncio.CancelledError:
+                if run_id is not None and not terminal:
+                    # 取消也可能打断数据库 flush，先复位事务才能补写取消状态。
+                    await self._session.rollback()
+                    cancelled = await self._process(client_id, run_id, RuntimeEvent(type=RuntimeEventType.RUN_CANCELLED))
+                    if cancelled is not None:
+                        yield cancelled
+                raise
+            except GeneratorExit:
+                # 发送失败等消费者提前关闭的情况，不再 yield，但补记取消终态。
+                if run_id is not None and not terminal:
+                    _ = await self._process(client_id, run_id, RuntimeEvent(type=RuntimeEventType.RUN_CANCELLED))
+                raise
+
+    async def _execute(
+        self, client_id: str, session_id: str, message: str, *,
+        target_agent_id: str | None, teaching: bool, cleanup: AsyncExitStack,
+    ) -> AsyncGenerator[StreamedRunEvent, None]:
         # 对话框
         conversation = await SessionRepository(self._session).get(
             client_id, session_id
@@ -181,6 +225,12 @@ class RunExecutionService:
         )
         if agent is None:
             raise RunExecutionParentNotFoundError("Agent not found")
+        teaching_request = None
+        if teaching:
+            assert self._course_catalog is not None
+            teaching_request = await TeachingService(self._session, self._course_catalog).prepare(
+                RuntimeRequest("", client_id, agent.id, session_id, message, system_prompt=agent.system_prompt)
+            )
         # 装配最近的上下文，暂定12条
         recent_messages = await MessageRepository(self._session).list_messages(
             client_id, session_id, limit=RECENT_MESSAGE_LIMIT
@@ -191,7 +241,7 @@ class RunExecutionService:
         available_agents = [
             item
             for item in await agent_repository.list_agents(client_id)
-            if item.runtime in available_runtime_ids
+            if item.runtime in available_runtime_ids and (not teaching or item.id == agent.id)
         ]
         agents_by_id = {item.id: item for item in available_agents}
         # 读写外部 Runtime 的 thread ID （codex线程ID）
@@ -230,7 +280,7 @@ class RunExecutionService:
                 if (skill := self._skill_catalog.get(skill_id)) is not None
             )
             for item in available_agents
-            if item.runtime == "native" and self._skill_catalog is not None
+            if item.runtime == "native" and self._skill_catalog is not None and not teaching
         }
         enabled_skills = skills_by_agent.get(agent.id, ())
         # 创建 Agent 执行记录
@@ -361,7 +411,7 @@ class RunExecutionService:
             runtime_thread_id=runtime_thread_ids.get(agent.id),
             workspace_path=agent.workspace_path,
             # 身份、近期会话和 RAG 上下文保持独立边界。
-            system_prompt=_system_prompt_with_skills(
+            system_prompt=teaching_request.system_prompt if teaching_request else _system_prompt_with_skills(
                 agent.system_prompt, enabled_skills
             ),
             conversation_context=_assemble_recent_context(recent_messages),
@@ -369,6 +419,7 @@ class RunExecutionService:
             memory_ids=tuple(record.id for record in memory_records.get(agent.id, ())),
             knowledge_context=knowledge_context,
             handoff_targets=handoff_targets,
+            mode="teaching" if teaching else "workspace",
         )
         graph_targets = {
             item.id: AgentRunTarget(
@@ -404,10 +455,10 @@ class RunExecutionService:
         orchestrator = LangGraphRunOrchestrator(
             runtime, self._graph_checkpointer, graph_targets
         )
-        iterator = orchestrator.stream(
+        iterator = await cleanup.enter_async_context(aclosing(orchestrator.stream(
             request,
             entry_agent_id=entry_agent_id,
-        )
+        )))
         terminal_received = False
         assistant_parts: list[str] = []
         assistant_agent_id = agent.id
