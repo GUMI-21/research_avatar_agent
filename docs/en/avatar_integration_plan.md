@@ -24,12 +24,14 @@ Implemented baseline:
 - TeachingService.prepare: internal request preparation rechecks binding/Native/script hash, adds bounded course context and preserves conversation/memory/RAG fields; Native and LangGraph enforce no tools/handoff.
 - TeachingTurnParser and internal Native teaching mode: buffer/validate joint JSON, emit reply only, fall back to neutral for invalid avatar and attach validated teaching metadata to completion without an extra model call.
 - Teaching WebSocket execution: bound Sessions reuse preparation, Native/LangGraph, Message/Run/events; an app-scoped SessionRunGuard rejects concurrent scoped Runs and binding PUTs during execution.
+- POST /avatar/chat: a non-streaming HTTP bridge to the same teaching Run, returning plain reply, validated avatar, fallback reason and run_id; it shares WS/binding ownership and forbids unbound fallback to Workspace.
 
-HTTP teaching chat, automatic progress updates and Unity playback are not implemented.
+Automatic progress updates, separate presentation tables and Unity playback are not implemented.
 Courses can be queried/selected through the API but are not automatically Agent Skills
 and are now injected for bound Session Runs. RunExecutionService/WebSocket select teaching
-from the binding; unbound Sessions retain the Workspace path. HTTP /avatar/chat comes next,
-reusing the execution service and guard. Live-model teaching quality still needs separate acceptance.
+from the binding; unbound WS Sessions retain the Workspace path, while HTTP teaching requires binding.
+Presentation persistence/progress and pre-success commit ordering come next.
+Live-model teaching quality still needs separate acceptance.
 
 ## 1. Experience and scope
 
@@ -156,7 +158,27 @@ awaits task cleanup. Early close records a cancelled terminal; interrupted datab
 is rolled back before cancellation state is written, without assistant/progress writes.
 This is single-process, single-event-loop memory ownership, not a distributed lock or
 cross-process recovery. Use one Server worker for this demo. Local cancellation does not
-guarantee upstream billing stops. HTTP wiring follows in the next sub-batch and will share the guard.
+guarantee upstream billing stops. HTTP teaching now uses the same service and guard.
+
+### Implemented HTTP teaching bridge
+
+POST /api/v1/avatar/chat requires X-Client-ID and JSON containing only session_id/message.
+After trimming, both must be nonblank; limits are 36/10,000 characters respectively.
+The response contains schema_version, session_id, run_id, reply, avatar and fallback_reason.
+TeachingChatService drains the same RunExecutionService.stream without direct LLM calls,
+duplicate Message/Run writes or double locking. Binding is required while holding ownership.
+Only a fully consumed success with complete presentation metadata returns 200, never partial reply.
+Usage stays in Run and is available through /api/v1/usage/runs by matching run_id, rather
+than duplicating accounting fields in the teaching response.
+
+Missing bindings/resources, cross-client requests or unavailable courses return 404;
+busy Sessions/Native/version conflicts return 409; invalid input 422; missing dependencies/runtime 503;
+model configuration errors 400, timeouts 504 and bad output/provider failures 502.
+Unclassified internal errors return a sanitized 500. Do not expose raw model output/provider
+error bodies. Failed Runs/received Usage remain in the shared pipeline, without retries.
+HTTP returns one complete result, not live progress; client disconnect does not promise immediate
+upstream cancellation. Use WS for live status/cancel. The old /unity/chat API is unchanged.
+Unity can start integrating this text endpoint, but action commands/scenes still need later acceptance.
 
 ## 4. First-batch contracts
 
@@ -189,7 +211,7 @@ by client_id plus IDs.
 
 - Implemented GET /api/v1/avatar/courses: allowed-course/lesson metadata, excluding script bodies, internal metadata and server paths.
 - Implemented GET/PUT /api/v1/avatar/sessions/{session_id}/teaching: read or initially bind a course/lesson; an empty PUT object selects default vowels, with the version set by the server.
-- Planned POST /api/v1/avatar/chat: text teaching for a bound Native Session; reply, Run and presentation.
+- Implemented POST /api/v1/avatar/chat: text teaching for a bound Native Session; reply, run_id and validated presentation.
 - Implemented reuse of /api/v1/ws?client_id=... to resolve teaching behavior from Session configuration.
 - Planned POST /api/v1/avatar/preview: validate/map suggestions without model calls or Session mutation.
 - Planned GET /api/v1/avatar/runs/{run_id}/presentation: persisted output.
@@ -219,7 +241,7 @@ Courses are read-only to conversations.
 
 - **Language/quality:** require English explanations while allowing Japanese/romaji. Language metadata validation is not proof of output quality; live-model acceptance is separate.
 - **Joint generation:** reply/expressions share one call and existing Provider Usage, with no mandatory second affect charge.
-- **Parsing/fallback:** validate usable reply first. Invalid avatar alone preserves reply with a logged neutral fallback. Broken JSON/missing or blank reply/generation failures fail rather than fabricate teaching. Native parsing is wired to teaching WS; HTTP wiring follows.
+- **Parsing/fallback:** validate usable reply first. Invalid avatar alone preserves reply with a logged neutral fallback. Broken JSON/missing or blank reply/generation failures fail rather than fabricate teaching. Native parsing is wired to teaching HTTP and WS.
 - **Terminal order:** commit presentation/progress before the unique run_finished; retain the ordinary Workspace path.
 - **Cancellation/concurrency:** share an active-Run guard across teaching HTTP/WS. Cancellation stops remaining work without committing valid new commands/completed progress; stale snapshots cannot overwrite newer state.
 - **Replay:** planned avatar_control has command_id and expiration. Restore state without repeating expired one-shot actions; Unity behavior still needs live acceptance.
@@ -240,8 +262,8 @@ Each backend batch runs appropriate tests/full unittest and pauses for review.
 | 4 (implemented) | Course lookup and initial teaching-binding REST | services/teaching.py, api/ | Real course selection, Native binding, client isolation, idempotency/conflicts; rebinding/upgrades deferred |
 | 5 (implemented) | Internal teaching request/context/policy preparation | services/teaching.py, adapters/agent/, orchestration/ | Course budget/version, preserved memory/RAG, no tools/handoff, Workspace regression; public wiring deferred |
 | 6 (implemented) | Joint-output parser/plain reply/fallback | services/teaching_output.py, adapters/agent/native.py | No raw JSON leakage, invalid-avatar fallback, bad-reply failure, buffer bounds and retained Usage |
-| 7A (current) | WS teaching bridge/shared Session guard | services/run_execution.py, services/session_run_guard.py, api/ | Multi-turn, binding selection, cross-connection/binding conflicts, preflight, cancel/disconnect cleanup |
-| 7B | HTTP Native bridge | schemas/, api/routes/teaching.py | Same WS execution/guard, HTTP/WS busy protection, Message/Run; A |
+| 7A (implemented) | WS teaching bridge/shared Session guard | services/run_execution.py, services/session_run_guard.py, api/ | Multi-turn, binding selection, cross-connection/binding conflicts, preflight, cancel/disconnect cleanup |
+| 7B (current) | HTTP Native bridge | schemas/, services/teaching_chat.py, api/routes/teaching.py | Same WS execution/guard, bidirectional HTTP/WS conflicts, Message/Run, sanitized errors; stage A engineering |
 | 8 | Presentation persistence/pre-terminal commits | models/, repositories/, services/ | One result/turn, snapshot versions, no cancelled progress |
 | 9 | Avatar events/query/preview | schemas/run_stream.py, services/run_event.py, api/ | Fields, expiration, durable replay, deduplication contract |
 | 10 | Client event compatibility/stream integration | web/src/shared/api/, server/app/ | Reply-only teaching, ordinary chat unchanged; B |

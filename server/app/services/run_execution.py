@@ -22,7 +22,7 @@ from app.models import MessageRecord
 from app.orchestration import AgentRunTarget, LangGraphRunOrchestrator
 from app.repositories import (
     AgentRepository, MemoryRepository, MessageRepository, RuntimeThreadRepository,
-    SessionRepository, TeachingRepository,
+    SessionRepository, TeachingRepository, TeachingSessionNotFoundError,
 )
 from app.services.message import MessageService
 from app.services.knowledge_context import (
@@ -174,10 +174,13 @@ class RunExecutionService:
         message: str,
         *,
         target_agent_id: str | None = None,
+        require_teaching: bool = False,
     ) -> AsyncGenerator[StreamedRunEvent, None]:
         guard = self._session_run_guard
         async with guard.claim(client_id, session_id) if guard else nullcontext():
             teaching = await TeachingRepository(self._session).get(client_id, session_id) is not None
+            if require_teaching and not teaching:
+                raise TeachingSessionNotFoundError("Teaching configuration not found")
             if teaching and (guard is None or self._course_catalog is None):
                 raise TeachingBindingConflictError("Teaching execution dependencies are unavailable")
             # 后登记的图迭代器先关闭，模型/图任务停止后才释放 Session 守卫。

@@ -29,7 +29,7 @@ courses separately during app creation. Teaching Session storage and its Reposit
 now exist, alongside course listing and initial binding REST. Internal request
 preparation, enforced permissions and joint-output parsing are wired into WebSocket
 Runs for bound Sessions. Unbound Sessions retain normal Workspace behavior.
-HTTP teaching chat and automatic progress updates are not wired yet.
+HTTP teaching chat now uses the same chain and guard; automatic progress updates remain deferred.
 The legacy Unity API remains unchanged.
 
 Teaching will generate reply and expression suggestions in one model call,
@@ -113,8 +113,8 @@ invalid replies/versions and Markdown wrappers fail rather than produce a fabric
 
 Only validated reply becomes one `assistant_delta`. `run_finished.payload.teaching`
 contains schema version, validated avatar and fallback reason, not an executable
-Unity command. There is no presentation table/progress update or HTTP teaching
-chat yet. Failures discard buffered output; received Provider Usage
+Unity command. There is no presentation table/progress update yet.
+Failures discard buffered output; received Provider Usage
 is retained when available, without a retry/second model call. Error/fallback
 metadata excludes raw JSON/invalid controls. Ordinary Workspace streaming is unchanged.
 
@@ -136,7 +136,31 @@ Failure/cancel/early close release ownership after iterator cleanup; disconnect 
 is shielded and interrupted transactions are rolled back before cancellation is recorded.
 This is a single-process/event-loop guard: use one Server worker, not a distributed lock
 or execution-recovery mechanism. Local cancellation does not guarantee upstream billing stops.
-HTTP `/avatar/chat` will reuse this service/guard in the next sub-batch.
+HTTP `/avatar/chat` reuses this service/guard; the teaching endpoint never falls back to Workspace.
+
+### HTTP teaching chat
+
+`POST /api/v1/avatar/chat` requires `X-Client-ID` and a bound Native Session:
+
+```json
+{"session_id":"<existing-session-id>","message":"Let's practice hiragana vowels."}
+```
+
+Only these two request fields are accepted. Whitespace is trimmed; ID/message must
+be nonblank and at most 36/10,000 characters. Response fields are `schema_version`,
+`session_id`, `run_id`, `reply`, `avatar`, `fallback_reason`. The server drains the
+existing Run stream and returns only its completed, validated result; it does not
+duplicate LLM calls or Message/Run writes. Usage remains in `/api/v1/usage/runs`,
+matched by `run_id`. Course progress still does not advance.
+
+Missing/unbound/cross-client resources return 404; busy/Native/version conflicts 409;
+invalid input 422; unavailable dependencies/runtime 503; model configuration errors
+400, timeouts 504, invalid model output/provider failures 502; internal errors 500.
+Provider/model bodies are not returned in errors. HTTP and WS reject overlapping
+Runs on the same scoped Session in either direction. HTTP returns one full reply,
+not live status, and client disconnect is not guaranteed to cancel upstream work;
+use WS for progress/cancel. Legacy `/unity/chat` is unchanged. Text integration can
+start in Unity, while action command semantics and live scene validation remain pending.
 
 ## Directory Layout
 

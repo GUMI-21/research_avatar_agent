@@ -59,3 +59,19 @@ class TeachingTurn(BaseModel):
     schema_version: Literal[1] = 1
     reply: str = Field(min_length=1, max_length=10_000)
     avatar: AvatarControl = Field(default_factory=AvatarControl)
+
+
+class TeachingChatRequest(BaseModel):
+    model_config = ConfigDict(extra="forbid", str_strip_whitespace=True)
+
+    session_id: str = Field(min_length=1, max_length=36)
+    message: str = Field(min_length=1, max_length=10_000)
+
+
+class TeachingChatResponse(TeachingTurn):
+    # HTTP 结果必须来自完整的成功事件，不能用默认值补造缺失的呈现结果。
+    schema_version: Literal[1] = Field(...)
+    avatar: AvatarControl = Field(...)
+    session_id: str
+    run_id: str
+    fallback_reason: Literal["invalid_avatar"] | None = Field(...)
